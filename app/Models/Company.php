@@ -1,0 +1,32 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+final class Company extends Model
+{
+    use HasFactory, HasUuids;
+
+    protected $fillable = [
+        'name',
+        'default_currency',
+        'overhead_absorption_enabled',
+        'transfer_pricing_mode',
+        'timezone',
+    ];
+
+    protected $casts = [
+        'overhead_absorption_enabled' => 'boolean',
+    ];
+
+    public function operatingUnits(): HasMany
+    {
+        return $this->hasMany(OperatingUnit::class);
+    }
+}
