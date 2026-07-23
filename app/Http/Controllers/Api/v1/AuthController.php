@@ -14,34 +14,6 @@ use Illuminate\Support\Facades\Hash;
 final class AuthController extends Controller
 {
     /**
-     * Register a new user and return a token.
-     */
-    public function register(Request $request): JsonResponse
-    {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email|max:255',
-            'password' => 'required|string|min:8',
-        ]);
-
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'is_active' => true,
-        ]);
-
-        $user->load('roles');
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        return response()->json([
-            'access_token' => $token,
-            'token_type' => 'Bearer',
-            'user' => new UserResource($user),
-        ], 201);
-    }
-
-    /**
      * Authenticate user credentials and return a token.
      */
     public function login(Request $request): JsonResponse
@@ -100,5 +72,34 @@ final class AuthController extends Controller
         $user = $request->user()->load('roles');
 
         return new UserResource($user);
+    }
+
+    /**
+     * Change the authenticated user's password.
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'current_password' => 'required|string',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $user = $request->user();
+
+        if (! Hash::check($request->current_password, $user->password)) {
+            return response()->json([
+                'message' => 'The provided current password does not match our records.',
+            ], 422);
+        }
+
+        $user->update([
+            'password' => Hash::make($request->password),
+            'must_change_password' => false,
+        ]);
+
+        return response()->json([
+            'message' => 'Password updated successfully.',
+            'user' => new UserResource($user),
+        ]);
     }
 }

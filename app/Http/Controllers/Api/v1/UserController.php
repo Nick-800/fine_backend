@@ -12,6 +12,7 @@ use App\Models\UserRole;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 
 final class UserController extends Controller
@@ -21,6 +22,8 @@ final class UserController extends Controller
      */
     public function index(): AnonymousResourceCollection
     {
+        Gate::authorize('viewAny', User::class);
+
         return UserResource::collection(User::with('roles')->get());
     }
 
@@ -29,6 +32,8 @@ final class UserController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        Gate::authorize('create', User::class);
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
@@ -40,6 +45,7 @@ final class UserController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'is_active' => true,
+            'must_change_password' => true,
         ]);
 
         return (new UserResource($user))
@@ -53,6 +59,7 @@ final class UserController extends Controller
     public function show(string $id): UserResource
     {
         $user = User::with('roles')->findOrFail($id);
+        Gate::authorize('view', $user);
 
         return new UserResource($user);
     }
@@ -62,6 +69,9 @@ final class UserController extends Controller
      */
     public function update(Request $request, string $id): UserResource
     {
+        $user = User::findOrFail($id);
+        Gate::authorize('update', $user);
+
         $request->validate([
             'name' => 'sometimes|required|string|max:255',
             'email' => 'sometimes|required|email|unique:users,email,'.$id,
@@ -70,11 +80,10 @@ final class UserController extends Controller
             'record_version' => 'required|integer',
         ]);
 
-        $user = User::findOrFail($id);
-
         $data = $request->only('name', 'email', 'is_active', 'record_version');
         if ($request->has('password')) {
             $data['password'] = Hash::make($request->password);
+            $data['must_change_password'] = true;
         }
 
         $user->update($data);
@@ -88,6 +97,8 @@ final class UserController extends Controller
     public function destroy(string $id): JsonResponse
     {
         $user = User::findOrFail($id);
+        Gate::authorize('delete', $user);
+
         $user->delete();
 
         return response()->json([

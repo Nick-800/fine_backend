@@ -186,6 +186,7 @@ class DatabaseSeeder extends Seeder
                 'email' => $m['email'],
                 'password' => Hash::make('password'),
                 'is_active' => true,
+                'must_change_password' => true,
             ]);
 
             $role = Role::where('slug', $m['role_slug'])->first();

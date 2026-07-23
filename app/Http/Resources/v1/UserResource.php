@@ -19,6 +19,7 @@ final class UserResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'is_active' => $this->is_active,
+            'must_change_password' => $this->must_change_password,
             'record_version' => $this->record_version,
             'roles' => RoleResource::collection($this->whenLoaded('roles')),
             'created_at' => $this->created_at?->toIso8601String(),

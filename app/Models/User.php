@@ -18,7 +18,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'is_active', 'record_version'])]
+#[Fillable(['name', 'email', 'password', 'is_active', 'record_version', 'must_change_password'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -36,6 +36,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'must_change_password' => 'boolean',
             'record_version' => 'integer',
         ];
     }
@@ -46,5 +47,19 @@ class User extends Authenticatable
             ->using(UserRole::class)
             ->withPivot('operating_unit_id')
             ->withTimestamps();
+    }
+
+    public function hasRole(string $slug): bool
+    {
+        return $this->roles->contains('slug', $slug);
+    }
+
+    public function hasPermission(string $permissionSlug): bool
+    {
+        if ($this->hasRole('owner')) {
+            return true;
+        }
+
+        return $this->roles->flatMap->permissions->contains('slug', $permissionSlug);
     }
 }

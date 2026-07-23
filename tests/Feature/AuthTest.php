@@ -7,41 +7,14 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('can register a new user successfully', function (): void {
+it('disallows public self registration endpoint', function (): void {
     $response = $this->postJson('/api/v1/auth/register', [
         'name' => 'New User',
         'email' => 'newuser@example.com',
         'password' => 'password123',
     ]);
 
-    $response->assertStatus(201)
-        ->assertJsonStructure([
-            'access_token',
-            'token_type',
-            'user' => ['id', 'name', 'email', 'is_active', 'record_version'],
-        ])
-        ->assertJsonPath('user.email', 'newuser@example.com');
-
-    $this->assertDatabaseHas('users', [
-        'email' => 'newuser@example.com',
-        'name' => 'New User',
-    ]);
-});
-
-it('cannot register with an existing email', function (): void {
-    User::create([
-        'name' => 'Existing User',
-        'email' => 'existing@example.com',
-        'password' => Hash::make('password'),
-    ]);
-
-    $response = $this->postJson('/api/v1/auth/register', [
-        'name' => 'Another User',
-        'email' => 'existing@example.com',
-        'password' => 'password123',
-    ]);
-
-    $response->assertStatus(422);
+    $response->assertStatus(404);
 });
 
 it('can log in with correct credentials', function (): void {
