@@ -1,58 +1,157 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# FINE ERP Backend API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+An enterprise multi-tenant ERP backend built with **Laravel 12**, **PHP 8.4**, and **Sanctum Authentication**. Engineered for high-throughput manufacturing, inventory, procurement, POS, HR, accounting, and multi-unit operating architectures.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## 🚀 Requirements
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- **PHP**: 8.4 or higher
+- **Composer**: 2.x
+- **Database**: SQLite (default for development), PostgreSQL, or MySQL
+- **Extensions**: `pdo`, `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype`, `json`
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## 🛠️ Installation & Setup Guide
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
+### 1. Clone the Repository
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+git clone <repository-url> fine_backend
+cd fine_backend
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+### 2. Environment Configuration
+Copy the environment template file:
+```bash
+# On Linux/macOS
+cp .env.example .env
 
-## Contributing
+# On Windows PowerShell
+Copy-Item .env.example .env
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 3. Install Dependencies
+Install all PHP packages via Composer:
+```bash
+composer install
+```
 
-## Code of Conduct
+### 4. Generate Application Key
+```bash
+php artisan key:generate
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### 5. Configure Database
+By default, the project uses **SQLite**. Create the database file if it does not exist:
 
-## Security Vulnerabilities
+**PowerShell (Windows):**
+```powershell
+New-Item -ItemType File -Path database\database.sqlite -Force
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+**Bash (Linux/macOS):**
+```bash
+touch database/database.sqlite
+```
 
-## License
+*(Optional)* If using MySQL or PostgreSQL, update the `.env` file with your database credentials:
+```env
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=fine_erp
+DB_USERNAME=postgres
+DB_PASSWORD=secret
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+---
+
+## 🗄️ Database Migrations & Seeders
+
+### Run Migrations & Seeders
+Execute database migrations and seed the default initial data (companies, blueprints, operating units, roles, users):
+
+```bash
+# Run migrations and seed database
+php artisan migrate --seed
+```
+
+### Reset & Fresh Seed
+To completely reset the database and re-seed all initial records:
+```bash
+php artisan migrate:fresh --seed
+```
+
+---
+
+## 👤 Default Seeded Credentials
+
+When running `php artisan db:seed`, the system automatically provisions the initial company (**Al-Amana Foam & Furniture Co.**), operating units, blueprints, and standard user accounts.
+
+All default accounts use the password: `password`
+
+| Role | Email | Scope |
+| :--- | :--- | :--- |
+| **Global Owner** | `owner@erp.com` | Company-wide (Full Admin) |
+| **Procurement Manager** | `procurement@erp.com` | Central Procurement & Treasury Unit |
+| **Foam Plant Manager** | `foam@erp.com` | Tajoura Foam Manufactory Unit |
+| **Cutter Manager** | `cutter@erp.com` | Cutter Plant A Unit |
+| **Furniture Manager** | `furniture@erp.com` | Furniture Assembly Unit B |
+| **Showroom Manager** | `showroom@erp.com` | Tripoli Main Showroom |
+
+*Note: Unit-scoped managers have `must_change_password` set to `true` by default upon initial sign-in.*
+
+---
+
+## ⚡ Running the Server
+
+Start the local development server:
+```bash
+php artisan serve
+```
+
+The API will be available at `http://127.0.0.1:8000`.
+
+---
+
+## 🏛️ Architecture & Key System Modules
+
+### Unified Entity System (Decoupled Non-User Support)
+- **Decoupled Persons & Organizations**: `entities` (Employees, B2B Clients, Third-Party Employer Agencies) operate as first-class domain entities **without requiring system `User` login accounts**.
+- **Multi-Role Assignment**: A single real-world organization can hold multiple roles (`client`, `external_employer`, `vendor`).
+- **On-Demand User Provisioning**: Admins can provision software access on demand via `POST /api/v1/entities/{id}/provision-user`.
+
+### Multi-Tenant Operating Unit Scoping
+- All unit-scoped requests require the `X-Operating-Unit-ID` HTTP header matching the user's assigned role pivot (`UserRole`).
+- Automatic global scope enforcement via `OperatingUnitScoping` middleware.
+
+---
+
+## 🧪 Testing & Code Quality
+
+### Run Automated Pest Tests
+This project uses **Pest PHP** for testing:
+
+```bash
+# Run all Pest tests
+php artisan test --compact
+
+# Filter specific test suite
+php artisan test --compact --filter=EntityManagementTest
+```
+
+### Code Formatting (Laravel Pint)
+Format PHP code to meet PSR-12 and Laravel guidelines:
+```bash
+vendor/bin/pint --dirty --format agent
+```
+
+---
+
+## 📑 API Documentation & Specifications
+
+Detailed module design specs and architectural blueprints are located in `docs/`:
+- `docs/superpowers/specs/2026-07-25-unified-entity-system-design.md`: Unified Entity Architecture
+- `docs/phase-01-foundation.md`: Multi-Unit Architecture & Provisioning
+- `docs/erd.md`: Entity Relationship Blueprint
