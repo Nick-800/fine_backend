@@ -178,3 +178,28 @@ it('can provision a user account for an existing entity on demand', function ():
     expect($user->email)->toBe('fatima@example.com');
     expect($user->must_change_password)->toBeTrue();
 });
+
+it('allows admin to specify a custom temporary password when provisioning', function (): void {
+    $entity = Entity::create([
+        'name' => 'Tariq Mansour',
+        'entity_type' => EntityType::Individual,
+        'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($this->admin)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson("/api/v1/entities/{$entity->id}/provision-user", [
+            'email' => 'tariq@example.com',
+            'password' => 'TempPass123!',
+        ]);
+
+    $response->assertStatus(201);
+
+    $entity->refresh();
+    $user = User::find($entity->user_id);
+
+    expect($user)->not->toBeNull();
+    expect($user->email)->toBe('tariq@example.com');
+    expect(Hash::check('TempPass123!', $user->password))->toBeTrue();
+    expect($user->must_change_password)->toBeTrue();
+});

@@ -137,22 +137,19 @@ final class EntityController extends Controller
 
         $email = $entity->primaryContact?->email ?? $request->input('email');
 
-        if (! $email) {
-            $request->validate([
-                'email' => 'required|email|unique:users,email',
-            ]);
-            $email = $request->input('email');
-        } else {
-            $request->validate([
-                'email' => 'nullable|email|unique:users,email',
-            ]);
-        }
+        $request->validate([
+            'email' => $entity->primaryContact?->email ? 'nullable|email|unique:users,email' : 'required|email|unique:users,email',
+            'password' => 'nullable|string|min:8',
+        ]);
 
-        $user = DB::transaction(function () use ($entity, $email) {
+        $email = $request->input('email') ?: $entity->primaryContact?->email;
+        $plainPassword = $request->input('password') ?: Str::random(16);
+
+        $user = DB::transaction(function () use ($entity, $email, $plainPassword) {
             $user = User::create([
                 'name' => $entity->name,
                 'email' => $email,
-                'password' => Hash::make(Str::random(16)),
+                'password' => Hash::make($plainPassword),
                 'is_active' => true,
                 'must_change_password' => true,
             ]);
