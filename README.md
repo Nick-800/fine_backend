@@ -4,7 +4,7 @@ An enterprise multi-tenant ERP backend built with **Laravel 12**, **PHP 8.4**, a
 
 ---
 
-## 🚀 Requirements
+## Requirements
 
 - **PHP**: 8.4 or higher
 - **Composer**: 2.x
@@ -13,7 +13,7 @@ An enterprise multi-tenant ERP backend built with **Laravel 12**, **PHP 8.4**, a
 
 ---
 
-## 🛠️ Installation & Setup Guide
+## Installation & Setup Guide
 
 ### 1. Clone the Repository
 ```bash
@@ -67,7 +67,7 @@ DB_PASSWORD=secret
 
 ---
 
-## 🗄️ Database Migrations & Seeders
+## Database Migrations & Seeders
 
 ### Run Migrations & Seeders
 Execute database migrations and seed the default initial data (companies, blueprints, operating units, roles, users):
@@ -85,7 +85,7 @@ php artisan migrate:fresh --seed
 
 ---
 
-## 👤 Default Seeded Credentials
+## Default Seeded Credentials
 
 When running `php artisan db:seed`, the system automatically provisions the initial company (**Al-Amana Foam & Furniture Co.**), operating units, blueprints, and standard user accounts.
 
@@ -104,7 +104,7 @@ All default accounts use the password: `password`
 
 ---
 
-## ⚡ Running the Server
+## Running the Server
 
 Start the local development server:
 ```bash
@@ -115,7 +115,7 @@ The API will be available at `http://127.0.0.1:8000`.
 
 ---
 
-## 🏛️ Architecture & Key System Modules
+## Architecture & Key System Modules
 
 ### Unified Entity System (Decoupled Non-User Support)
 - **Decoupled Persons & Organizations**: `entities` (Employees, B2B Clients, Third-Party Employer Agencies) operate as first-class domain entities **without requiring system `User` login accounts**.
@@ -128,7 +128,7 @@ The API will be available at `http://127.0.0.1:8000`.
 
 ---
 
-## 🧪 Testing & Code Quality
+## Testing & Code Quality
 
 ### Run Automated Pest Tests
 This project uses **Pest PHP** for testing:
@@ -149,7 +149,7 @@ vendor/bin/pint --dirty --format agent
 
 ---
 
-## 📑 API Documentation & Specifications
+## API Documentation & Specifications
 
 Detailed module design specs and architectural blueprints are located in `docs/`:
 - `docs/superpowers/specs/2026-07-25-unified-entity-system-design.md`: Unified Entity Architecture
