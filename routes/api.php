@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\v1\AuditLogController;
 use App\Http\Controllers\Api\v1\AuthController;
+use App\Http\Controllers\Api\v1\ClientController;
+use App\Http\Controllers\Api\v1\EmployeeController;
+use App\Http\Controllers\Api\v1\EntityController;
+use App\Http\Controllers\Api\v1\ExternalEmployerController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\RoleController;
 use App\Http\Controllers\Api\v1\UnitBlueprintController;
@@ -44,6 +48,15 @@ Route::prefix('v1')->group(function () {
             // Audit Logs
             Route::get('/audit-logs', [AuditLogController::class, 'index']);
             Route::get('/audit-logs/{tableName}/{recordId}', [AuditLogController::class, 'show']);
+
+            // Unified Entity System
+            Route::apiResource('entities', EntityController::class);
+            Route::post('/entities/{id}/provision-user', [EntityController::class, 'provisionUser']);
+
+            // Domain Extension Modules
+            Route::apiResource('employees', EmployeeController::class);
+            Route::apiResource('clients', ClientController::class);
+            Route::apiResource('external-employers', ExternalEmployerController::class);
         });
     });
 });
