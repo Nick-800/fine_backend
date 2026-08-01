@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ResolveQuarantineRequest;
 use App\Http\Requests\SyncPullRequest;
 use App\Http\Requests\SyncPushRequest;
+use App\Models\OperatingUnit;
 use App\Models\SyncConflict;
 use App\Services\SyncService;
 use App\Support\CurrentUnitContext;
@@ -28,7 +29,11 @@ final class SyncController extends Controller
     {
         $since = $request->query('since') ? (string) $request->query('since') : null;
         $user = $request->user();
-        $unit = $this->unitContext->unit();
+        $unit = $this->unitContext->unit() ?? OperatingUnit::first();
+
+        if (! $unit) {
+            return response()->json(['message' => 'No operating unit context available.'], 400);
+        }
 
         $data = $this->syncService->processPull($user, $unit, $since);
 
@@ -42,7 +47,11 @@ final class SyncController extends Controller
     {
         $validated = $request->validated();
         $user = $request->user();
-        $unit = $this->unitContext->unit();
+        $unit = $this->unitContext->unit() ?? OperatingUnit::first();
+
+        if (! $unit) {
+            return response()->json(['message' => 'No operating unit context available.'], 400);
+        }
 
         $data = $this->syncService->processPush(
             $user,
