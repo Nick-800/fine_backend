@@ -36,15 +36,24 @@ Establish the technical backbone of the ERP: Laravel API scaffolding, PostgreSQL
 - `unit_blueprints`
 - `warehouses`
 
-### 1.3.2 Auth & Audit
+### 1.3.2 Auth, Audit & Sync
 - `users`
 - `roles`
 - `user_roles`
 - `permissions`
 - `role_permissions`
 - `audit_logs`
+- `sync_conflicts`
 
-### 1.3.3 Inventory Master Data (Headers Only)
+### 1.3.3 Unified Entity System
+- `entities`
+- `entity_roles`
+- `entity_contacts`
+- `employees`
+- `clients`
+- `external_employers`
+
+### 1.3.4 Inventory Master Data (Headers Only)
 - `inventory_items`
 - `chart_of_accounts` (header)
 - `accounts` (minimal seed for later expansion)
@@ -59,6 +68,12 @@ POST   /api/v1/auth/login
 POST   /api/v1/auth/logout
 POST   /api/v1/auth/refresh
 GET    /api/v1/auth/me
+```
+
+### Sync Engine (Hybrid Offline-Online)
+```
+GET    /api/v1/sync/pull                     ← fetch delta changes since timestamp
+POST   /api/v1/sync/push                     ← push local SQLite outbox actions
 ```
 
 ### Users & Roles
@@ -76,6 +91,16 @@ GET    /api/v1/roles
 POST   /api/v1/roles
 GET    /api/v1/roles/{id}/permissions
 PUT    /api/v1/roles/{id}/permissions
+```
+
+### Unified Entity System
+```
+GET    /api/v1/entities
+POST   /api/v1/entities
+POST   /api/v1/entities/{id}/provision-user
+GET    /api/v1/employees
+GET    /api/v1/clients
+GET    /api/v1/external-employers
 ```
 
 ### Operating Units

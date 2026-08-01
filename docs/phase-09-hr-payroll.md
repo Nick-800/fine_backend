@@ -10,6 +10,10 @@
 
 Build the HR module covering employee records, attendance tracking, labor role rate versioning, labor time logging against production/work orders (for costing), and full payroll processing with state-machine-controlled payroll runs. Payroll must ultimately comply with Libyan labor law, but statutory deductions are flagged as requiring local legal input.
 
+### Sync Tier Classification
+* **Tier 1 (Offline Read & Write):** Daily attendance tracking, leave requests, and workshop labor time logging run offline via local SQLite outbox.
+* **Tier 3A (Strict Online-Only):** Payroll run calculations, approvals, payslip generation, wage disbursement, and payroll GL posting run strictly online.
+
 ---
 
 ## 9.2 Deliverables

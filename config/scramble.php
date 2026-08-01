@@ -1,5 +1,6 @@
 <?php
 
+use App\Extensions\Scramble\AddOperatingUnitHeaderExtension;
 use Dedoc\Scramble\Http\Middleware\RestrictedDocsAccess;
 use Dedoc\Scramble\SecurityDocumentation\MiddlewareAuthSecurityStrategy;
 
@@ -146,7 +147,9 @@ return [
         RestrictedDocsAccess::class,
     ],
 
-    'extensions' => [],
+    'extensions' => [
+        AddOperatingUnitHeaderExtension::class,
+    ],
 
     /*
      * Automatically document API security (OpenAPI `security` / `securitySchemes`) based on route

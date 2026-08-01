@@ -77,12 +77,12 @@ All units roll up to a central, full double-entry accounting ledger. The system 
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Always-online | No offline mode | Simplifies architecture; every client talks directly to API |
-| Single database | One PostgreSQL instance | Single source of truth; no sync complexity |
-| Optimistic locking | Integer `record_version` | Prevents silent overwrites without complex merge logic |
-| Soft deletes | `deleted_at` timestamp | Recovery possible; audit trail preserved |
-| Auto-accounting | Event observers post journals | No manual bookkeeping for standard flows |
-| Polymorphic references | `source_document_type` + `id` | Links journal entries back to originating events |
+| Simple Offline Sync | Pure Local-First SQLite | UI only talks to local SQLite via Repositories. Background sync engine pushes Outbox actions to server and pulls updates. |
+| Single canonical DB | PostgreSQL (Server Source of Truth) | Server is canonical; client pulls using a single `sync_version` BIGINT to prevent clock drift issues. |
+| Conflict Resolution | Last-Write-Wins & Additive Deltas | Most records use simple last-write-wins. Inventory and monetary balances sync `quantity_delta` (additive) to eliminate complex conflict merging entirely. |
+| Soft deletes | `deleted_at` timestamp | Recovery possible; audit trail preserved; synced soft-deletes propagated via pull diffs. |
+| Auto-accounting | Event observers post journals | No manual bookkeeping. When the server processes a synced operational action, background observers generate the strict financial ledgers online. |
+| Polymorphic references | `source_document_type` + `id` | Links journal entries & stock movements back to originating events. |
 
 ---
 

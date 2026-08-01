@@ -10,6 +10,9 @@
 
 Build the cutter work order module: from client/internal request submission through template shape assignment, manual foam block selection, cutting execution, mandatory byproduct weigh-in, quality check, and inventory output. This is one of the most complex modules due to the template-vs-requested shape distinction, manual block selection, partial consumption logic, and automatic byproduct generation.
 
+### Sync Tier Classification
+* **Tier 1 (Full Offline-First Read & Write):** Work order creation, template selection, block assignment, cutting execution, and byproduct weigh-in logging. Runs offline via local SQLite outbox.
+
 ---
 
 ## 5.2 Deliverables
