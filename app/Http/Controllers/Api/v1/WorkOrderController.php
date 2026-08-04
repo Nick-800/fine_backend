@@ -32,6 +32,16 @@ final class WorkOrderController extends Controller
             $query->where('operating_unit_id', $unitId);
         }
 
+        // Support filtering by status parameter (e.g. ?status=open or ?status=pending)
+        if ($request->has('status') && filled($request->query('status'))) {
+            $status = (string) $request->query('status');
+            if ($status === 'open') {
+                $query->whereIn('status', ['open', 'pending', 'draft']);
+            } else {
+                $query->where('status', $status);
+            }
+        }
+
         $workOrders = $query->latest()->paginate();
 
         return response()->json($workOrders);

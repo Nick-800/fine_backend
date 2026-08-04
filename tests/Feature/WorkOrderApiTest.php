@@ -74,6 +74,32 @@ test('authenticated user can list work orders', function () {
         ->assertJsonFragment(['product_sku' => 'SKU-TEST-1']);
 });
 
+test('authenticated user can filter work orders by status', function () {
+    WorkOrder::create([
+        'id' => (string) Str::uuid(),
+        'operating_unit_id' => $this->unit->id,
+        'product_sku' => 'OPEN-ITEM',
+        'quantity' => 10,
+        'status' => 'open',
+    ]);
+
+    WorkOrder::create([
+        'id' => (string) Str::uuid(),
+        'operating_unit_id' => $this->unit->id,
+        'product_sku' => 'COMPLETED-ITEM',
+        'quantity' => 5,
+        'status' => 'completed',
+    ]);
+
+    $response = $this->actingAs($this->user)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->getJson('/api/v1/work-orders?status=open');
+
+    $response->assertStatus(200)
+        ->assertJsonFragment(['product_sku' => 'OPEN-ITEM'])
+        ->assertJsonMissing(['product_sku' => 'COMPLETED-ITEM']);
+});
+
 test('authenticated user can create a work order with explicit fields', function () {
     $response = $this->actingAs($this->user)
         ->withHeader('X-Operating-Unit-ID', $this->unit->id)

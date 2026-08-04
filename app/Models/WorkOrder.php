@@ -27,6 +27,23 @@ final class WorkOrder extends Model
         'record_version' => 'integer',
     ];
 
+    protected $appends = [
+        'productSku',
+        'createdAt',
+    ];
+
+    public function getProductSkuAttribute(): ?string
+    {
+        return $this->attributes['product_sku'] ?? null;
+    }
+
+    public function getCreatedAtAttribute(): ?string
+    {
+        return isset($this->attributes['created_at'])
+            ? (string) $this->attributes['created_at']
+            : null;
+    }
+
     public function operatingUnit(): BelongsTo
     {
         return $this->belongsTo(OperatingUnit::class);
