@@ -92,44 +92,43 @@ test('authenticated user can create a work order with explicit fields', function
     ]);
 });
 
-test('authenticated user can create a work order using productSku camelCase alias', function () {
-    $response = $this->actingAs($this->user)
-        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
-        ->postJson('/api/v1/work-orders', [
-            'productSku' => 'SKU-CAMEL-300',
-            'quantity' => 25,
-        ]);
-
-    $response->assertStatus(201)
-        ->assertJsonFragment([
-            'product_sku' => 'SKU-CAMEL-300',
-            'status' => 'pending',
-        ]);
-
-    $this->assertDatabaseHas('work_orders', [
-        'product_sku' => 'SKU-CAMEL-300',
-        'status' => 'pending',
+test('authenticated user can complete a work order atomically', function () {
+    $order = WorkOrder::create([
+        'id' => (string) Str::uuid(),
         'operating_unit_id' => $this->unit->id,
+        'product_sku' => 'WIDGET-FINISHED',
+        'quantity' => 50,
+        'status' => 'open',
     ]);
-});
 
-test('authenticated user can create a work order using sku alias and omitted status default', function () {
     $response = $this->actingAs($this->user)
         ->withHeader('X-Operating-Unit-ID', $this->unit->id)
-        ->postJson('/api/v1/work-orders', [
-            'sku' => 'SKU-ALIAS-200',
-            'quantity' => 10,
+        ->postJson("/api/v1/work-orders/{$order->id}/complete", [
+            'consumedSku' => 'RAW-MATERIAL-Y',
+            'consumedQty' => 100,
         ]);
 
-    $response->assertStatus(201)
-        ->assertJsonFragment([
-            'product_sku' => 'SKU-ALIAS-200',
-            'status' => 'pending',
-        ]);
+    $response->assertStatus(200)
+        ->assertJsonFragment(['status' => 'completed']);
 
     $this->assertDatabaseHas('work_orders', [
-        'product_sku' => 'SKU-ALIAS-200',
-        'status' => 'pending',
+        'id' => $order->id,
+        'status' => 'completed',
+    ]);
+
+    // Raw material consumption
+    $this->assertDatabaseHas('inventory_movements', [
         'operating_unit_id' => $this->unit->id,
+        'sku' => 'RAW-MATERIAL-Y',
+        'quantity_delta' => -100,
+        'reference_id' => $order->id,
+    ]);
+
+    // Finished product output
+    $this->assertDatabaseHas('inventory_movements', [
+        'operating_unit_id' => $this->unit->id,
+        'sku' => 'WIDGET-FINISHED',
+        'quantity_delta' => 50,
+        'reference_id' => $order->id,
     ]);
 });

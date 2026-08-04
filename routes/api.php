@@ -61,6 +61,7 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('external-employers', ExternalEmployerController::class);
 
             // Work Orders & Inventory Movements
+            Route::post('/work-orders/{id}/complete', [WorkOrderController::class, 'complete']);
             Route::apiResource('work-orders', WorkOrderController::class);
             Route::get('/inventory/stock/{sku}', [InventoryMovementController::class, 'stock']);
             Route::apiResource('inventory-movements', InventoryMovementController::class)->except(['update']);
