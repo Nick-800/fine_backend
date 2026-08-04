@@ -10,7 +10,6 @@ use App\Http\Controllers\Api\v1\EntityController;
 use App\Http\Controllers\Api\v1\ExternalEmployerController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\RoleController;
-use App\Http\Controllers\Api\v1\SyncController;
 use App\Http\Controllers\Api\v1\UnitBlueprintController;
 use App\Http\Controllers\Api\v1\UserController;
 use Illuminate\Support\Facades\Route;
@@ -58,12 +57,6 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('employees', EmployeeController::class);
             Route::apiResource('clients', ClientController::class);
             Route::apiResource('external-employers', ExternalEmployerController::class);
-
-            // Sync Engine (Hybrid Offline-Online)
-            Route::get('/sync/pull', [SyncController::class, 'pull']);
-            Route::post('/sync/push', [SyncController::class, 'push']);
-            Route::get('/sync/quarantined', [SyncController::class, 'quarantinedIndex']);
-            Route::post('/sync/quarantined/{id}/resolve', [SyncController::class, 'resolveQuarantine']);
         });
     });
 });
