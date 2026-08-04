@@ -25,6 +25,11 @@ final class CurrentUnitContext
         return $this->unit?->id;
     }
 
+    public function getUnitId(): ?string
+    {
+        return $this->id();
+    }
+
     public function hasUnit(): bool
     {
         return $this->unit !== null;
