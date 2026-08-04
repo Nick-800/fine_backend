@@ -62,6 +62,7 @@ Route::prefix('v1')->group(function () {
 
             // Work Orders & Inventory Movements
             Route::apiResource('work-orders', WorkOrderController::class);
+            Route::get('/inventory/stock/{sku}', [InventoryMovementController::class, 'stock']);
             Route::apiResource('inventory-movements', InventoryMovementController::class)->except(['update']);
         });
     });

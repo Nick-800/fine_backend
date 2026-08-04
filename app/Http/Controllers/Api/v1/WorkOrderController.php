@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\v1\StoreWorkOrderRequest;
 use App\Http\Requests\Api\v1\UpdateWorkOrderRequest;
 use App\Models\WorkOrder;
+use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -19,7 +20,8 @@ final class WorkOrderController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $unitId = $request->header('X-Operating-Unit-ID');
+        $unitId = $request->header('X-Operating-Unit-ID')
+            ?? app(CurrentUnitContext::class)->getUnitId();
 
         $query = WorkOrder::query();
 
@@ -39,7 +41,9 @@ final class WorkOrderController extends Controller
     {
         $validated = $request->validated();
 
-        $unitId = $validated['operating_unit_id'] ?? $request->header('X-Operating-Unit-ID');
+        $unitId = $validated['operating_unit_id']
+            ?? $request->header('X-Operating-Unit-ID')
+            ?? app(CurrentUnitContext::class)->getUnitId();
 
         if (! $unitId) {
             return response()->json(['message' => 'Operating Unit context header or body field is required.'], 422);

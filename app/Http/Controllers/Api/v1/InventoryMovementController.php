@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
 use App\Models\InventoryMovement;
+use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -17,7 +18,8 @@ final class InventoryMovementController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $unitId = $request->header('X-Operating-Unit-ID');
+        $unitId = $request->header('X-Operating-Unit-ID')
+            ?? app(CurrentUnitContext::class)->getUnitId();
 
         $query = InventoryMovement::query();
 
@@ -43,7 +45,9 @@ final class InventoryMovementController extends Controller
             'reference_id' => ['nullable', 'uuid'],
         ]);
 
-        $unitId = $validated['operating_unit_id'] ?? $request->header('X-Operating-Unit-ID');
+        $unitId = $validated['operating_unit_id']
+            ?? $request->header('X-Operating-Unit-ID')
+            ?? app(CurrentUnitContext::class)->getUnitId();
 
         if (! $unitId) {
             return response()->json(['message' => 'Operating Unit context header or body field is required.'], 422);
@@ -59,6 +63,25 @@ final class InventoryMovementController extends Controller
         ]);
 
         return response()->json($movement, 201);
+    }
+
+    /**
+     * Get net stock balance for a given SKU.
+     */
+    public function stock(string $sku, Request $request): JsonResponse
+    {
+        $unitId = $request->header('X-Operating-Unit-ID')
+            ?? app(CurrentUnitContext::class)->getUnitId();
+
+        $query = InventoryMovement::query()->where('sku', $sku);
+
+        if ($unitId) {
+            $query->where('operating_unit_id', $unitId);
+        }
+
+        $totalStock = (float) $query->sum('quantity_delta');
+
+        return response()->json(['stock' => $totalStock]);
     }
 
     /**
