@@ -24,9 +24,13 @@ final class StoreWorkOrderRequest extends FormRequest
     {
         $merge = [];
 
-        // Support 'sku' alias for 'product_sku'
-        if (! $this->has('product_sku') && $this->has('sku')) {
-            $merge['product_sku'] = $this->input('sku');
+        // Support 'productSku' (camelCase) and 'sku' aliases for 'product_sku'
+        if (! $this->has('product_sku')) {
+            if ($this->has('productSku')) {
+                $merge['product_sku'] = $this->input('productSku');
+            } elseif ($this->has('sku')) {
+                $merge['product_sku'] = $this->input('sku');
+            }
         }
 
         // Default status to 'pending' if not provided

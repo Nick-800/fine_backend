@@ -92,6 +92,27 @@ test('authenticated user can create a work order with explicit fields', function
     ]);
 });
 
+test('authenticated user can create a work order using productSku camelCase alias', function () {
+    $response = $this->actingAs($this->user)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson('/api/v1/work-orders', [
+            'productSku' => 'SKU-CAMEL-300',
+            'quantity' => 25,
+        ]);
+
+    $response->assertStatus(201)
+        ->assertJsonFragment([
+            'product_sku' => 'SKU-CAMEL-300',
+            'status' => 'pending',
+        ]);
+
+    $this->assertDatabaseHas('work_orders', [
+        'product_sku' => 'SKU-CAMEL-300',
+        'status' => 'pending',
+        'operating_unit_id' => $this->unit->id,
+    ]);
+});
+
 test('authenticated user can create a work order using sku alias and omitted status default', function () {
     $response = $this->actingAs($this->user)
         ->withHeader('X-Operating-Unit-ID', $this->unit->id)

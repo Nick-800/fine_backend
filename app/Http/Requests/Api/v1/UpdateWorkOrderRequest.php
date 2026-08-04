@@ -22,8 +22,12 @@ final class UpdateWorkOrderRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        if (! $this->has('product_sku') && $this->has('sku')) {
-            $this->merge(['product_sku' => $this->input('sku')]);
+        if (! $this->has('product_sku')) {
+            if ($this->has('productSku')) {
+                $this->merge(['product_sku' => $this->input('productSku')]);
+            } elseif ($this->has('sku')) {
+                $this->merge(['product_sku' => $this->input('sku')]);
+            }
         }
     }
 
