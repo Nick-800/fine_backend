@@ -10,6 +10,10 @@
 
 Build the unified sales module handling both external client sales (credit-limit gated) and internal unit-to-unit transfers (no credit limit). Includes the POS retail system for Store/Showroom, internal restock requests with unit manager approval, and credit approval escalation workflow. The SalesOrder model serves both external sales and internal transfers via `buyer_type` and `channel` fields.
 
+### Sync Tier Classification
+* **Tier 3B (Provisional Outbox):** POS checkout receipts and offline Sales Orders are created locally with `sync_status = pending_settlement` and display a **"Provisional - Sync Pending"** badge. If server credit validation fails on push, the order enters the **Sync Quarantine Drawer** for manager override or voiding.
+* **Tier 2 (Cached Read-Only):** Customer credit limits and price lists are cached locally for reference.
+
 ---
 
 ## 7.2 Deliverables
