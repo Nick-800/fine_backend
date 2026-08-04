@@ -8,10 +8,12 @@ use App\Http\Controllers\Api\v1\ClientController;
 use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityController;
 use App\Http\Controllers\Api\v1\ExternalEmployerController;
+use App\Http\Controllers\Api\v1\InventoryMovementController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\RoleController;
 use App\Http\Controllers\Api\v1\UnitBlueprintController;
 use App\Http\Controllers\Api\v1\UserController;
+use App\Http\Controllers\Api\v1\WorkOrderController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -57,6 +59,10 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('employees', EmployeeController::class);
             Route::apiResource('clients', ClientController::class);
             Route::apiResource('external-employers', ExternalEmployerController::class);
+
+            // Work Orders & Inventory Movements
+            Route::apiResource('work-orders', WorkOrderController::class);
+            Route::apiResource('inventory-movements', InventoryMovementController::class)->except(['update']);
         });
     });
 });
