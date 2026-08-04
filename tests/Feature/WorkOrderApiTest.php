@@ -74,7 +74,7 @@ test('authenticated user can list work orders', function () {
         ->assertJsonFragment(['product_sku' => 'SKU-TEST-1']);
 });
 
-test('authenticated user can create a work order', function () {
+test('authenticated user can create a work order with explicit fields', function () {
     $response = $this->actingAs($this->user)
         ->withHeader('X-Operating-Unit-ID', $this->unit->id)
         ->postJson('/api/v1/work-orders', [
@@ -84,10 +84,31 @@ test('authenticated user can create a work order', function () {
         ]);
 
     $response->assertStatus(201)
-        ->assertJsonFragment(['product_sku' => 'SKU-NEW-100']);
+        ->assertJsonFragment(['product_sku' => 'SKU-NEW-100', 'status' => 'draft']);
 
     $this->assertDatabaseHas('work_orders', [
         'product_sku' => 'SKU-NEW-100',
+        'operating_unit_id' => $this->unit->id,
+    ]);
+});
+
+test('authenticated user can create a work order using sku alias and omitted status default', function () {
+    $response = $this->actingAs($this->user)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson('/api/v1/work-orders', [
+            'sku' => 'SKU-ALIAS-200',
+            'quantity' => 10,
+        ]);
+
+    $response->assertStatus(201)
+        ->assertJsonFragment([
+            'product_sku' => 'SKU-ALIAS-200',
+            'status' => 'pending',
+        ]);
+
+    $this->assertDatabaseHas('work_orders', [
+        'product_sku' => 'SKU-ALIAS-200',
+        'status' => 'pending',
         'operating_unit_id' => $this->unit->id,
     ]);
 });

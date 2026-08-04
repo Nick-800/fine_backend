@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\v1\StoreWorkOrderRequest;
+use App\Http\Requests\Api\v1\UpdateWorkOrderRequest;
 use App\Models\WorkOrder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,14 +35,9 @@ final class WorkOrderController extends Controller
     /**
      * Store a newly created work order.
      */
-    public function store(Request $request): JsonResponse
+    public function store(StoreWorkOrderRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'operating_unit_id' => ['nullable', 'uuid', 'exists:operating_units,id'],
-            'product_sku' => ['required', 'string', 'max:255'],
-            'quantity' => ['required', 'numeric', 'min:0.0001'],
-            'status' => ['required', 'string', 'max:50'],
-        ]);
+        $validated = $request->validated();
 
         $unitId = $validated['operating_unit_id'] ?? $request->header('X-Operating-Unit-ID');
 
@@ -72,17 +69,11 @@ final class WorkOrderController extends Controller
     /**
      * Update the specified work order.
      */
-    public function update(Request $request, string $id): JsonResponse
+    public function update(UpdateWorkOrderRequest $request, string $id): JsonResponse
     {
         $workOrder = WorkOrder::findOrFail($id);
 
-        $validated = $request->validate([
-            'product_sku' => ['sometimes', 'string', 'max:255'],
-            'quantity' => ['sometimes', 'numeric', 'min:0.0001'],
-            'status' => ['sometimes', 'string', 'max:50'],
-        ]);
-
-        $workOrder->update($validated);
+        $workOrder->update($request->validated());
 
         return response()->json($workOrder);
     }
