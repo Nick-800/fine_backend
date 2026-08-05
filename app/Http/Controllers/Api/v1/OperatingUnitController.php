@@ -22,8 +22,27 @@ final class OperatingUnitController extends Controller
     /**
      * Display a listing of operating units.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
+        $user = $request->user();
+
+        if ($user) {
+            $hasCompanyWideRole = $user->roles()
+                ->whereNull('user_roles.operating_unit_id')
+                ->exists();
+
+            if (! $hasCompanyWideRole) {
+                $assignedUnitIds = $user->roles()
+                    ->whereNotNull('user_roles.operating_unit_id')
+                    ->pluck('user_roles.operating_unit_id')
+                    ->unique();
+
+                return OperatingUnitResource::collection(
+                    OperatingUnit::whereIn('id', $assignedUnitIds)->get()
+                );
+            }
+        }
+
         return OperatingUnitResource::collection(OperatingUnit::all());
     }
 

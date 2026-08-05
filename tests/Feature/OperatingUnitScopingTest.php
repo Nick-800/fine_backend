@@ -76,11 +76,39 @@ beforeEach(function (): void {
     ]);
 });
 
-it('blocks request without unit header for unit-scoped user', function (): void {
+it('allows unit-scoped user to list accessible operating units without header', function (): void {
     $response = $this->actingAs($this->user)
         ->getJson('/api/v1/operating-units');
 
-    $response->assertStatus(400); // Missing header
+    $response->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $this->unitA->id);
+});
+
+it('blocks unit-scoped requests without header on scoped resources', function (): void {
+    $response = $this->actingAs($this->user)
+        ->getJson('/api/v1/employees');
+
+    $response->assertStatus(400)
+        ->assertJsonPath('message', 'Missing X-Operating-Unit-ID header.');
+});
+
+it('normalizes JS null and undefined string headers to missing header on scoped resources', function (string $headerValue): void {
+    $response = $this->actingAs($this->user)
+        ->withHeader('X-Operating-Unit-ID', $headerValue)
+        ->getJson('/api/v1/employees');
+
+    $response->assertStatus(400)
+        ->assertJsonPath('message', 'Missing X-Operating-Unit-ID header.');
+})->with(['null', 'undefined', 'NONE', '   ']);
+
+it('validates UUID format for unit header', function (): void {
+    $response = $this->actingAs($this->user)
+        ->withHeader('X-Operating-Unit-ID', 'invalid-uuid-string')
+        ->getJson('/api/v1/operating-units');
+
+    $response->assertStatus(400)
+        ->assertJsonPath('message', 'Invalid Operating Unit ID format.');
 });
 
 it('blocks request with unit header the user does not have access to', function (): void {
@@ -102,6 +130,18 @@ it('allows request with valid unit header and scopes results', function (): void
     $warehouses = Warehouse::all();
     expect($warehouses)->toHaveCount(1);
     expect($warehouses[0]->id)->toBe($this->warehouseA->id);
+});
+
+it('allows operating-units index fetching when header contains a stale non-existent UUID', function (): void {
+    $staleUuid = Str::uuid()->toString();
+
+    $response = $this->actingAs($this->user)
+        ->withHeader('X-Operating-Unit-ID', $staleUuid)
+        ->getJson('/api/v1/operating-units');
+
+    $response->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $this->unitA->id);
 });
 
 it('automatically sets operating_unit_id on creation of scoped models', function (): void {
