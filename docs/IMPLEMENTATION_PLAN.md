@@ -77,11 +77,11 @@ All units roll up to a central, full double-entry accounting ledger. The system 
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Simple Offline Sync | Pure Local-First SQLite | UI only talks to local SQLite via Repositories. Background sync engine pushes Outbox actions to server and pulls updates. |
-| Single canonical DB | PostgreSQL (Server Source of Truth) | Server is canonical; client pulls using a single `sync_version` BIGINT to prevent clock drift issues. |
-| Conflict Resolution | Last-Write-Wins & Additive Deltas | Most records use simple last-write-wins. Inventory and monetary balances sync `quantity_delta` (additive) to eliminate complex conflict merging entirely. |
-| Soft deletes | `deleted_at` timestamp | Recovery possible; audit trail preserved; synced soft-deletes propagated via pull diffs. |
-| Auto-accounting | Event observers post journals | No manual bookkeeping. When the server processes a synced operational action, background observers generate the strict financial ledgers online. |
+| Architecture Model | Direct Online REST API (Local LAN Server) | Web and desktop clients communicate directly over REST APIs with central server; real-time ACID database transactions. |
+| Single canonical DB | PostgreSQL (Central Server Database) | Central PostgreSQL database is the single canonical source of truth for all operating units. |
+| Transaction Integrity | Realtime `DB::transaction()` | All operational, sales, inventory, and monetary entries process live in standard database transactions. |
+| Soft deletes | `deleted_at` timestamp | Recovery possible; audit trail preserved across all domain entities. |
+| Auto-accounting | Event observers post journals | No manual bookkeeping. When the central server processes an operational action, background observers generate strict financial ledgers online. |
 | Polymorphic references | `source_document_type` + `id` | Links journal entries & stock movements back to originating events. |
 
 ---
@@ -209,16 +209,20 @@ Phase 01 → Phase 03 → Phase 04 → Phase 05 → Phase 06 → Phase 07 → Ph
 | Migrations | Laravel Migrations | version controlled |
 | Seeds | Laravel Seeders | demo data |
 
-### Frontend
+### Frontend (Desktop Electron & Web Dashboard)
+
+> **Specification Reference:** [`2026-08-05-online-only-frontend-design.md`](file:///c:/Users/Nick/Documents/Projects/Fine/Project/fine_backend/docs/superpowers/specs/2026-08-05-online-only-frontend-design.md)
 
 | Component | Technology | Notes |
 |-----------|-----------|-------|
-| Unit Clients | React 18+ or Vue 3 | SPA, RTL, Arabic |
-| Dashboard | Next.js 14+ | App Router, SSR/CSR hybrid |
+| Desktop Shell | Electron 30+ | Windows desktop app for operating units (`fine-desktop`) |
+| Unit Clients | React 18+ / TypeScript / Vite | SPA, RTL, Arabic support, 100% online REST communication |
+| Dashboard | Next.js 14+ | App Router, SSR/CSR hybrid (Owner Dashboard) |
 | Styling | Tailwind CSS | RTL support via rtlcss |
-| State Management | React Query / SWR | server state |
-| Charts | Recharts or Chart.js | KPI widgets |
-| HTTP Client | Axios | with interceptors |
+| Server State | TanStack Query (React Query) | Server state caching, optimistic UI updates, query invalidation |
+| Client State | Zustand | Local UI state, auth token, unit header context |
+| HTTP Client | Axios | Auth interceptors (Sanctum Bearer + `X-Operating-Unit-ID`) |
+| Charts | Recharts | KPI widgets |
 
 ### Infrastructure
 

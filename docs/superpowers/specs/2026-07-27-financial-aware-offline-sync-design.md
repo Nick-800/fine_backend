@@ -1,7 +1,10 @@
-# Financial-Aware Hybrid Offline-Online Sync Architecture Design Specification
+## Financial-Aware Hybrid Offline-Online Sync Architecture Design Specification
+
+> [!IMPORTANT]
+> **SUPERSEDED SPECIFICATION**: This specification describes an earlier hybrid offline-first sync model. The ERP architecture has been updated to a **100% Direct Online-Only Local Server Model**. Refer to [`2026-08-04-online-only-local-server-design.md`](file:///c:/Users/Nick/Documents/Projects/Fine/Project/fine_backend/docs/superpowers/specs/2026-08-04-online-only-local-server-design.md) for the active system architecture.
 
 **Date**: 2026-07-27  
-**Status**: Approved / Design Complete  
+**Status**: SUPERSEDED by 2026-08-04 Online-Only Local Server Model  
 **Scope**: Integration of offline-first sync capabilities for operational data in Electron + Laravel ERP, while maintaining strict online-only controls for financial and monetary ledger operations.
 
 ---

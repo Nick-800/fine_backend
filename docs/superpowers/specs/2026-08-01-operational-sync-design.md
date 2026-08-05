@@ -1,7 +1,10 @@
-# Operational Sync (Work Orders & Inventory Movements) Design Specification
+## Operational Sync (Work Orders & Inventory Movements) Design Specification
+
+> [!IMPORTANT]
+> **SUPERSEDED SPECIFICATION**: This specification describes an earlier hybrid operational sync model. The ERP architecture has been updated to a **100% Direct Online-Only Local Server Model**. Refer to [`2026-08-04-online-only-local-server-design.md`](file:///c:/Users/Nick/Documents/Projects/Fine/Project/fine_backend/docs/superpowers/specs/2026-08-04-online-only-local-server-design.md) for the active system architecture.
 
 **Date**: 2026-08-01  
-**Status**: Pending Review  
+**Status**: SUPERSEDED by 2026-08-04 Online-Only Local Server Model  
 **Scope**: Support backend synchronization of local work orders and inventory movements pushed/pulled by Electron desktop clients.
 
 ---

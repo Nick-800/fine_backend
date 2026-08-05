@@ -10,8 +10,8 @@
 
 Build the inventory backbone that all manufacturing and sales modules depend on. Each of the five operating units maintains its own independent inventory ledger. The system must support: (a) serialized tracking for foam blocks (each block is a unique `StockLot` with dimensions, grade, and cost), (b) weighted-average costing for tank-mixed raw materials, (c) byproduct fill tracked by weight, (d) slices as a distinct BOM-component item type, and (e) stock movements that trace every inventory event back to its source document.
 
-### Sync Tier Classification
-* **Tier 1 (Full Offline-First Read & Write):** InventoryItems, StockLots, StockMovements, TankStocks, and warehouse stock lookups. Local changes write to SQLite first and push/pull diffs via `/api/v1/sync/push`.
+### Architecture & API Scope
+All inventory lookups, serialized block stock lots, tank stock tracking, and stock movements execute live via direct central REST API endpoints against the central server database.
 
 ---
 

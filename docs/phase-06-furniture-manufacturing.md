@@ -10,8 +10,8 @@
 
 Build the furniture production module: product catalog with BOM management, BOM-driven production orders, component stock reservation, labor time logging, custom order BOM adaptation, and finished goods entry into Furniture inventory. This module bridges Cutter output (foam pieces, slices) with finished furniture assembly.
 
-### Sync Tier Classification
-* **Tier 1 (Full Offline-First Read & Write):** BOM lookups, production assembly orders, stock reservation, and workshop labor time logging. Executed offline in local SQLite outbox.
+### Architecture & API Scope
+All BOM lookups, production assembly orders, component stock reservations, and labor time logging execute live via direct central REST API endpoints against the central server database.
 
 ---
 

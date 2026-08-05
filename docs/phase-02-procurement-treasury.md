@@ -10,9 +10,8 @@
 
 Build the foreign procurement pipeline from supplier order creation through multi-currency payment execution (bank hold/release or black-market exchange) to landed-cost allocation into raw-material inventory. This phase also delivers the Treasury module with FX rate capture, FX gain/loss posting, and multi-currency cash account management.
 
-### Sync Tier Classification
-* **Tier 1 (Offline Read):** Supplier management & historical Import Order lookups.
-* **Tier 3A (Strict Online-Only):** Payment Requests, Bank Holds, FX execution, Treasury cash account disbursements, and Landed Cost GL postings (blocked offline).
+### Architecture & API Scope
+All procurement, supplier lookups, import orders, payment requests, bank holds, FX execution, and landed cost GL postings execute live over central REST API endpoints directly against the central server.
 
 ---
 

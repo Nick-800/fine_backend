@@ -10,8 +10,8 @@
 
 Build the complete double-entry accounting ledger that automatically posts balanced journal entries for every business event defined in the cross-module integration list (Section 17 of SRS). Includes chart of accounts, journal entries with polymorphic source document linking, per-unit subledgers, landed cost allocation, FX gain/loss, overhead expense tracking and allocation, fixed asset register, and depreciation processing.
 
-### Sync Tier Classification
-* **Tier 3A (Strict Online-Only):** Double-entry journal posting, subledger reconciliation, trial balance reports, and fixed asset depreciation run strictly online on the Laravel server API. No offline creation of journal entries is permitted.
+### Architecture & API Scope
+All double-entry journal postings, subledger reconciliations, trial balance reports, overhead allocations, and fixed asset depreciation execute live via direct central REST API endpoints against the central server database.
 
 ---
 

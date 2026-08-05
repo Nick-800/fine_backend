@@ -10,8 +10,8 @@
 
 Build the foam batch production module: from batch creation and machine configuration, through chemical consumption tracking with weighted-average tank costing, to block slicing, curing, individual grading, and entry into Foam unit inventory as serialized StockLots. Every batch automatically posts its material cost to the accounting ledger upon closure.
 
-### Sync Tier Classification
-* **Tier 1 (Full Offline-First Read & Write):** Batch creation, chemical consumption entry, block output logging, and block grading. Saved locally to SQLite outbox and pushed to API on connection.
+### Architecture & API Scope
+All foam batch creation, chemical consumption logging, block output tracking, and block grading execute live via direct central REST API endpoints against the central server database.
 
 ---
 

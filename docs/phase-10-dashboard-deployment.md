@@ -10,8 +10,8 @@
 
 Build the Next.js Owner Dashboard providing read/oversight access across all operating units. Deliver company-wide KPIs, financial reporting, approval workflows, cross-unit inventory visibility, and real-time operational dashboards. This phase also covers final integration testing, performance optimization, and production deployment preparation.
 
-### Sync Tier Classification
-* **Live Server Operations:** Owner Dashboard operates against live server data over HTTPS. Integrates **Sync Quarantine Exception Alerts** to display any failed offline outbox transactions needing executive/manager review.
+### Architecture & API Scope
+Owner Dashboard and administrative oversight tools operate against central server live data over direct REST API endpoints, rendering real-time company-wide KPIs, financial reports, and system monitoring metrics.
 
 ---
 

@@ -1,14 +1,15 @@
-# Simple offline-first ERP — implementation guide
+## Simple Centralized Online ERP — Architecture & Implementation Guide
 
-For a team of two: one Laravel developer, one React/Electron developer.
+> [!IMPORTANT]
+> **ARCHITECTURAL UPDATE**: The system architecture has been updated from a hybrid offline-first sync model to a **100% Direct Online-Only Local Server Model**. Clients connect directly over LAN to the central Laravel server REST API. Refer to [`2026-08-04-online-only-local-server-design.md`](file:///c:/Users/Nick/Documents/Projects/Fine/Project/fine_backend/docs/superpowers/specs/2026-08-04-online-only-local-server-design.md) for the active specification.
 
-The whole system is six pieces, always in this order:
+The architecture connects Electron and Web clients directly to the central Laravel backend over REST API endpoints:
 
 ```
-React  →  Repository  →  SQLite  →  Outbox  →  Sync Service  →  Laravel API  →  MySQL
+React / Electron  →  Laravel REST API (Sanctum Auth)  →  Service & Controller Layer  →  PostgreSQL + Redis
 ```
 
-That's it. No message brokers, no event sourcing, no CQRS. Just: **write locally first, then push it up in the background.** Every section below explains one piece, why it exists, and whether a mid-level developer could build it in a few days. If the honest answer is "no," I've simplified it further rather than telling you it's fine.
+That's it. **Direct realtime REST API transactions against the central database source of truth.** All operations (inventory movements, work orders, sales, treasury, double-entry ledgers) execute in real-time within database transactions (`DB::transaction()`).
 
 ---
 

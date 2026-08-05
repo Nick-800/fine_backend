@@ -36,14 +36,13 @@ Establish the technical backbone of the ERP: Laravel API scaffolding, PostgreSQL
 - `unit_blueprints`
 - `warehouses`
 
-### 1.3.2 Auth, Audit & Sync
+### 1.3.2 Auth & Audit
 - `users`
 - `roles`
 - `user_roles`
 - `permissions`
 - `role_permissions`
 - `audit_logs`
-- `sync_conflicts`
 
 ### 1.3.3 Unified Entity System
 - `entities`
@@ -70,11 +69,8 @@ POST   /api/v1/auth/refresh
 GET    /api/v1/auth/me
 ```
 
-### Sync Engine (Hybrid Offline-Online)
-```
-GET    /api/v1/sync/pull                     ← fetch delta changes since timestamp
-POST   /api/v1/sync/push                     ← push local SQLite outbox actions
-```
+### Central API & Operating Unit Scoping
+All requests require Sanctum Bearer token and `X-Operating-Unit-ID` HTTP header for tenant isolation. Context middleware (`ScopeOperatingUnit`) automatically scopes database queries per operating unit.
 
 ### Users & Roles
 ```
