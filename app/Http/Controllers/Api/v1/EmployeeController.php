@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Enums\EntityRoleType;
+use App\Enums\EntityType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\v1\StoreEmployeeRequest;
 use App\Http\Resources\v1\EmployeeResource;
 use App\Models\Employee;
-use App\Models\EntityRole;
+use App\Models\Entity;
+use App\Services\EntityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -38,23 +40,43 @@ final class EmployeeController extends Controller
     /**
      * Store a newly created employee.
      */
-    public function store(StoreEmployeeRequest $request): JsonResponse
+    public function store(StoreEmployeeRequest $request, EntityService $entityService): JsonResponse
     {
-        $employee = DB::transaction(function () use ($request) {
+        $employee = DB::transaction(function () use ($request, $entityService) {
+            $entityId = $request->entity_id;
+
+            if (! $entityId) {
+                $name = $request->input('name');
+                if (! $name && ($request->first_name || $request->last_name)) {
+                    $name = trim(($request->first_name ?? '').' '.($request->last_name ?? ''));
+                }
+                if (! $name) {
+                    $name = 'Employee '.$request->job_title;
+                }
+
+                $entity = $entityService->createEntityForDomainModel(
+                    roleType: EntityRoleType::Employee,
+                    attributes: [
+                        'name' => $name,
+                        'entity_type' => $request->input('entity_type', EntityType::Individual),
+                        'tax_number' => $request->tax_number,
+                    ],
+                    operatingUnitId: $request->operating_unit_id
+                );
+                $entityId = $entity->id;
+            } else {
+                $entity = Entity::findOrFail($entityId);
+                $entityService->ensureEntityRole($entity, EntityRoleType::Employee, $request->operating_unit_id);
+            }
+
             $employee = Employee::create([
-                'entity_id' => $request->entity_id,
+                'entity_id' => $entityId,
                 'operating_unit_id' => $request->operating_unit_id,
                 'employer_entity_id' => $request->employer_entity_id,
                 'job_title' => $request->job_title,
                 'pay_type' => $request->pay_type,
                 'hire_date' => $request->hire_date,
                 'status' => $request->input('status', 'active'),
-            ]);
-
-            EntityRole::firstOrCreate([
-                'entity_id' => $request->entity_id,
-                'role_type' => EntityRoleType::Employee,
-                'operating_unit_id' => $request->operating_unit_id,
             ]);
 
             return $employee->load(['entity', 'operatingUnit', 'employerEntity']);
@@ -116,5 +138,48 @@ final class EmployeeController extends Controller
         return response()->json([
             'message' => 'Employee deleted successfully.',
         ]);
+    }
+
+    /**
+     * Split this employee into a separate standalone Entity.
+     */
+    public function splitEntity(Request $request, string $id, EntityService $entityService): JsonResponse
+    {
+        $employee = Employee::with('entity')->findOrFail($id);
+
+        $request->validate([
+            'new_name' => 'nullable|string|max:255',
+        ]);
+
+        $entityService->splitEntity(
+            $employee,
+            EntityRoleType::Employee,
+            $request->input('new_name')
+        );
+
+        return (new EmployeeResource($employee->load(['entity', 'operatingUnit', 'employerEntity'])))
+            ->response();
+    }
+
+    /**
+     * Re-link this employee to a different Entity.
+     */
+    public function relinkEntity(Request $request, string $id, EntityService $entityService): JsonResponse
+    {
+        $employee = Employee::findOrFail($id);
+
+        $request->validate([
+            'target_entity_id' => 'required|uuid|exists:entities,id',
+        ]);
+
+        $entityService->relinkEntity(
+            $employee,
+            $request->target_entity_id,
+            EntityRoleType::Employee,
+            $employee->operating_unit_id
+        );
+
+        return (new EmployeeResource($employee->load(['entity', 'operatingUnit', 'employerEntity'])))
+            ->response();
     }
 }
