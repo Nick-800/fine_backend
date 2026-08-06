@@ -56,8 +56,16 @@ Route::prefix('v1')->group(function () {
             Route::post('/entities/{id}/provision-user', [EntityController::class, 'provisionUser']);
 
             // Domain Extension Modules
+            Route::post('/employees/{id}/split-entity', [EmployeeController::class, 'splitEntity']);
+            Route::post('/employees/{id}/relink-entity', [EmployeeController::class, 'relinkEntity']);
             Route::apiResource('employees', EmployeeController::class);
+
+            Route::post('/clients/{id}/split-entity', [ClientController::class, 'splitEntity']);
+            Route::post('/clients/{id}/relink-entity', [ClientController::class, 'relinkEntity']);
             Route::apiResource('clients', ClientController::class);
+
+            Route::post('/external-employers/{id}/split-entity', [ExternalEmployerController::class, 'splitEntity']);
+            Route::post('/external-employers/{id}/relink-entity', [ExternalEmployerController::class, 'relinkEntity']);
             Route::apiResource('external-employers', ExternalEmployerController::class);
 
             // Work Orders & Inventory Movements
