@@ -8,6 +8,7 @@ use App\Models\Company;
 use App\Models\ImportOrder;
 use App\Models\OperatingUnit;
 use App\Models\Supplier;
+use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\ImportOrderStateService;
@@ -24,8 +25,16 @@ beforeEach(function () {
         'timezone' => 'UTC',
     ]);
 
+    $this->blueprint = UnitBlueprint::create([
+        'name' => 'Standard Blueprint',
+        'workflow_set' => [],
+        'default_role_template' => [],
+        'default_inventory_config' => [],
+    ]);
+
     $this->operatingUnit = OperatingUnit::create([
         'company_id' => $this->company->id,
+        'blueprint_id' => $this->blueprint->id,
         'name' => 'Tripoli Imports Hub',
         'unit_type' => 'warehouse',
         'currency' => 'LYD',
@@ -45,7 +54,6 @@ beforeEach(function () {
     ]);
 
     $this->user = User::factory()->create([
-        'operating_unit_id' => $this->operatingUnit->id,
         'must_change_password' => false,
     ]);
 
@@ -89,19 +97,19 @@ test('full import order state machine lifecycle transition', function () {
     expect((float) $paymentRequest->fresh()->bankHold->released_amount)->toBe(2340.00);
 
     // 5. Confirm Shipment
-    $this->stateService->confirmShipment($order);
+    $this->stateService->confirmShipment($order->fresh());
     expect($order->fresh()->status)->toBe(ImportOrderStatus::InTransit);
 
     // 6. Arrive at Port
-    $this->stateService->arriveAtPort($order);
+    $this->stateService->arriveAtPort($order->fresh());
     expect($order->fresh()->status)->toBe(ImportOrderStatus::AtPort);
 
     // 7. Transport to Warehouse
-    $this->stateService->transportToWarehouse($order);
+    $this->stateService->transportToWarehouse($order->fresh());
     expect($order->fresh()->status)->toBe(ImportOrderStatus::AwaitingReceipt);
 
     // 8. Receive Goods
-    $receipt = $this->stateService->receiveGoods($order, $this->warehouse->id, 100, 'All 100 units in excellent condition');
+    $receipt = $this->stateService->receiveGoods($order->fresh(), $this->warehouse->id, 100, 'All 100 units in excellent condition');
     expect($order->fresh()->status)->toBe(ImportOrderStatus::Received);
     expect((float) $receipt->received_qty)->toBe(100.00);
 
@@ -114,7 +122,7 @@ test('full import order state machine lifecycle transition', function () {
     ]);
 
     // 9. Complete Order
-    $this->stateService->completeOrder($order);
+    $this->stateService->completeOrder($order->fresh());
     expect($order->fresh()->status)->toBe(ImportOrderStatus::Complete);
 });
 
@@ -128,14 +136,14 @@ test('cannot complete import order if unconfirmed landed cost lines exist', func
         'status' => ImportOrderStatus::Draft,
     ]);
 
-    $this->stateService->transitionToPendingPayment($order);
-    $this->stateService->selectPaymentRoute($order, PaymentRoute::Market, 500);
+    $this->stateService->transitionToPendingPayment($order->fresh());
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 500);
     $paymentRequest = $order->paymentRequests()->first();
     $this->stateService->executePayment($paymentRequest, 5.0);
-    $this->stateService->confirmShipment($order);
-    $this->stateService->arriveAtPort($order);
-    $this->stateService->transportToWarehouse($order);
-    $this->stateService->receiveGoods($order, $this->warehouse->id, 10);
+    $this->stateService->confirmShipment($order->fresh());
+    $this->stateService->arriveAtPort($order->fresh());
+    $this->stateService->transportToWarehouse($order->fresh());
+    $this->stateService->receiveGoods($order->fresh(), $this->warehouse->id, 10);
 
     // Add unconfirmed landed cost line
     $order->landedCostLines()->create([
@@ -144,6 +152,6 @@ test('cannot complete import order if unconfirmed landed cost lines exist', func
         'is_confirmed' => false,
     ]);
 
-    expect(fn () => $this->stateService->completeOrder($order))
+    expect(fn () => $this->stateService->completeOrder($order->fresh()))
         ->toThrow(InvalidArgumentException::class);
 });

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 use App\Models\Company;
 use App\Models\OperatingUnit;
+use App\Models\Role;
+use App\Models\UnitBlueprint;
 use App\Models\User;
+use App\Models\UserRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -18,17 +21,35 @@ beforeEach(function () {
         'timezone' => 'UTC',
     ]);
 
+    $this->blueprint = UnitBlueprint::create([
+        'name' => 'Standard Blueprint',
+        'workflow_set' => [],
+        'default_role_template' => [],
+        'default_inventory_config' => [],
+    ]);
+
     $this->operatingUnit = OperatingUnit::create([
         'company_id' => $this->company->id,
+        'blueprint_id' => $this->blueprint->id,
         'name' => 'Main Operating Unit',
         'unit_type' => 'factory',
         'currency' => 'LYD',
         'status' => 'active',
     ]);
 
+    $this->role = Role::create([
+        'name' => 'Admin',
+        'slug' => 'admin',
+    ]);
+
     $this->user = User::factory()->create([
-        'operating_unit_id' => $this->operatingUnit->id,
         'must_change_password' => false,
+    ]);
+
+    UserRole::create([
+        'user_id' => $this->user->id,
+        'role_id' => $this->role->id,
+        'operating_unit_id' => $this->operatingUnit->id,
     ]);
 });
 
