@@ -1,0 +1,218 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Enums\ImportOrderStatus;
+use App\Enums\PaymentRequestStatus;
+use App\Enums\PaymentRoute;
+use App\Models\BankHold;
+use App\Models\GoodsReceipt;
+use App\Models\ImportOrder;
+use App\Models\PaymentRequest;
+use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
+
+final class ImportOrderStateService
+{
+    public function transitionToPendingPayment(ImportOrder $order): ImportOrder
+    {
+        return DB::transaction(function () use ($order) {
+            if ($order->status !== ImportOrderStatus::Draft) {
+                throw new InvalidArgumentException('Order must be in draft status to transition to pending payment.');
+            }
+
+            $amountRequested = (float) $order->negotiated_price * (float) $order->quantity;
+
+            PaymentRequest::create([
+                'operating_unit_id' => $order->operating_unit_id,
+                'import_order_id' => $order->id,
+                'route' => PaymentRoute::Bank,
+                'amount_requested' => $amountRequested,
+                'status' => PaymentRequestStatus::Pending,
+            ]);
+
+            $order->update([
+                'status' => ImportOrderStatus::PendingPayment,
+            ]);
+
+            return $order->refresh();
+        });
+    }
+
+    public function selectPaymentRoute(
+        ImportOrder $order,
+        PaymentRoute $route,
+        float $amountRequested,
+        ?float $heldAmountLyd = null,
+        ?string $invoiceRef = null
+    ): ImportOrder {
+        return DB::transaction(function () use ($order, $route, $amountRequested, $heldAmountLyd, $invoiceRef) {
+            if ($order->status !== ImportOrderStatus::PendingPayment) {
+                throw new InvalidArgumentException('Order must be in pending_payment status to select payment route.');
+            }
+
+            $paymentRequest = $order->paymentRequests()->where('status', PaymentRequestStatus::Pending)->first();
+
+            if (! $paymentRequest) {
+                $paymentRequest = PaymentRequest::create([
+                    'operating_unit_id' => $order->operating_unit_id,
+                    'import_order_id' => $order->id,
+                    'route' => $route,
+                    'amount_requested' => $amountRequested,
+                    'status' => PaymentRequestStatus::Pending,
+                ]);
+            } else {
+                $paymentRequest->update([
+                    'route' => $route,
+                    'invoice_ref' => $invoiceRef,
+                    'amount_requested' => $amountRequested,
+                ]);
+            }
+
+            if ($route === PaymentRoute::Bank) {
+                if ($heldAmountLyd === null || $heldAmountLyd <= 0) {
+                    throw new InvalidArgumentException('Held amount in LYD is required for bank payment route.');
+                }
+
+                BankHold::create([
+                    'payment_request_id' => $paymentRequest->id,
+                    'held_amount_lyd' => $heldAmountLyd,
+                    'exact_amount_used' => 0,
+                    'released_amount' => 0,
+                ]);
+
+                $order->update(['status' => ImportOrderStatus::AwaitingBankApproval]);
+            } else {
+                $order->update(['status' => ImportOrderStatus::AwaitingTransfer]);
+            }
+
+            return $order->refresh();
+        });
+    }
+
+    public function executePayment(
+        PaymentRequest $paymentRequest,
+        float $fxRateUsed,
+        ?float $exactAmountUsedLyd = null,
+        ?string $bankReference = null
+    ): PaymentRequest {
+        return DB::transaction(function () use ($paymentRequest, $fxRateUsed, $exactAmountUsedLyd, $bankReference) {
+            if ($paymentRequest->status !== PaymentRequestStatus::Pending) {
+                throw new InvalidArgumentException('Payment request is not pending.');
+            }
+
+            $paymentRequest->update([
+                'fx_rate_used' => $fxRateUsed,
+                'status' => PaymentRequestStatus::Paid,
+            ]);
+
+            if ($paymentRequest->route === PaymentRoute::Bank && $paymentRequest->bankHold) {
+                $exactUsed = $exactAmountUsedLyd ?? ((float) $paymentRequest->amount_requested * $fxRateUsed);
+                $held = (float) $paymentRequest->bankHold->held_amount_lyd;
+                $released = max(0, $held - $exactUsed);
+
+                $paymentRequest->bankHold->update([
+                    'exact_amount_used' => $exactUsed,
+                    'released_amount' => $released,
+                    'bank_reference' => $bankReference,
+                ]);
+            }
+
+            $order = $paymentRequest->importOrder;
+            $order->update(['status' => ImportOrderStatus::Paid]);
+
+            return $paymentRequest->refresh();
+        });
+    }
+
+    public function confirmShipment(ImportOrder $order): ImportOrder
+    {
+        return DB::transaction(function () use ($order) {
+            if ($order->status !== ImportOrderStatus::Paid) {
+                throw new InvalidArgumentException('Order must be paid before confirming shipment.');
+            }
+
+            $order->update(['status' => ImportOrderStatus::InTransit]);
+
+            return $order->refresh();
+        });
+    }
+
+    public function arriveAtPort(ImportOrder $order): ImportOrder
+    {
+        return DB::transaction(function () use ($order) {
+            if ($order->status !== ImportOrderStatus::InTransit) {
+                throw new InvalidArgumentException('Order must be in_transit before arriving at port.');
+            }
+
+            $order->update(['status' => ImportOrderStatus::AtPort]);
+
+            return $order->refresh();
+        });
+    }
+
+    public function transportToWarehouse(ImportOrder $order): ImportOrder
+    {
+        return DB::transaction(function () use ($order) {
+            if ($order->status !== ImportOrderStatus::AtPort) {
+                throw new InvalidArgumentException('Order must be at_port before transporting to warehouse.');
+            }
+
+            $order->update(['status' => ImportOrderStatus::AwaitingReceipt]);
+
+            return $order->refresh();
+        });
+    }
+
+    public function receiveGoods(
+        ImportOrder $order,
+        string $warehouseId,
+        float $receivedQty,
+        ?string $notes = null
+    ): GoodsReceipt {
+        return DB::transaction(function () use ($order, $warehouseId, $receivedQty, $notes) {
+            if ($order->status !== ImportOrderStatus::AwaitingReceipt) {
+                throw new InvalidArgumentException('Order must be awaiting_receipt before receiving goods.');
+            }
+
+            if ($receivedQty > (float) $order->quantity) {
+                throw new InvalidArgumentException('Received quantity cannot exceed ordered quantity.');
+            }
+
+            $receipt = GoodsReceipt::create([
+                'import_order_id' => $order->id,
+                'warehouse_id' => $warehouseId,
+                'received_qty' => $receivedQty,
+                'condition_notes' => $notes,
+            ]);
+
+            $order->update(['status' => ImportOrderStatus::Received]);
+
+            return $receipt;
+        });
+    }
+
+    public function completeOrder(ImportOrder $order): ImportOrder
+    {
+        return DB::transaction(function () use ($order) {
+            if ($order->status !== ImportOrderStatus::Received) {
+                throw new InvalidArgumentException('Order must be in received status to complete.');
+            }
+
+            if (! $order->goodsReceipt) {
+                throw new InvalidArgumentException('Goods receipt must exist to complete order.');
+            }
+
+            $unconfirmedLines = $order->landedCostLines()->where('is_confirmed', false)->count();
+            if ($unconfirmedLines > 0) {
+                throw new InvalidArgumentException('All landed cost lines must be confirmed before completing order.');
+            }
+
+            $order->update(['status' => ImportOrderStatus::Complete]);
+
+            return $order->refresh();
+        });
+    }
+}

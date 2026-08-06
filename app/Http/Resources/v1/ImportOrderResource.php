@@ -1,0 +1,31 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Resources\v1;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+final class ImportOrderResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'operating_unit_id' => $this->operating_unit_id,
+            'supplier_id' => $this->supplier_id,
+            'supplier' => new SupplierResource($this->whenLoaded('supplier')),
+            'currency' => $this->currency,
+            'negotiated_price' => (float) $this->negotiated_price,
+            'quantity' => (float) $this->quantity,
+            'status' => $this->status->value ?? $this->status,
+            'record_version' => $this->record_version,
+            'payment_requests' => PaymentRequestResource::collection($this->whenLoaded('paymentRequests')),
+            'landed_cost_lines' => LandedCostLineResource::collection($this->whenLoaded('landedCostLines')),
+            'goods_receipt' => new GoodsReceiptResource($this->whenLoaded('goodsReceipt')),
+            'created_at' => $this->created_at?->toISOString(),
+            'updated_at' => $this->updated_at?->toISOString(),
+        ];
+    }
+}

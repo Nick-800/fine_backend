@@ -4,13 +4,21 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\v1\AuditLogController;
 use App\Http\Controllers\Api\v1\AuthController;
+use App\Http\Controllers\Api\v1\BankHoldController;
+use App\Http\Controllers\Api\v1\CashAccountController;
 use App\Http\Controllers\Api\v1\ClientController;
 use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityController;
 use App\Http\Controllers\Api\v1\ExternalEmployerController;
+use App\Http\Controllers\Api\v1\FxRateController;
+use App\Http\Controllers\Api\v1\GoodsReceiptController;
+use App\Http\Controllers\Api\v1\ImportOrderController;
 use App\Http\Controllers\Api\v1\InventoryMovementController;
+use App\Http\Controllers\Api\v1\LandedCostLineController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
+use App\Http\Controllers\Api\v1\PaymentRequestController;
 use App\Http\Controllers\Api\v1\RoleController;
+use App\Http\Controllers\Api\v1\SupplierController;
 use App\Http\Controllers\Api\v1\UnitBlueprintController;
 use App\Http\Controllers\Api\v1\UserController;
 use App\Http\Controllers\Api\v1\WorkOrderController;
@@ -65,6 +73,22 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('work-orders', WorkOrderController::class);
             Route::get('/inventory/stock/{sku}', [InventoryMovementController::class, 'stock']);
             Route::apiResource('inventory-movements', InventoryMovementController::class)->except(['update']);
+
+            // Phase 02: Foreign Procurement, Import Pipeline & Treasury
+            Route::apiResource('suppliers', SupplierController::class);
+            Route::post('/import-orders/{id}/transition', [ImportOrderController::class, 'transition']);
+            Route::apiResource('import-orders', ImportOrderController::class);
+            Route::post('/payment-requests/{id}/execute', [PaymentRequestController::class, 'execute']);
+            Route::get('/payment-requests', [PaymentRequestController::class, 'index']);
+            Route::get('/bank-holds', [BankHoldController::class, 'index']);
+            Route::get('/import-orders/{id}/landed-cost-lines', [LandedCostLineController::class, 'index']);
+            Route::post('/import-orders/{id}/landed-cost-lines', [LandedCostLineController::class, 'store']);
+            Route::post('/import-orders/{id}/landed-cost-lines/{lineId}/confirm', [LandedCostLineController::class, 'confirm']);
+            Route::get('/import-orders/{id}/goods-receipts', [GoodsReceiptController::class, 'index']);
+            Route::get('/fx-rates', [FxRateController::class, 'index']);
+            Route::post('/fx-rates', [FxRateController::class, 'store']);
+            Route::get('/cash-accounts', [CashAccountController::class, 'index']);
+            Route::post('/cash-accounts', [CashAccountController::class, 'store']);
         });
     });
 });
