@@ -198,5 +198,13 @@ class DatabaseSeeder extends Seeder
                 'operating_unit_id' => $m['unit_id'], // Scoped to unit
             ]);
         }
+
+        // 6. Execute Domain Seeders
+        $this->call([
+            EntitySeeder::class,
+            DomainModelsSeeder::class,
+            ProcurementTreasurySeeder::class,
+            WorkOrderInventorySeeder::class,
+        ]);
     }
 }
