@@ -200,11 +200,15 @@ class DatabaseSeeder extends Seeder
         }
 
         // 6. Execute Domain Seeders
+        // Order matters: inventory master data must exist before a foam run can
+        // consume chemicals and produce blocks against it.
         $this->call([
             EntitySeeder::class,
             DomainModelsSeeder::class,
             ProcurementTreasurySeeder::class,
             WorkOrderInventorySeeder::class,
+            InventorySeeder::class,
+            FoamProductionSeeder::class,
         ]);
     }
 }
