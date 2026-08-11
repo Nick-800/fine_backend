@@ -10,6 +10,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class StockLotService
 {
@@ -68,6 +69,123 @@ class StockLotService
         }
 
         return $query->latest()->paginate($perPage);
+    }
+
+    /**
+     * Draw a measured amount out of a lot, recovering any container it empties.
+     *
+     * `quantity` and `container_quantity` drift apart on purpose. Taking 15L from
+     * a lot of five full 40L barrels leaves 185L across *still five* barrels — one
+     * of them open. Deriving the container count from the volume would report
+     * 4.625 barrels, which is meaningless: the open barrel still occupies floor
+     * space and still has to be counted.
+     *
+     * The container count is therefore stored, not computed. This updates it using
+     * ceil(quantity / capacity) as the best estimate during an automated draw, but
+     * the column stays authoritative so a physical recount or a damaged container
+     * sticks.
+     *
+     * @return array{lot: StockLot, emptied: int, drawn: float}
+     */
+    public function drawFromLot(
+        StockLot $lot,
+        float $drawQuantity,
+        string $reason,
+        ?string $referenceType = null,
+        ?string $referenceId = null,
+    ): array {
+        if ($drawQuantity <= 0) {
+            throw new InvalidArgumentException('Draw quantity must be greater than zero.');
+        }
+
+        return DB::transaction(function () use ($lot, $drawQuantity, $reason, $referenceType, $referenceId): array {
+            $locked = StockLot::whereKey($lot->getKey())->lockForUpdate()->firstOrFail();
+
+            if ($locked->status !== 'available') {
+                throw new InvalidArgumentException(
+                    "Lot {$locked->lot_number} is {$locked->status} and cannot be drawn from."
+                );
+            }
+
+            $onHand = (float) $locked->quantity;
+
+            if ($drawQuantity > $onHand) {
+                throw new InvalidArgumentException(
+                    "Cannot draw {$drawQuantity} from lot {$locked->lot_number}; only {$onHand} on hand."
+                );
+            }
+
+            $item = $locked->inventoryItem;
+            $containersBefore = (int) ceil((float) $locked->container_quantity);
+            $quantityAfter = round($onHand - $drawQuantity, 4);
+
+            $containersAfter = $containersBefore;
+
+            if ($item !== null && $item->tracksContainers()) {
+                $capacity = (float) $item->container_capacity;
+                $containersAfter = (int) ceil($quantityAfter / $capacity);
+            }
+
+            $emptied = max(0, $containersBefore - $containersAfter);
+
+            $locked->quantity = $quantityAfter;
+            $locked->container_quantity = $containersAfter;
+
+            if ($quantityAfter === 0.0) {
+                $locked->status = 'consumed';
+            }
+
+            $locked->save();
+
+            $unitId = $locked->warehouse?->operating_unit_id;
+
+            InventoryMovement::create([
+                'operating_unit_id' => $unitId,
+                'stock_lot_id' => $locked->id,
+                'from_warehouse_id' => $locked->warehouse_id,
+                'sku' => $item?->sku ?? 'ITEM',
+                'movement_type' => 'issue',
+                'quantity_delta' => -$drawQuantity,
+                'unit_cost' => (float) $locked->unit_cost,
+                'reason' => $reason,
+                'reference_document_type' => $referenceType,
+                'reference_id' => $referenceId,
+            ]);
+
+            // Empties are physical assets that come back off the floor, so they
+            // re-enter stock rather than vanishing. They arrive at zero cost: the
+            // barrel's cost was already carried by the chemical it held.
+            if ($emptied > 0 && $item?->empty_container_item_id !== null) {
+                $emptyLot = StockLot::create([
+                    'inventory_item_id' => $item->empty_container_item_id,
+                    'warehouse_id' => $locked->warehouse_id,
+                    'lot_number' => 'EMPTY-'.$locked->lot_number.'-'.now()->format('YmdHis').'-'.$emptied,
+                    'quantity' => $emptied,
+                    'container_quantity' => $emptied,
+                    'unit_cost' => 0,
+                    'status' => 'available',
+                ]);
+
+                InventoryMovement::create([
+                    'operating_unit_id' => $unitId,
+                    'stock_lot_id' => $emptyLot->id,
+                    'to_warehouse_id' => $locked->warehouse_id,
+                    'sku' => $item->emptyContainerItem?->sku ?? 'EMPTY-CONTAINER',
+                    'movement_type' => 'byproduct_yield',
+                    'quantity_delta' => $emptied,
+                    'unit_cost' => 0,
+                    'reason' => 'empty_container_recovered',
+                    'reference_document_type' => $referenceType,
+                    'reference_id' => $referenceId,
+                ]);
+            }
+
+            return [
+                'lot' => $locked->fresh(['inventoryItem', 'warehouse']),
+                'emptied' => $emptied,
+                'drawn' => $drawQuantity,
+            ];
+        });
     }
 
     /**
@@ -132,7 +250,7 @@ class StockLotService
 
             if ($remnantAction === 'restock_remnant') {
                 if (! $remnantDimensions || ! isset($remnantDimensions['length_m'], $remnantDimensions['width_m'], $remnantDimensions['height_m'])) {
-                    throw new \InvalidArgumentException('Remnant dimensions (length, width, height) are required when restocking remnant block.');
+                    throw new InvalidArgumentException('Remnant dimensions (length, width, height) are required when restocking remnant block.');
                 }
 
                 // Per-parent revision counter. The previous implementation appended

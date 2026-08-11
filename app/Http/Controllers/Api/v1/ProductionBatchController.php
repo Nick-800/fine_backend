@@ -200,8 +200,10 @@ class ProductionBatchController extends Controller
             'groups.*.length_m' => ['required', 'numeric', 'min:0.001'],
             'groups.*.height_m' => ['required', 'numeric', 'min:0.001'],
             'groups.*.pressure' => ['required_if:groups.*.kind,block', 'integer', 'min:1'],
-            'groups.*.inventory_item_id' => ['required_if:groups.*.kind,block', 'uuid', 'exists:inventory_items,id'],
-            'groups.*.warehouse_id' => ['required_if:groups.*.kind,block', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
+            // Scrap now enters stock too, so it needs an item and a location just
+            // like a block does.
+            'groups.*.inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
+            'groups.*.warehouse_id' => ['required', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
             'groups.*.unit_cost' => ['nullable', 'numeric', 'min:0'],
             'groups.*.grade' => ['nullable', 'string', 'in:standard,acceptable_variant,defective_usable,reject'],
             'groups.*.color' => ['nullable', 'string', 'max:100'],
@@ -213,6 +215,8 @@ class ProductionBatchController extends Controller
             'batch' => $result['batch'],
             'blocks' => $result['blocks'],
             'blocks_created' => count($result['blocks']),
+            'scrap_lots' => $result['scrap_lots'],
+            'scrap_lots_created' => count($result['scrap_lots']),
             'scrap_volume_m3' => $result['scrap_volume_m3'],
         ], 201);
     }

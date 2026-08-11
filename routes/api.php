@@ -133,6 +133,9 @@ Route::prefix('v1')->group(function () {
             Route::post('/stock-lots/{id}/process-cut-remnant', [StockLotController::class, 'processCutRemnant']);
             Route::apiResource('stock-lots', StockLotController::class);
             Route::get('/tank-stocks', [TankStockController::class, 'index']);
+            // Balanced refill sourced from a real lot; /refill remains as the
+            // unsourced adjustment path for opening balances and corrections.
+            Route::post('/tank-stocks/refill-from-lot', [TankStockController::class, 'refillFromLot']);
             Route::post('/tank-stocks/refill', [TankStockController::class, 'refill']);
             Route::get('/tank-stocks/{id}', [TankStockController::class, 'show']);
             Route::get('/stock-adjustment-requests', [StockAdjustmentRequestController::class, 'index']);

@@ -62,8 +62,26 @@ final class ProductionBatch extends Model
         return $this->belongsTo(Client::class, 'requested_by_client_id');
     }
 
+    /**
+     * Every lot the run produced — serialized blocks and zero-cost scrap alike.
+     */
     public function stockLots(): HasMany
     {
         return $this->hasMany(StockLot::class);
+    }
+
+    /**
+     * Serialized blocks only. Scrap lots carry no sequence, and must be excluded
+     * from anything that reasons about blocks: cost apportionment would otherwise
+     * dilute cost onto scrap, and the grading guard would flag scrap as unmeasured.
+     */
+    public function blocks(): HasMany
+    {
+        return $this->hasMany(StockLot::class)->whereNotNull('sequence_in_batch');
+    }
+
+    public function scrapLots(): HasMany
+    {
+        return $this->hasMany(StockLot::class)->whereNull('sequence_in_batch');
     }
 }

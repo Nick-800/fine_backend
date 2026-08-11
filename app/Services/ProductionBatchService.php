@@ -27,6 +27,16 @@ class ProductionBatchService
     }
 
     /**
+     * Scrap carries no block code — it is not serialized. It gets a plainly
+     * distinguishable number so it can never be mistaken for a block on a label
+     * or in a stock listing.
+     */
+    public function composeScrapLotNumber(ProductionBatch $batch, int $index): string
+    {
+        return sprintf('SCRAP-%d-%02d', $batch->operation_number, $index);
+    }
+
+    /**
      * The operation number the operator is expected to enter next.
      *
      * Counts soft-deleted batches: a deleted batch may still have labelled
@@ -102,7 +112,9 @@ class ProductionBatchService
             return;
         }
 
-        $blocks = $batch->stockLots()->orderBy('sequence_in_batch')->get();
+        // Blocks only: scrap enters at zero cost and must stay out of the
+        // denominator, or every real block would be under-costed.
+        $blocks = $batch->blocks()->orderBy('sequence_in_batch')->get();
         $totalVolume = (float) $blocks->sum(fn (StockLot $lot) => (float) $lot->volume_m3);
 
         if ($blocks->isEmpty() || $totalVolume <= 0.0) {
@@ -133,7 +145,8 @@ class ProductionBatchService
         // FOAM-05: a batch cannot be declared graded while blocks are missing
         // their measured pressure, and cannot close with no output at all.
         if ($target === ProductionBatchStatus::Graded) {
-            $blockCount = $batch->stockLots()->count();
+            // Scrap is never graded, so it is excluded from both checks.
+            $blockCount = $batch->blocks()->count();
 
             if ($blockCount === 0) {
                 throw new InvalidStateTransitionException(
@@ -141,7 +154,7 @@ class ProductionBatchService
                 );
             }
 
-            $ungraded = $batch->stockLots()->whereNull('pressure')->count();
+            $ungraded = $batch->blocks()->whereNull('pressure')->count();
 
             if ($ungraded > 0) {
                 throw new InvalidStateTransitionException(
@@ -172,8 +185,15 @@ class ProductionBatchService
             $locked = ProductionBatch::whereKey($batch->getKey())->lockForUpdate()->firstOrFail();
 
             $blocks = [];
+            $scrapLots = [];
             $scrapVolume = 0.0;
             $width = (float) $locked->bun_width_m;
+
+            // Scrap lots are numbered per batch, independently of block sequences.
+            $scrapIndex = StockLot::withTrashed()
+                ->where('production_batch_id', $locked->id)
+                ->whereNull('sequence_in_batch')
+                ->count() + 1;
 
             foreach ($groups as $group) {
                 $count = (int) $group['count'];
@@ -182,7 +202,43 @@ class ProductionBatchService
                 $unitVolume = round($length * $width * $height, 4);
 
                 if (($group['kind'] ?? 'block') === 'scrap') {
-                    $scrapVolume += round($unitVolume * $count, 4);
+                    $groupVolume = round($unitVolume * $count, 4);
+                    $scrapVolume += $groupVolume;
+
+                    // Scrap is real material and enters stock, but at zero cost:
+                    // the run's whole material spend is carried by the blocks
+                    // (see apportionMaterialCost). Standard byproduct treatment.
+                    //
+                    // It consumes no sequence number — it is not serialized, so it
+                    // gets no block code and must not create gaps in the printed
+                    // ones.
+                    $scrapLot = StockLot::create([
+                        'inventory_item_id' => $group['inventory_item_id'],
+                        'warehouse_id' => $group['warehouse_id'],
+                        'production_batch_id' => $locked->id,
+                        'lot_number' => $this->composeScrapLotNumber($locked, $scrapIndex++),
+                        // Quantity is total volume, not a piece count. Dimensions are
+                        // deliberately left off: with count > 1 they describe one
+                        // piece, which would contradict the total in quantity.
+                        'quantity' => $groupVolume,
+                        'unit_cost' => 0,
+                        'status' => 'available',
+                    ]);
+
+                    InventoryMovement::create([
+                        'operating_unit_id' => $locked->operating_unit_id,
+                        'stock_lot_id' => $scrapLot->id,
+                        'to_warehouse_id' => $scrapLot->warehouse_id,
+                        'sku' => $scrapLot->inventoryItem?->sku ?? 'FOAM-SCRAP',
+                        'movement_type' => 'byproduct_yield',
+                        'quantity_delta' => $groupVolume,
+                        'unit_cost' => 0,
+                        'reason' => 'foam_run_scrap',
+                        'reference_document_type' => 'ProductionBatch',
+                        'reference_id' => $locked->id,
+                    ]);
+
+                    $scrapLots[] = $scrapLot;
 
                     continue;
                 }
@@ -246,6 +302,7 @@ class ProductionBatchService
 
             return [
                 'blocks' => $blocks,
+                'scrap_lots' => $scrapLots,
                 'scrap_volume_m3' => round($scrapVolume, 4),
                 'batch' => $locked->fresh(),
             ];

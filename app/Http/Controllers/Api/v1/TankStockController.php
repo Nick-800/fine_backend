@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
+use App\Models\StockLot;
 use App\Models\TankStock;
+use App\Rules\ExistsInCurrentUnit;
 use App\Services\TankStockService;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
@@ -34,6 +36,36 @@ class TankStockController extends Controller
         return response()->json(
             TankStock::with(['chemicalItem', 'operatingUnit'])->findOrFail($id)
         );
+    }
+
+    /**
+     * Pour a source lot into the tank — the balanced refill.
+     *
+     * Cost is taken from the lot, not the request, so it cannot disagree with
+     * what was actually paid for the material.
+     */
+    public function refillFromLot(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'source_stock_lot_id' => ['required', 'uuid', new ExistsInCurrentUnit(StockLot::class, 'stock lot')],
+            'draw_quantity' => ['required_without:draw_containers', 'nullable', 'numeric', 'gt:0'],
+            'draw_containers' => ['required_without:draw_quantity', 'nullable', 'integer', 'min:1'],
+            'reference_id' => ['nullable', 'uuid'],
+        ]);
+
+        $lot = StockLot::with(['inventoryItem', 'warehouse'])->findOrFail($validated['source_stock_lot_id']);
+
+        $tank = $this->tankStockService->refillFromLot(
+            $lot,
+            isset($validated['draw_quantity']) ? (float) $validated['draw_quantity'] : null,
+            isset($validated['draw_containers']) ? (int) $validated['draw_containers'] : null,
+            $validated['reference_id'] ?? null,
+        );
+
+        return response()->json([
+            'tank' => $tank->load(['chemicalItem', 'operatingUnit']),
+            'source_lot' => $lot->fresh(['inventoryItem', 'warehouse']),
+        ], 201);
     }
 
     public function refill(Request $request): JsonResponse

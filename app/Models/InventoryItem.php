@@ -24,12 +24,29 @@ final class InventoryItem extends Model
         'unit_of_measure',
         'primary_uom',
         'secondary_uom',
+        'container_capacity',
+        'empty_container_item_id',
         'default_attributes',
     ];
 
     protected $casts = [
         'default_attributes' => 'array',
+        'container_capacity' => 'decimal:4',
     ];
+
+    /**
+     * The item representing this product's empty container, credited back to
+     * stock when one drains.
+     */
+    public function emptyContainerItem(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'empty_container_item_id');
+    }
+
+    public function tracksContainers(): bool
+    {
+        return $this->container_capacity !== null && (float) $this->container_capacity > 0;
+    }
 
     public function category(): BelongsTo
     {

@@ -70,6 +70,22 @@ beforeEach(function () {
         'status' => 'graded',
     ]);
 
+    $this->scrapItem = InventoryItem::create([
+        'name' => 'Foam Scrap Fill',
+        'sku' => 'SCRAP-FILL',
+        'item_type' => 'byproduct_fill',
+        'unit_of_measure' => 'm3',
+    ]);
+
+    $this->scrapGroup = fn (int $count, float $length, float $height) => [
+        'kind' => 'scrap',
+        'count' => $count,
+        'length_m' => $length,
+        'height_m' => $height,
+        'inventory_item_id' => $this->scrapItem->id,
+        'warehouse_id' => $this->warehouse->id,
+    ];
+
     $this->blockGroup = fn (int $count, float $length, float $height, int $pressure = 35) => [
         'kind' => 'block',
         'count' => $count,
@@ -156,24 +172,50 @@ test('volume is computed from dimensions and bun width', function () {
         ->and((float) $lot->width_m)->toBe(2.4);
 });
 
-test('scrap creates no lot and does not advance the sequence', function () {
+test('scrap enters stock at zero cost without consuming a sequence', function () {
     $batch = ($this->makeBatch)();
 
     ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
         'groups' => [
-            ['kind' => 'scrap', 'count' => 1, 'length_m' => 2.0, 'height_m' => 1.0],
+            ($this->scrapGroup)(1, 2.0, 1.0),
             ($this->blockGroup)(1, 2.0, 0.8),
         ],
-    ])->assertStatus(201)->assertJsonPath('blocks_created', 1);
+    ])->assertStatus(201)
+        ->assertJsonPath('blocks_created', 1)
+        ->assertJsonPath('scrap_lots_created', 1);
 
     $batch->refresh();
 
     // Scrap volume: 2.4 x 2.0 x 1.0 = 4.8
     expect((float) $batch->scrap_volume_m3)->toBe(4.8)
+        // The block still takes sequence 1 — scrap consumed none.
         ->and($batch->next_sequence)->toBe(2);
 
-    // The single block still takes sequence 1 — scrap consumed nothing.
-    expect(StockLot::where('production_batch_id', $batch->id)->first()->lot_number)->toBe('001-35-191');
+    $scrap = $batch->scrapLots()->first();
+
+    expect($scrap->lot_number)->toBe('SCRAP-191-01')
+        ->and((float) $scrap->quantity)->toBe(4.8)
+        ->and((float) $scrap->unit_cost)->toBe(0.0)
+        ->and($scrap->sequence_in_batch)->toBeNull();
+
+    // The block keeps its own code, untouched by the scrap row.
+    expect($batch->blocks()->first()->lot_number)->toBe('001-35-191');
+});
+
+test('scrap yields a byproduct movement', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [($this->scrapGroup)(1, 2.0, 1.0), ($this->blockGroup)(1, 2.0, 0.8)],
+    ])->assertStatus(201);
+
+    $movements = ($this->api)()
+        ->getJson("/api/v1/inventory-movements/for-document/ProductionBatch/{$batch->id}")
+        ->json();
+
+    $types = collect($movements)->pluck('movement_type')->sort()->values()->all();
+
+    expect($types)->toBe(['byproduct_yield', 'production_output']);
 });
 
 test('block and scrap volumes reconcile to the run total', function () {
@@ -188,14 +230,14 @@ test('block and scrap volumes reconcile to the run total', function () {
             ($this->blockGroup)(1, 2.5, 0.59),
             ($this->blockGroup)(1, 1.95, 0.69),
             ($this->blockGroup)(1, 2.3, 0.75),
-            ['kind' => 'scrap', 'count' => 1, 'length_m' => 2.0, 'height_m' => 1.0],
-            ['kind' => 'scrap', 'count' => 1, 'length_m' => 2.0, 'height_m' => 0.5],
+            ($this->scrapGroup)(1, 2.0, 1.0),
+            ($this->scrapGroup)(1, 2.0, 0.5),
         ],
     ])->assertStatus(201)->assertJsonPath('blocks_created', 34);
 
     $batch->refresh();
 
-    $blockVolume = (float) StockLot::where('production_batch_id', $batch->id)->sum('volume_m3');
+    $blockVolume = (float) $batch->blocks()->sum('volume_m3');
     $total = round($blockVolume + (float) $batch->scrap_volume_m3, 3);
 
     // Matches the printed total on the source production report.

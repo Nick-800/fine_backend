@@ -42,6 +42,9 @@ beforeEach(function () {
     $this->tdi = InventoryItem::create([
         'name' => 'TDI', 'sku' => 'CHEM-TDI', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
     ]);
+    $this->scrapItem = InventoryItem::create([
+        'name' => 'Foam Scrap Fill', 'sku' => 'SCRAP-FILL', 'item_type' => 'byproduct_fill', 'unit_of_measure' => 'm3',
+    ]);
 
     $this->api = fn () => $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
@@ -197,14 +200,15 @@ test('scrap volume is excluded from cost apportionment', function () {
         'groups' => [
             ['kind' => 'block', 'count' => 1, 'length_m' => 2.0, 'height_m' => 0.8, 'pressure' => 35,
                 'inventory_item_id' => $this->blockItem->id, 'warehouse_id' => $this->warehouse->id],
-            ['kind' => 'scrap', 'count' => 1, 'length_m' => 2.0, 'height_m' => 1.0],
+            ['kind' => 'scrap', 'count' => 1, 'length_m' => 2.0, 'height_m' => 1.0,
+                'inventory_item_id' => $this->scrapItem->id, 'warehouse_id' => $this->warehouse->id],
         ],
     ])->assertStatus(201);
 
     ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/transition", ['status' => 'graded']);
     ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/transition", ['status' => 'closed']);
 
-    // The single block carries the whole 2000; scrap absorbs none of it.
-    $lot = StockLot::where('production_batch_id', $batch->id)->first();
-    expect((float) $lot->unit_cost)->toBe(2000.0);
+    // The single block carries the whole 2000; scrap is in stock but at zero.
+    expect((float) $batch->blocks()->first()->unit_cost)->toBe(2000.0)
+        ->and((float) $batch->scrapLots()->first()->unit_cost)->toBe(0.0);
 });
