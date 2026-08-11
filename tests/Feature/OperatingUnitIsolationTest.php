@@ -275,6 +275,29 @@ test('a stock lot cannot be attached to another unit production batch', function
     ])->assertStatus(422)->assertJsonValidationErrors('production_batch_id');
 });
 
+test('an inventory item cannot be filed under another unit category', function () {
+    ($this->asA)()->postJson('/api/v1/inventory-items', [
+        'name' => 'Cross Item',
+        'sku' => 'CROSS-1',
+        'item_type' => 'raw_material',
+        'unit_of_measure' => 'kg',
+        'category_id' => $this->categoryB->id,
+    ])->assertStatus(422)->assertJsonValidationErrors('category_id');
+});
+
+test('an inventory item can use a shared category', function () {
+    app(CurrentUnitContext::class)->clear();
+    $shared = ItemCategory::create(['operating_unit_id' => null, 'name' => 'Shared', 'code' => 'CAT-SH2']);
+
+    ($this->asA)()->postJson('/api/v1/inventory-items', [
+        'name' => 'Shared Item',
+        'sku' => 'SHARED-1',
+        'item_type' => 'raw_material',
+        'unit_of_measure' => 'kg',
+        'category_id' => $shared->id,
+    ])->assertStatus(201);
+});
+
 test('an owner is not blocked by the scope-aware existence rule', function () {
     // With no unit in context the scopes no-op, so any real warehouse is valid.
     $this->actingAs($this->owner)->postJson('/api/v1/stock-lots', [

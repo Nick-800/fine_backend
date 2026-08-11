@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
+use App\Models\ItemCategory;
+use App\Rules\ExistsInCurrentUnit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -37,7 +39,7 @@ class InventoryItemController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'category_id' => ['nullable', 'uuid', 'exists:item_categories,id'],
+            'category_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(ItemCategory::class, 'category')],
             'name' => ['required', 'string', 'max:255'],
             'sku' => ['required', 'string', 'max:100', 'unique:inventory_items,sku'],
             'item_type' => ['required', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
@@ -70,7 +72,7 @@ class InventoryItemController extends Controller
         $item = InventoryItem::findOrFail($id);
 
         $validated = $request->validate([
-            'category_id' => ['nullable', 'uuid', 'exists:item_categories,id'],
+            'category_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(ItemCategory::class, 'category')],
             'name' => ['sometimes', 'string', 'max:255'],
             'sku' => ['sometimes', 'string', 'max:100', "unique:inventory_items,sku,{$id}"],
             'item_type' => ['sometimes', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
