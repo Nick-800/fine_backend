@@ -19,7 +19,10 @@ class StockLotController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $filters = $request->only(['status', 'grade', 'warehouse_id', 'category_id', 'production_batch_id', 'attrs']);
+        $filters = $request->only([
+            'status', 'grade', 'warehouse_id', 'category_id',
+            'production_batch_id', 'inventory_item_id', 'attrs',
+        ]);
         $perPage = $request->integer('per_page', 15);
 
         $lots = $this->stockLotService->getFilteredLots($filters, $perPage);

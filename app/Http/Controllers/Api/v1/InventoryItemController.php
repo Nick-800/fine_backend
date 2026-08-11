@@ -46,6 +46,10 @@ class InventoryItemController extends Controller
             'unit_of_measure' => ['required', 'string'],
             'primary_uom' => ['nullable', 'string'],
             'secondary_uom' => ['nullable', 'string'],
+            // Container semantics: how much one container holds, and which item
+            // represents it once empty.
+            'container_capacity' => ['nullable', 'numeric', 'gt:0'],
+            'empty_container_item_id' => ['nullable', 'uuid', 'exists:inventory_items,id'],
             'default_attributes' => ['nullable', 'array'],
             'attribute_definition_ids' => ['nullable', 'array'],
             'attribute_definition_ids.*' => ['uuid', 'exists:inventory_attribute_definitions,id'],
@@ -79,6 +83,10 @@ class InventoryItemController extends Controller
             'unit_of_measure' => ['sometimes', 'string'],
             'primary_uom' => ['nullable', 'string'],
             'secondary_uom' => ['nullable', 'string'],
+            // Container semantics: how much one container holds, and which item
+            // represents it once empty.
+            'container_capacity' => ['nullable', 'numeric', 'gt:0'],
+            'empty_container_item_id' => ['nullable', 'uuid', 'exists:inventory_items,id'],
             'default_attributes' => ['nullable', 'array'],
             'attribute_definition_ids' => ['nullable', 'array'],
             'attribute_definition_ids.*' => ['uuid', 'exists:inventory_attribute_definitions,id'],

@@ -37,6 +37,10 @@ class StockLotService
             $query->where('production_batch_id', $filters['production_batch_id']);
         }
 
+        if (isset($filters['inventory_item_id']) && filled($filters['inventory_item_id'])) {
+            $query->where('inventory_item_id', $filters['inventory_item_id']);
+        }
+
         if (isset($filters['category_id']) && filled($filters['category_id'])) {
             $query->whereHas('inventoryItem', function (Builder $b) use ($filters): void {
                 $b->where('category_id', $filters['category_id']);
