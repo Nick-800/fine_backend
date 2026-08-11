@@ -362,6 +362,74 @@ test('duplicate sequences within a batch are rejected by the database', function
     ]))->toThrow(QueryException::class);
 });
 
+test('a company-wide role without a selected unit gets a clear error, not a crash', function () {
+    // Owner-style role: company-wide, so operating_unit_id is null and the
+    // middleware lets the request through with no unit context at all.
+    $owner = User::factory()->create(['must_change_password' => false]);
+    $ownerRole = Role::create(['name' => 'Owner', 'slug' => 'owner']);
+
+    UserRole::create([
+        'user_id' => $owner->id,
+        'role_id' => $ownerRole->id,
+        'operating_unit_id' => null,
+    ]);
+
+    $this->actingAs($owner)
+        ->postJson('/api/v1/production-batches', [
+            'operation_number' => 191,
+            'bun_width_m' => 2.4,
+            'confirm_non_sequential' => true,
+        ])
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'OPERATING_UNIT_REQUIRED');
+
+    expect(ProductionBatch::count())->toBe(0);
+});
+
+test('a company-wide role can create once it names a unit', function () {
+    $owner = User::factory()->create(['must_change_password' => false]);
+    $ownerRole = Role::create(['name' => 'Owner', 'slug' => 'owner']);
+
+    UserRole::create([
+        'user_id' => $owner->id,
+        'role_id' => $ownerRole->id,
+        'operating_unit_id' => null,
+    ]);
+
+    $this->actingAs($owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/production-batches', [
+            'operation_number' => 191,
+            'bun_width_m' => 2.4,
+            'confirm_non_sequential' => true,
+        ])
+        ->assertStatus(201)
+        ->assertJsonPath('operating_unit_id', $this->unit->id);
+});
+
+test('the operating unit cannot be overridden through the request body', function () {
+    $otherUnit = OperatingUnit::create([
+        'company_id' => $this->company->id,
+        'blueprint_id' => $this->blueprint->id,
+        'name' => 'Showroom',
+        'code' => 'SHOW-01',
+        'unit_type' => 'store',
+    ]);
+
+    // The user is scoped to $this->unit; naming another unit in the body must not
+    // place the batch there.
+    ($this->api)()->postJson('/api/v1/production-batches', [
+        'operation_number' => 191,
+        'bun_width_m' => 2.4,
+        'operating_unit_id' => $otherUnit->id,
+        'confirm_non_sequential' => true,
+    ])
+        ->assertStatus(201)
+        ->assertJsonPath('operating_unit_id', $this->unit->id);
+
+    expect(ProductionBatch::where('operating_unit_id', $otherUnit->id)->exists())->toBeFalse();
+});
+
 test('stock lots can be filtered to a single production batch', function () {
     $first = ($this->makeBatch)(191);
     $second = ($this->makeBatch)(192);

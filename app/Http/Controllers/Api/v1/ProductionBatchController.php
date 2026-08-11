@@ -45,13 +45,28 @@ class ProductionBatchController extends Controller
             // still have labelled blocks in the yard.
             'operation_number' => ['required', 'integer', 'min:1', 'unique:production_batches,operation_number'],
             'bun_width_m' => ['required', 'numeric', 'min:0.001'],
-            'operating_unit_id' => ['nullable', 'uuid', 'exists:operating_units,id'],
             'requested_by_client_id' => ['nullable', 'uuid', 'exists:clients,id'],
             'formula_params' => ['nullable', 'array'],
             'status' => ['nullable', Rule::enum(ProductionBatchStatus::class)],
             'material_cost' => ['nullable', 'numeric', 'min:0'],
             'confirm_non_sequential' => ['nullable', 'boolean'],
         ]);
+
+        // The unit comes only from the request context, which ScopeOperatingUnit has
+        // already validated against the user's roles. Accepting it in the body would
+        // let a unit-scoped user create a batch inside a unit they cannot reach.
+        //
+        // Company-wide roles (Owner) carry no unit of their own, so they must name one
+        // via the header — otherwise operating_unit_id would be null against a NOT NULL
+        // column and surface as a 500 rather than something the operator can act on.
+        $unitId = $this->unitContext->getUnitId();
+
+        if ($unitId === null) {
+            return response()->json([
+                'message' => 'Select an operating unit before creating a production batch. Company-wide roles must send an X-Operating-Unit-ID header naming the unit that ran the pour.',
+                'code' => 'OPERATING_UNIT_REQUIRED',
+            ], 422);
+        }
 
         $entered = (int) $validated['operation_number'];
         $expected = $this->productionBatchService->nextExpectedOperationNumber();
@@ -70,7 +85,7 @@ class ProductionBatchController extends Controller
 
         $batch = ProductionBatch::create([
             ...$validated,
-            'operating_unit_id' => $validated['operating_unit_id'] ?? $this->unitContext->getUnitId(),
+            'operating_unit_id' => $unitId,
         ]);
 
         return response()->json($batch->load(['operatingUnit', 'requestedByClient']), 201);

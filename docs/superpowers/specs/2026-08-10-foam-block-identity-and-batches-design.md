@@ -106,7 +106,13 @@ The soft tier is what catches transpositions. It must **warn, not block** — le
 
 `operation_number` is freely editable while the batch has **no registered blocks**. Once the first block is registered, the number is **immutable** — physical labels now exist referencing it, and changing the record would put the label and the database in disagreement.
 
-### 3.2 Status enum
+### 3.2 Operating unit is taken from context only
+
+`operating_unit_id` is **not accepted in the request body**. It is read solely from `CurrentUnitContext`, which `ScopeOperatingUnit` has already validated against the caller's roles. Accepting it as input would let a unit-scoped user create a batch inside a unit they cannot otherwise reach, since the body value would win over the validated header.
+
+Company-wide roles (Owner) carry no unit of their own and the middleware lets them through with no context set. They must name a unit via `X-Operating-Unit-ID`; without it the request is rejected with **422 `OPERATING_UNIT_REQUIRED`**. Falling through would write `null` into a `NOT NULL` column and surface as a 500 the operator cannot act on.
+
+### 3.3 Status enum
 
 Per `docs/erd.md` and `DatabaseSeeder`: `planned`, `configured`, `running`, `consumed`, `curing`, `ready_for_grading`, `graded`, `closed`. Backed by a `ProductionBatchStatus` enum class, following the `ImportOrderStatus` precedent.
 
