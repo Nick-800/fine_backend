@@ -29,6 +29,13 @@ class TankStockController extends Controller
         return response()->json($query->get());
     }
 
+    public function show(string $id): JsonResponse
+    {
+        return response()->json(
+            TankStock::with(['chemicalItem', 'operatingUnit'])->findOrFail($id)
+        );
+    }
+
     public function refill(Request $request): JsonResponse
     {
         $validated = $request->validate([

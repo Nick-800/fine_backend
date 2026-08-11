@@ -46,7 +46,8 @@ class ProductionBatchController extends Controller
             // `unique` deliberately spans soft-deleted rows — a deleted batch may
             // still have labelled blocks in the yard.
             'operation_number' => ['required', 'integer', 'min:1', 'unique:production_batches,operation_number'],
-            'bun_width_m' => ['required', 'numeric', 'min:0.001'],
+            // FOAM-01: the machine physically cannot pour wider than 2.4m.
+            'bun_width_m' => ['required', 'numeric', 'min:0.001', 'max:'.ProductionBatch::MAX_BUN_WIDTH_M],
             'requested_by_client_id' => ['nullable', 'uuid', 'exists:clients,id'],
             'formula_params' => ['nullable', 'array'],
             'status' => ['nullable', Rule::enum(ProductionBatchStatus::class)],
@@ -111,7 +112,7 @@ class ProductionBatchController extends Controller
                 'sometimes', 'integer', 'min:1',
                 Rule::unique('production_batches', 'operation_number')->ignore($batch->id),
             ],
-            'bun_width_m' => ['sometimes', 'numeric', 'min:0.001'],
+            'bun_width_m' => ['sometimes', 'numeric', 'min:0.001', 'max:'.ProductionBatch::MAX_BUN_WIDTH_M],
             'requested_by_client_id' => ['nullable', 'uuid', 'exists:clients,id'],
             'formula_params' => ['nullable', 'array'],
             'status' => ['sometimes', Rule::enum(ProductionBatchStatus::class)],
@@ -133,6 +134,25 @@ class ProductionBatchController extends Controller
         $batch->update($validated);
 
         return response()->json($batch->load(['operatingUnit', 'requestedByClient']));
+    }
+
+    /**
+     * Advance the batch one step along its lifecycle (Phase 04 §4.4).
+     */
+    public function transition(Request $request, string $id): JsonResponse
+    {
+        $batch = ProductionBatch::findOrFail($id);
+
+        $validated = $request->validate([
+            'status' => ['required', Rule::enum(ProductionBatchStatus::class)],
+        ]);
+
+        $updated = $this->productionBatchService->transition(
+            $batch,
+            ProductionBatchStatus::from($validated['status'])
+        );
+
+        return response()->json($updated->load(['operatingUnit', 'requestedByClient']));
     }
 
     public function destroy(string $id): JsonResponse
@@ -163,6 +183,15 @@ class ProductionBatchController extends Controller
     public function registerBlocks(Request $request, string $id): JsonResponse
     {
         $batch = ProductionBatch::findOrFail($id);
+
+        // Blocks are keyed in from the completed sheet after grading, so the batch
+        // must have reached that point in its lifecycle.
+        if (! $batch->status->acceptsBlockRegistration()) {
+            return response()->json([
+                'message' => "Blocks can only be registered once operation {$batch->operation_number} is ready for grading; it is currently {$batch->status->value}.",
+                'code' => 'INVALID_STATE_TRANSITION',
+            ], 422);
+        }
 
         $validated = $request->validate([
             'groups' => ['required', 'array', 'min:1'],

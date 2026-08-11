@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\ProductionBatchStatus;
+use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToOperatingUnit;
 use App\Models\Traits\HasOptimisticLocking;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -16,7 +17,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 final class ProductionBatch extends Model
 {
-    use BelongsToOperatingUnit, HasFactory, HasOptimisticLocking, HasUuids, SoftDeletes;
+    use Auditable, BelongsToOperatingUnit, HasFactory, HasOptimisticLocking, HasUuids, SoftDeletes;
+
+    /**
+     * FOAM-01: the foam machine's physical pour width. A run cannot exceed it,
+     * and every observed production report shows 2.4.
+     */
+    public const MAX_BUN_WIDTH_M = 2.4;
 
     /**
      * `next_sequence` and `scrap_volume_m3` are deliberately excluded: both are

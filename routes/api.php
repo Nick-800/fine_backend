@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\v1\AuthController;
 use App\Http\Controllers\Api\v1\BankHoldController;
 use App\Http\Controllers\Api\v1\CashAccountController;
 use App\Http\Controllers\Api\v1\ClientController;
+use App\Http\Controllers\Api\v1\ConsumptionReportController;
 use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityController;
 use App\Http\Controllers\Api\v1\ExternalEmployerController;
@@ -71,8 +72,14 @@ Route::prefix('v1')->group(function () {
             // Production & Work Orders
             Route::apiResource('work-orders', WorkOrderController::class);
             Route::post('/work-orders/{id}/complete', [WorkOrderController::class, 'complete']);
+            // Stock movements are the immutable inventory audit trail (INV-06):
+            // readable and appendable, never edited or deleted.
             Route::get('/inventory-movements', [InventoryMovementController::class, 'index']);
+            Route::post('/inventory-movements', [InventoryMovementController::class, 'store']);
+            Route::get('/inventory-movements/for-document/{type}/{documentId}', [InventoryMovementController::class, 'forDocument']);
+            Route::get('/inventory-movements/{id}', [InventoryMovementController::class, 'show']);
             Route::get('/inventory/stock/{sku}', [InventoryMovementController::class, 'stock']);
+            Route::get('/inventory/ledger/{warehouseId}', [InventoryMovementController::class, 'ledger']);
 
             // Clients CRUD
             Route::post('/clients/{id}/split-entity', [ClientController::class, 'splitEntity']);
@@ -127,6 +134,7 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('stock-lots', StockLotController::class);
             Route::get('/tank-stocks', [TankStockController::class, 'index']);
             Route::post('/tank-stocks/refill', [TankStockController::class, 'refill']);
+            Route::get('/tank-stocks/{id}', [TankStockController::class, 'show']);
             Route::get('/stock-adjustment-requests', [StockAdjustmentRequestController::class, 'index']);
             Route::post('/stock-adjustment-requests', [StockAdjustmentRequestController::class, 'store']);
             Route::post('/stock-adjustment-requests/{id}/approve', [StockAdjustmentRequestController::class, 'approve']);
@@ -134,10 +142,13 @@ Route::prefix('v1')->group(function () {
             Route::get('/inventory/valuation', [InventoryValuationController::class, 'index']);
             Route::get('/inventory/valuation/rollup', [InventoryValuationController::class, 'rollup']);
 
-            Route::get('/warehouses', [WarehouseController::class, 'index']);
+            Route::apiResource('warehouses', WarehouseController::class);
 
             // Phase 04: Foam Manufacturing — Production Batches & Block Identity
             Route::post('/production-batches/{id}/blocks', [ProductionBatchController::class, 'registerBlocks']);
+            Route::post('/production-batches/{id}/transition', [ProductionBatchController::class, 'transition']);
+            Route::get('/production-batches/{id}/consumption-report', [ConsumptionReportController::class, 'show']);
+            Route::post('/production-batches/{id}/consumption-report', [ConsumptionReportController::class, 'store']);
             Route::apiResource('production-batches', ProductionBatchController::class);
         });
     });

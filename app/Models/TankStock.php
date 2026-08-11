@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToOperatingUnit;
 use App\Models\Traits\HasOptimisticLocking;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TankStock extends Model
 {
-    use BelongsToOperatingUnit, HasFactory, HasOptimisticLocking, HasUuids;
+    use Auditable, BelongsToOperatingUnit, HasFactory, HasOptimisticLocking, HasUuids;
 
     protected $fillable = [
         'chemical_inventory_item_id',

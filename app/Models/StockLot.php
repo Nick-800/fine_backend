@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Exceptions\SerializedQuantityException;
 use App\Models\Scopes\WarehouseOperatingUnitScope;
+use App\Models\Traits\Auditable;
 use App\Models\Traits\HasOptimisticLocking;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -14,7 +16,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class StockLot extends Model
 {
-    use HasFactory, HasOptimisticLocking, HasUuids, SoftDeletes;
+    use Auditable, HasFactory, HasOptimisticLocking, HasUuids, SoftDeletes;
 
     protected $fillable = [
         'inventory_item_id',
@@ -66,7 +68,40 @@ class StockLot extends Model
                     4
                 );
             }
+
+            $stockLot->guardSerializedQuantity();
         });
+    }
+
+    /**
+     * INV-02: foam blocks are individually serialized, so a block lot always
+     * represents exactly one block.
+     *
+     * Enforced on the model rather than in a form request so every write path is
+     * covered — controllers, services, seeders and future callers alike. A lot
+     * drawn down to zero is allowed, since consumption legitimately empties it.
+     */
+    public function guardSerializedQuantity(): void
+    {
+        if ($this->inventory_item_id === null) {
+            return;
+        }
+
+        $itemType = $this->relationLoaded('inventoryItem')
+            ? $this->inventoryItem?->item_type
+            : InventoryItem::withTrashed()->whereKey($this->inventory_item_id)->value('item_type');
+
+        if ($itemType !== 'foam_block') {
+            return;
+        }
+
+        $quantity = (float) $this->quantity;
+
+        if ($quantity !== 1.0 && $quantity !== 0.0) {
+            throw new SerializedQuantityException(
+                "A foam block lot must have a quantity of 1; got {$quantity}. Each block is its own lot."
+            );
+        }
     }
 
     public function inventoryItem(): BelongsTo

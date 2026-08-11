@@ -112,6 +112,21 @@ class StockLotService
             // Mark parent block lot as consumed
             $parentLot->update(['status' => 'consumed']);
 
+            // INV-06: consuming the parent block is an inventory event and must
+            // leave a movement, not just a status change.
+            InventoryMovement::create([
+                'operating_unit_id' => $parentLot->warehouse?->operating_unit_id,
+                'stock_lot_id' => $parentLot->id,
+                'from_warehouse_id' => $parentLot->warehouse_id,
+                'sku' => $parentLot->inventoryItem?->sku ?? 'FOAM-BLOCK',
+                'movement_type' => 'consumption',
+                'quantity_delta' => -1,
+                'unit_cost' => (float) $parentLot->unit_cost,
+                'reason' => 'cutter_consumption',
+                'reference_document_type' => 'StockLot',
+                'reference_id' => $parentLot->id,
+            ]);
+
             $remnantLot = null;
             $byproductMovement = null;
 
@@ -141,16 +156,32 @@ class StockLotService
                     'status' => 'available',
                     'production_batch_id' => $parentLot->production_batch_id,
                 ]);
+
+                // The remnant is new stock, so it enters through a movement too.
+                InventoryMovement::create([
+                    'operating_unit_id' => $parentLot->warehouse?->operating_unit_id,
+                    'stock_lot_id' => $remnantLot->id,
+                    'to_warehouse_id' => $remnantLot->warehouse_id,
+                    'sku' => $parentLot->inventoryItem?->sku ?? 'FOAM-BLOCK',
+                    'movement_type' => 'production_output',
+                    'quantity_delta' => 1,
+                    'unit_cost' => (float) $remnantLot->unit_cost,
+                    'reason' => 'cutter_remnant_restock',
+                    'reference_document_type' => 'StockLot',
+                    'reference_id' => $parentLot->id,
+                ]);
             }
 
             if ($byproductWeightKg !== null && $byproductWeightKg > 0) {
-                // Record byproduct movement
                 $byproductMovement = InventoryMovement::create([
                     'id' => (string) Str::uuid(),
                     'operating_unit_id' => $parentLot->warehouse?->operating_unit_id,
+                    'to_warehouse_id' => $parentLot->warehouse_id,
                     'sku' => 'BYPRODUCT-FILL',
+                    'movement_type' => 'byproduct_yield',
                     'quantity_delta' => $byproductWeightKg,
                     'reason' => "Cutter byproduct fill from block {$parentLot->lot_number}",
+                    'reference_document_type' => 'StockLot',
                     'reference_id' => $parentLot->id,
                 ]);
             }

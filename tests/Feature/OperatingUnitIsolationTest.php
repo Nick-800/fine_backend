@@ -59,7 +59,13 @@ beforeEach(function () {
     $ownerRole = Role::create(['name' => 'Owner', 'slug' => 'owner']);
     UserRole::create(['user_id' => $this->owner->id, 'role_id' => $ownerRole->id, 'operating_unit_id' => null]);
 
+    // Bulk material: these lots exist to test scoping, and carry quantities > 1,
+    // which INV-02 would reject on a serialized foam block.
     $this->item = InventoryItem::create([
+        'name' => 'Bulk Filler', 'sku' => 'FILL-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
+    ]);
+
+    $this->blockItem = InventoryItem::create([
         'name' => 'Foam Block', 'sku' => 'BLOCK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
     ]);
 
@@ -250,7 +256,7 @@ test('blocks cannot be registered into another unit warehouse', function () {
     ($this->asA)()->postJson("/api/v1/production-batches/{$batchA->id}/blocks", [
         'groups' => [[
             'kind' => 'block', 'count' => 1, 'length_m' => 2.0, 'height_m' => 0.8, 'pressure' => 35,
-            'inventory_item_id' => $this->item->id,
+            'inventory_item_id' => $this->blockItem->id,
             'warehouse_id' => $this->warehouseB->id,
         ]],
     ])->assertStatus(422)->assertJsonValidationErrors('groups.0.warehouse_id');

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\ProductionBatchStatus;
+use App\Exceptions\InvalidStateTransitionException;
+use App\Models\InventoryMovement;
 use App\Models\ProductionBatch;
 use App\Models\Scopes\OperatingUnitScope;
 use App\Models\StockLot;
@@ -38,6 +41,114 @@ class ProductionBatchService
         return ((int) ProductionBatch::withTrashed()
             ->withoutGlobalScope(OperatingUnitScope::class)
             ->max('operation_number')) + 1;
+    }
+
+    /**
+     * Advance a batch one step along its lifecycle (Phase 04 §4.4).
+     *
+     * The lifecycle is strictly linear, so this only ever moves forward by one
+     * state and rejects anything else — including no-op transitions to the
+     * current state, which usually mean a double-submitted button.
+     */
+    public function transition(ProductionBatch $batch, ProductionBatchStatus $target): ProductionBatch
+    {
+        return DB::transaction(function () use ($batch, $target): ProductionBatch {
+            $locked = ProductionBatch::whereKey($batch->getKey())->lockForUpdate()->firstOrFail();
+            $current = $locked->status;
+
+            if (! $current->canTransitionTo($target)) {
+                $allowed = array_map(fn (ProductionBatchStatus $s) => $s->value, $current->allowedNext());
+
+                throw new InvalidStateTransitionException(
+                    $allowed === []
+                        ? "Operation {$locked->operation_number} is closed and cannot change state."
+                        : "Cannot move operation {$locked->operation_number} from {$current->value} to {$target->value}; expected ".implode(' or ', $allowed).'.'
+                );
+            }
+
+            $this->guardTransition($locked, $target);
+
+            $locked->status = $target;
+            $locked->save();
+
+            // FOAM-07: on close the run's material cost is spread across its
+            // blocks by volume share, so a bigger block carries more of it.
+            if ($target === ProductionBatchStatus::Closed) {
+                $this->apportionMaterialCost($locked);
+            }
+
+            return $locked->fresh();
+        });
+    }
+
+    /**
+     * FOAM-07: spread the run's material cost across its blocks by volume share.
+     *
+     *   block_unit_cost = batch_material_cost × (block.volume_m3 / total_block_volume)
+     *
+     * Scrap volume is deliberately excluded from the denominator. Scrap is not
+     * inventory and carries no cost, so including it would quietly under-cost
+     * every real block and leave part of the material spend unattached to
+     * anything.
+     *
+     * The final block absorbs the rounding remainder so the apportioned costs sum
+     * back to the batch total exactly, rather than drifting a few dirhams.
+     */
+    public function apportionMaterialCost(ProductionBatch $batch): void
+    {
+        $materialCost = (float) $batch->material_cost;
+
+        if ($materialCost <= 0.0) {
+            return;
+        }
+
+        $blocks = $batch->stockLots()->orderBy('sequence_in_batch')->get();
+        $totalVolume = (float) $blocks->sum(fn (StockLot $lot) => (float) $lot->volume_m3);
+
+        if ($blocks->isEmpty() || $totalVolume <= 0.0) {
+            return;
+        }
+
+        $allocated = 0.0;
+        $lastIndex = $blocks->count() - 1;
+
+        foreach ($blocks as $index => $block) {
+            if ($index === $lastIndex) {
+                $cost = round($materialCost - $allocated, 4);
+            } else {
+                $cost = round($materialCost * ((float) $block->volume_m3 / $totalVolume), 4);
+                $allocated += $cost;
+            }
+
+            $block->unit_cost = $cost;
+            $block->save();
+        }
+    }
+
+    /**
+     * State-specific preconditions that go beyond ordering.
+     */
+    private function guardTransition(ProductionBatch $batch, ProductionBatchStatus $target): void
+    {
+        // FOAM-05: a batch cannot be declared graded while blocks are missing
+        // their measured pressure, and cannot close with no output at all.
+        if ($target === ProductionBatchStatus::Graded) {
+            $blockCount = $batch->stockLots()->count();
+
+            if ($blockCount === 0) {
+                throw new InvalidStateTransitionException(
+                    "Operation {$batch->operation_number} has no registered blocks to grade."
+                );
+            }
+
+            $ungraded = $batch->stockLots()->whereNull('pressure')->count();
+
+            if ($ungraded > 0) {
+                throw new InvalidStateTransitionException(
+                    "Operation {$batch->operation_number} still has {$ungraded} ungraded block(s)."
+                );
+            }
+        }
     }
 
     /**
@@ -86,7 +197,7 @@ class ProductionBatchService
                 for ($offset = 0; $offset < $count; $offset++) {
                     $sequence = $startSequence + $offset;
 
-                    $blocks[] = StockLot::create([
+                    $lot = StockLot::create([
                         'inventory_item_id' => $group['inventory_item_id'],
                         'warehouse_id' => $group['warehouse_id'],
                         'production_batch_id' => $locked->id,
@@ -104,6 +215,24 @@ class ProductionBatchService
                         'status' => 'available',
                         'attribute_values' => isset($group['color']) ? ['color' => $group['color']] : null,
                     ]);
+
+                    // INV-06: stock only ever appears through a movement, so the
+                    // block's arrival in inventory is recorded as production output
+                    // traceable back to the batch that made it.
+                    InventoryMovement::create([
+                        'operating_unit_id' => $locked->operating_unit_id,
+                        'stock_lot_id' => $lot->id,
+                        'to_warehouse_id' => $lot->warehouse_id,
+                        'sku' => $lot->inventoryItem?->sku ?? 'FOAM-BLOCK',
+                        'movement_type' => 'production_output',
+                        'quantity_delta' => 1,
+                        'unit_cost' => (float) $lot->unit_cost,
+                        'reason' => 'foam_block_registered',
+                        'reference_document_type' => 'ProductionBatch',
+                        'reference_id' => $locked->id,
+                    ]);
+
+                    $blocks[] = $lot;
                 }
 
                 $locked->next_sequence = $startSequence + $count;

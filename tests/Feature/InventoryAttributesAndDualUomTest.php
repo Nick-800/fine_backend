@@ -141,7 +141,8 @@ test('can store and query stock lots by dynamic JSON attributes', function () {
         'inventory_item_id' => $item->id,
         'warehouse_id' => $this->warehouse->id,
         'lot_number' => 'LOT-HIGH-35P',
-        'quantity' => 4.0,
+        // INV-02: a foam block lot is exactly one block.
+        'quantity' => 1.0,
         'container_quantity' => 1.0,
         'length_m' => 2.0,
         'width_m' => 2.0,
@@ -159,7 +160,8 @@ test('can store and query stock lots by dynamic JSON attributes', function () {
         'inventory_item_id' => $item->id,
         'warehouse_id' => $this->warehouse->id,
         'lot_number' => 'LOT-LOW-20P',
-        'quantity' => 4.0,
+        // INV-02: a foam block lot is exactly one block.
+        'quantity' => 1.0,
         'container_quantity' => 1.0,
         'length_m' => 2.0,
         'width_m' => 2.0,

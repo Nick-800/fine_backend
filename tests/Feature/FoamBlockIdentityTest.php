@@ -362,6 +362,58 @@ test('duplicate sequences within a batch are rejected by the database', function
     ]))->toThrow(QueryException::class);
 });
 
+test('a bun wider than the machine limit is rejected', function () {
+    ($this->api)()->postJson('/api/v1/production-batches', [
+        'operation_number' => 191,
+        'bun_width_m' => 3.0, // FOAM-01 caps this at 2.4
+        'confirm_non_sequential' => true,
+    ])->assertStatus(422)->assertJsonValidationErrors('bun_width_m');
+
+    ($this->api)()->postJson('/api/v1/production-batches', [
+        'operation_number' => 191,
+        'bun_width_m' => 2.4,
+        'confirm_non_sequential' => true,
+    ])->assertStatus(201);
+});
+
+test('a foam block lot cannot carry a quantity other than one', function () {
+    ($this->api)()->postJson('/api/v1/stock-lots', [
+        'inventory_item_id' => $this->blockItem->id,
+        'warehouse_id' => $this->warehouse->id,
+        'lot_number' => 'BULK-BLOCKS',
+        'quantity' => 25,
+        'unit_cost' => 100,
+    ])->assertStatus(422)->assertJsonPath('code', 'SERIALIZED_QUANTITY_INVALID');
+});
+
+test('a non-serialized item may carry any quantity', function () {
+    $bulk = InventoryItem::create([
+        'name' => 'Polyol', 'sku' => 'CHEM-POLY', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
+    ]);
+
+    ($this->api)()->postJson('/api/v1/stock-lots', [
+        'inventory_item_id' => $bulk->id,
+        'warehouse_id' => $this->warehouse->id,
+        'lot_number' => 'BULK-POLY-1',
+        'quantity' => 899,
+        'unit_cost' => 10,
+    ])->assertStatus(201);
+});
+
+test('a block lot drawn down to zero is still allowed', function () {
+    // Consumption legitimately empties a lot; the rule must not block that.
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [($this->blockGroup)(1, 2.0, 0.8)],
+    ])->assertStatus(201);
+
+    $lot = StockLot::where('production_batch_id', $batch->id)->first();
+    $lot->quantity = 0;
+
+    expect(fn () => $lot->save())->not->toThrow(Exception::class);
+});
+
 test('a company-wide role without a selected unit gets a clear error, not a crash', function () {
     // Owner-style role: company-wide, so operating_unit_id is null and the
     // middleware lets the request through with no unit context at all.

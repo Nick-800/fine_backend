@@ -1,6 +1,9 @@
 <?php
 
+use App\Exceptions\InsufficientTankStockException;
+use App\Exceptions\InvalidStateTransitionException;
 use App\Exceptions\OptimisticLockConflictException;
+use App\Exceptions\SerializedQuantityException;
 use App\Http\Middleware\EnsurePasswordIsUpdated;
 use App\Http\Middleware\ScopeOperatingUnit;
 use Illuminate\Foundation\Application;
@@ -30,5 +33,26 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'message' => $e->getMessage(),
             ], 409);
+        });
+
+        $exceptions->render(function (SerializedQuantityException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'SERIALIZED_QUANTITY_INVALID',
+            ], 422);
+        });
+
+        $exceptions->render(function (InsufficientTankStockException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INSUFFICIENT_TANK_STOCK',
+            ], 422);
+        });
+
+        $exceptions->render(function (InvalidStateTransitionException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_STATE_TRANSITION',
+            ], 422);
         });
     })->create();
