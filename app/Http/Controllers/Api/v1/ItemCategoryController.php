@@ -29,7 +29,7 @@ final class ItemCategoryController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'operating_unit_id' => ['nullable', 'uuid', 'exists:operating_units,id'],
+            // Unit comes from the role-validated request context, not the body.
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:50', 'unique:item_categories,code'],
             'description' => ['nullable', 'string'],

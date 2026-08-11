@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\ProductionBatch;
+use App\Models\Scopes\OperatingUnitScope;
 use App\Models\StockLot;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -27,10 +28,16 @@ class ProductionBatchService
      *
      * Counts soft-deleted batches: a deleted batch may still have labelled
      * blocks in the yard, so its number remains in physical circulation.
+     *
+     * Deliberately bypasses the operating-unit scope. Operation numbers are
+     * globally unique (§3), so a unit-filtered MAX would let two units both
+     * arrive at the same "next" number and collide on the unique index.
      */
     public function nextExpectedOperationNumber(): int
     {
-        return ((int) ProductionBatch::withTrashed()->max('operation_number')) + 1;
+        return ((int) ProductionBatch::withTrashed()
+            ->withoutGlobalScope(OperatingUnitScope::class)
+            ->max('operation_number')) + 1;
     }
 
     /**

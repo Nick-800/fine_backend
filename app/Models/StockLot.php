@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Scopes\WarehouseOperatingUnitScope;
 use App\Models\Traits\HasOptimisticLocking;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -54,6 +55,10 @@ class StockLot extends Model
 
     protected static function booted(): void
     {
+        // Stock lots have no operating_unit_id of their own; they belong to a unit
+        // only through their warehouse.
+        static::addGlobalScope(new WarehouseOperatingUnitScope);
+
         static::saving(function (StockLot $stockLot): void {
             if ($stockLot->length_m !== null && $stockLot->width_m !== null && $stockLot->height_m !== null) {
                 $stockLot->volume_m3 = round(

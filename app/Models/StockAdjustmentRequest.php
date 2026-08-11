@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Traits\BelongsToOperatingUnit;
 use App\Models\Traits\HasOptimisticLocking;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StockAdjustmentRequest extends Model
 {
-    use HasFactory, HasOptimisticLocking, HasUuids;
+    use BelongsToOperatingUnit, HasFactory, HasOptimisticLocking, HasUuids;
 
     protected $fillable = [
         'operating_unit_id',

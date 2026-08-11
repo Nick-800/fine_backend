@@ -7,12 +7,16 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Models\TankStock;
 use App\Services\TankStockService;
+use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TankStockController extends Controller
 {
-    public function __construct(public TankStockService $tankStockService) {}
+    public function __construct(
+        public TankStockService $tankStockService,
+        public CurrentUnitContext $unitContext,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -29,15 +33,25 @@ class TankStockController extends Controller
     {
         $validated = $request->validate([
             'chemical_inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
-            'operating_unit_id' => ['required', 'uuid', 'exists:operating_units,id'],
             'refill_quantity' => ['required', 'numeric', 'gt:0'],
             'refill_unit_cost' => ['required', 'numeric', 'gte:0'],
             'reference_id' => ['nullable', 'uuid'],
         ]);
 
+        // Context, not body: a body value would let a unit-scoped user refill
+        // another unit's tank.
+        $unitId = $this->unitContext->getUnitId();
+
+        if ($unitId === null) {
+            return response()->json([
+                'message' => 'Select an operating unit before refilling a tank.',
+                'code' => 'OPERATING_UNIT_REQUIRED',
+            ], 422);
+        }
+
         $tank = $this->tankStockService->refill(
             $validated['chemical_inventory_item_id'],
-            $validated['operating_unit_id'],
+            $unitId,
             (float) $validated['refill_quantity'],
             (float) $validated['refill_unit_cost'],
             $validated['reference_id'] ?? null

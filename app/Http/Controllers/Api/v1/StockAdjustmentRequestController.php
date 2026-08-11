@@ -7,12 +7,16 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Models\StockAdjustmentRequest;
 use App\Services\StockAdjustmentService;
+use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class StockAdjustmentRequestController extends Controller
 {
-    public function __construct(public StockAdjustmentService $adjustmentService) {}
+    public function __construct(
+        public StockAdjustmentService $adjustmentService,
+        public CurrentUnitContext $unitContext,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -32,15 +36,26 @@ class StockAdjustmentRequestController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'operating_unit_id' => ['required', 'uuid', 'exists:operating_units,id'],
             'stock_lot_id' => ['required', 'uuid', 'exists:stock_lots,id'],
             'reason_code' => ['required', 'string', 'in:audit_reconciliation,spill_loss,damage,expired'],
             'quantity_delta' => ['required', 'numeric', 'not_in:0'],
             'notes' => ['nullable', 'string'],
         ]);
 
+        // Taken from the role-validated request context, never from the body — a
+        // body value would let a unit-scoped user file an adjustment against a
+        // unit they cannot otherwise reach.
+        $unitId = $this->unitContext->getUnitId();
+
+        if ($unitId === null) {
+            return response()->json([
+                'message' => 'Select an operating unit before requesting a stock adjustment.',
+                'code' => 'OPERATING_UNIT_REQUIRED',
+            ], 422);
+        }
+
         $adjRequest = $this->adjustmentService->createRequest(
-            $validated['operating_unit_id'],
+            $unitId,
             $validated['stock_lot_id'],
             $validated['reason_code'],
             (float) $validated['quantity_delta'],

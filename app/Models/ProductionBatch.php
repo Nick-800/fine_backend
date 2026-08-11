@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\ProductionBatchStatus;
+use App\Models\Traits\BelongsToOperatingUnit;
 use App\Models\Traits\HasOptimisticLocking;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,7 +16,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 final class ProductionBatch extends Model
 {
-    use HasFactory, HasOptimisticLocking, HasUuids, SoftDeletes;
+    use BelongsToOperatingUnit, HasFactory, HasOptimisticLocking, HasUuids, SoftDeletes;
 
     /**
      * `next_sequence` and `scrap_volume_m3` are deliberately excluded: both are
