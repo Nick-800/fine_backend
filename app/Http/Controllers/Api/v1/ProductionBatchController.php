@@ -7,6 +7,8 @@ namespace App\Http\Controllers\Api\v1;
 use App\Enums\ProductionBatchStatus;
 use App\Http\Controllers\Controller;
 use App\Models\ProductionBatch;
+use App\Models\Warehouse;
+use App\Rules\ExistsInCurrentUnit;
 use App\Services\ProductionBatchService;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
@@ -170,7 +172,7 @@ class ProductionBatchController extends Controller
             'groups.*.height_m' => ['required', 'numeric', 'min:0.001'],
             'groups.*.pressure' => ['required_if:groups.*.kind,block', 'integer', 'min:1'],
             'groups.*.inventory_item_id' => ['required_if:groups.*.kind,block', 'uuid', 'exists:inventory_items,id'],
-            'groups.*.warehouse_id' => ['required_if:groups.*.kind,block', 'uuid', 'exists:warehouses,id'],
+            'groups.*.warehouse_id' => ['required_if:groups.*.kind,block', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
             'groups.*.unit_cost' => ['nullable', 'numeric', 'min:0'],
             'groups.*.grade' => ['nullable', 'string', 'in:standard,acceptable_variant,defective_usable,reject'],
             'groups.*.color' => ['nullable', 'string', 'max:100'],

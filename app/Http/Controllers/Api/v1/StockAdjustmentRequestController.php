@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
 use App\Models\StockAdjustmentRequest;
+use App\Models\StockLot;
+use App\Rules\ExistsInCurrentUnit;
 use App\Services\StockAdjustmentService;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
@@ -36,7 +38,7 @@ class StockAdjustmentRequestController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'stock_lot_id' => ['required', 'uuid', 'exists:stock_lots,id'],
+            'stock_lot_id' => ['required', 'uuid', new ExistsInCurrentUnit(StockLot::class, 'stock lot')],
             'reason_code' => ['required', 'string', 'in:audit_reconciliation,spill_loss,damage,expired'],
             'quantity_delta' => ['required', 'numeric', 'not_in:0'],
             'notes' => ['nullable', 'string'],

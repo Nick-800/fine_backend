@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
+use App\Models\ProductionBatch;
 use App\Models\StockLot;
+use App\Models\Warehouse;
+use App\Rules\ExistsInCurrentUnit;
 use App\Services\StockLotService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,7 +42,7 @@ class StockLotController extends Controller
     {
         $validated = $request->validate([
             'inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
-            'warehouse_id' => ['required', 'uuid', 'exists:warehouses,id'],
+            'warehouse_id' => ['required', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
             'lot_number' => ['required', 'string', 'unique:stock_lots,lot_number'],
             'quantity' => ['required', 'numeric', 'min:0.0001'],
             'container_quantity' => ['nullable', 'numeric', 'min:0'],
@@ -51,7 +54,7 @@ class StockLotController extends Controller
             'grade' => ['nullable', 'string', 'in:standard,acceptable_variant,defective_usable,reject'],
             'status' => ['nullable', 'string', 'in:available,reserved,consumed,quarantined'],
             'attribute_values' => ['nullable', 'array'],
-            'production_batch_id' => ['nullable', 'uuid', 'exists:production_batches,id'],
+            'production_batch_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(ProductionBatch::class, 'production batch')],
         ]);
 
         $stockLot = StockLot::create($validated);
@@ -71,7 +74,7 @@ class StockLotController extends Controller
         $stockLot = StockLot::findOrFail($id);
 
         $validated = $request->validate([
-            'warehouse_id' => ['sometimes', 'uuid', 'exists:warehouses,id'],
+            'warehouse_id' => ['sometimes', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
             'quantity' => ['sometimes', 'numeric', 'min:0'],
             'container_quantity' => ['nullable', 'numeric', 'min:0'],
             'length_m' => ['nullable', 'numeric', 'min:0'],

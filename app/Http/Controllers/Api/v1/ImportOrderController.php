@@ -9,6 +9,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\v1\StoreImportOrderRequest;
 use App\Http\Resources\v1\ImportOrderResource;
 use App\Models\ImportOrder;
+use App\Models\Warehouse;
+use App\Rules\ExistsInCurrentUnit;
 use App\Services\ImportOrderStateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -62,7 +64,7 @@ final class ImportOrderController extends Controller
             'amount_requested' => 'required_if:action,select_route|numeric|min:0.0001',
             'held_amount_lyd' => 'required_if:route,bank|nullable|numeric|min:0.0001',
             'invoice_ref' => 'nullable|string',
-            'warehouse_id' => 'required_if:action,receive_goods|nullable|uuid|exists:warehouses,id',
+            'warehouse_id' => ['required_if:action,receive_goods', 'nullable', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
             'received_qty' => 'required_if:action,receive_goods|nullable|numeric|min:0.0001',
             'condition_notes' => 'nullable|string',
         ]);

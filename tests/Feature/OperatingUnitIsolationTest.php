@@ -207,6 +207,85 @@ test('a tank refill is applied to the caller unit, not the body', function () {
     ])->assertStatus(201)->assertJsonPath('operating_unit_id', $this->unitA->id);
 });
 
+test('a stock lot cannot be created into another unit warehouse', function () {
+    // exists: issues a raw query and ignores global scopes, so this needs the
+    // scope-aware rule to be rejected at all.
+    ($this->asA)()->postJson('/api/v1/stock-lots', [
+        'inventory_item_id' => $this->item->id,
+        'warehouse_id' => $this->warehouseB->id,
+        'lot_number' => 'LOT-CROSS-1',
+        'quantity' => 1,
+        'unit_cost' => 10,
+    ])->assertStatus(422)->assertJsonValidationErrors('warehouse_id');
+
+    app(CurrentUnitContext::class)->clear();
+    expect(StockLot::where('lot_number', 'LOT-CROSS-1')->exists())->toBeFalse();
+});
+
+test('a stock lot cannot be moved into another unit warehouse', function () {
+    $lotA = StockLot::create([
+        'inventory_item_id' => $this->item->id,
+        'warehouse_id' => $this->warehouseA->id,
+        'lot_number' => 'LOT-A-MOVE',
+        'quantity' => 1,
+        'unit_cost' => 10,
+        'grade' => 'standard',
+        'status' => 'available',
+    ]);
+
+    ($this->asA)()->putJson("/api/v1/stock-lots/{$lotA->id}", [
+        'warehouse_id' => $this->warehouseB->id,
+        'record_version' => $lotA->record_version,
+    ])->assertStatus(422)->assertJsonValidationErrors('warehouse_id');
+});
+
+test('blocks cannot be registered into another unit warehouse', function () {
+    $batchA = ProductionBatch::create([
+        'operating_unit_id' => $this->unitA->id,
+        'operation_number' => 600,
+        'bun_width_m' => 2.4,
+        'status' => 'graded',
+    ]);
+
+    ($this->asA)()->postJson("/api/v1/production-batches/{$batchA->id}/blocks", [
+        'groups' => [[
+            'kind' => 'block', 'count' => 1, 'length_m' => 2.0, 'height_m' => 0.8, 'pressure' => 35,
+            'inventory_item_id' => $this->item->id,
+            'warehouse_id' => $this->warehouseB->id,
+        ]],
+    ])->assertStatus(422)->assertJsonValidationErrors('groups.0.warehouse_id');
+});
+
+test('an adjustment cannot be filed against another unit stock lot', function () {
+    ($this->asA)()->postJson('/api/v1/stock-adjustment-requests', [
+        'stock_lot_id' => $this->lotB->id,
+        'reason_code' => 'damage',
+        'quantity_delta' => -1,
+    ])->assertStatus(422)->assertJsonValidationErrors('stock_lot_id');
+});
+
+test('a stock lot cannot be attached to another unit production batch', function () {
+    ($this->asA)()->postJson('/api/v1/stock-lots', [
+        'inventory_item_id' => $this->item->id,
+        'warehouse_id' => $this->warehouseA->id,
+        'lot_number' => 'LOT-CROSS-2',
+        'quantity' => 1,
+        'unit_cost' => 10,
+        'production_batch_id' => $this->batchB->id,
+    ])->assertStatus(422)->assertJsonValidationErrors('production_batch_id');
+});
+
+test('an owner is not blocked by the scope-aware existence rule', function () {
+    // With no unit in context the scopes no-op, so any real warehouse is valid.
+    $this->actingAs($this->owner)->postJson('/api/v1/stock-lots', [
+        'inventory_item_id' => $this->item->id,
+        'warehouse_id' => $this->warehouseB->id,
+        'lot_number' => 'LOT-OWNER-1',
+        'quantity' => 1,
+        'unit_cost' => 10,
+    ])->assertStatus(201);
+});
+
 test('operation numbers stay globally unique across units', function () {
     // The expected-number query must ignore unit scoping, or two units would both
     // be told "next is 1" and collide on the unique index.
