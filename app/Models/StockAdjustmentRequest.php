@@ -4,34 +4,32 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Traits\HasOptimisticLocking;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-final class InventoryMovement extends Model
+class StockAdjustmentRequest extends Model
 {
-    use HasFactory, HasUuids;
+    use HasFactory, HasOptimisticLocking, HasUuids;
 
     protected $fillable = [
-        'id',
         'operating_unit_id',
         'stock_lot_id',
-        'from_warehouse_id',
-        'to_warehouse_id',
-        'sku',
-        'movement_type',
+        'reason_code',
         'quantity_delta',
-        'unit_cost',
-        'reason',
-        'reference_document_type',
-        'reference_id',
+        'notes',
+        'status',
+        'requested_by_user_id',
+        'approved_by_user_id',
+        'approved_at',
         'record_version',
     ];
 
     protected $casts = [
         'quantity_delta' => 'decimal:4',
-        'unit_cost' => 'decimal:4',
+        'approved_at' => 'datetime',
         'record_version' => 'integer',
     ];
 
@@ -45,13 +43,13 @@ final class InventoryMovement extends Model
         return $this->belongsTo(StockLot::class);
     }
 
-    public function fromWarehouse(): BelongsTo
+    public function requestedBy(): BelongsTo
     {
-        return $this->belongsTo(Warehouse::class, 'from_warehouse_id');
+        return $this->belongsTo(User::class, 'requested_by_user_id');
     }
 
-    public function toWarehouse(): BelongsTo
+    public function approvedBy(): BelongsTo
     {
-        return $this->belongsTo(Warehouse::class, 'to_warehouse_id');
+        return $this->belongsTo(User::class, 'approved_by_user_id');
     }
 }

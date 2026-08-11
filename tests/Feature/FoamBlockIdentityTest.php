@@ -1,0 +1,416 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\Company;
+use App\Models\InventoryItem;
+use App\Models\OperatingUnit;
+use App\Models\ProductionBatch;
+use App\Models\Role;
+use App\Models\StockLot;
+use App\Models\UnitBlueprint;
+use App\Models\User;
+use App\Models\UserRole;
+use App\Models\Warehouse;
+use App\Services\ProductionBatchService;
+use Illuminate\Database\QueryException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    $this->company = Company::create(['name' => 'Fine Foam Mfg']);
+
+    $this->blueprint = UnitBlueprint::create([
+        'name' => 'Foam Blueprint',
+        'workflow_set' => [],
+        'default_role_template' => [],
+        'default_inventory_config' => [],
+    ]);
+
+    $this->unit = OperatingUnit::create([
+        'company_id' => $this->company->id,
+        'blueprint_id' => $this->blueprint->id,
+        'name' => 'Foam Factory',
+        'code' => 'FOAM-01',
+        'unit_type' => 'foam_manufactory',
+    ]);
+
+    $this->warehouse = Warehouse::create([
+        'operating_unit_id' => $this->unit->id,
+        'name' => 'Main Warehouse',
+        'code' => 'WH-MAIN-01',
+    ]);
+
+    $this->user = User::factory()->create(['must_change_password' => false]);
+
+    $this->role = Role::create(['name' => 'Foam Manager', 'slug' => 'foam_manager']);
+
+    UserRole::create([
+        'user_id' => $this->user->id,
+        'role_id' => $this->role->id,
+        'operating_unit_id' => $this->unit->id,
+    ]);
+
+    $this->blockItem = InventoryItem::create([
+        'name' => 'Foam Block White',
+        'sku' => 'BLOCK-WHITE',
+        'item_type' => 'foam_block',
+        'unit_of_measure' => 'm3',
+    ]);
+
+    $this->api = fn () => $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
+
+    $this->makeBatch = fn (int $operationNumber = 191) => ProductionBatch::create([
+        'operating_unit_id' => $this->unit->id,
+        'operation_number' => $operationNumber,
+        'bun_width_m' => 2.4,
+        'formula_params' => ['density_band' => '12-14', 'cure_time_minutes' => 15, 'conveyor_speed' => 5],
+        'status' => 'graded',
+    ]);
+
+    $this->blockGroup = fn (int $count, float $length, float $height, int $pressure = 35) => [
+        'kind' => 'block',
+        'count' => $count,
+        'length_m' => $length,
+        'height_m' => $height,
+        'pressure' => $pressure,
+        'inventory_item_id' => $this->blockItem->id,
+        'warehouse_id' => $this->warehouse->id,
+        'unit_cost' => 100.0,
+    ];
+});
+
+test('block code renders with zero padded sequence', function () {
+    $service = app(ProductionBatchService::class);
+
+    expect($service->composeLotNumber(3, 35, 191))->toBe('003-35-191')
+        ->and($service->composeLotNumber(36, 35, 191))->toBe('036-35-191');
+});
+
+test('a group expands into individually labelled blocks', function () {
+    $batch = ($this->makeBatch)();
+
+    $response = ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [($this->blockGroup)(25, 2.0, 0.8)],
+    ]);
+
+    $response->assertStatus(201)
+        ->assertJsonPath('blocks_created', 25);
+
+    expect(StockLot::where('production_batch_id', $batch->id)->count())->toBe(25);
+
+    $first = StockLot::where('production_batch_id', $batch->id)->where('sequence_in_batch', 1)->first();
+    $last = StockLot::where('production_batch_id', $batch->id)->where('sequence_in_batch', 25)->first();
+
+    expect($first->lot_number)->toBe('001-35-191')
+        ->and($last->lot_number)->toBe('025-35-191');
+});
+
+test('multiple groups continue the sequence rather than restarting', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [
+            ($this->blockGroup)(25, 2.0, 0.8),
+            ($this->blockGroup)(3, 1.99, 1.0),
+        ],
+    ])->assertStatus(201);
+
+    $sequences = StockLot::where('production_batch_id', $batch->id)
+        ->orderBy('sequence_in_batch')
+        ->pluck('sequence_in_batch')
+        ->all();
+
+    expect($sequences)->toBe(range(1, 28));
+    expect($batch->fresh()->next_sequence)->toBe(29);
+});
+
+test('a second registration call continues from the stored counter', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [($this->blockGroup)(2, 2.0, 0.8)],
+    ])->assertStatus(201);
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [($this->blockGroup)(2, 2.3, 0.78)],
+    ])->assertStatus(201);
+
+    expect(StockLot::where('production_batch_id', $batch->id)->pluck('sequence_in_batch')->sort()->values()->all())
+        ->toBe([1, 2, 3, 4]);
+});
+
+test('volume is computed from dimensions and bun width', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [($this->blockGroup)(1, 2.0, 0.8)],
+    ])->assertStatus(201);
+
+    $lot = StockLot::where('production_batch_id', $batch->id)->first();
+
+    // 2.4 (bun width, from the batch) x 2.0 x 0.8 = 3.84
+    expect((float) $lot->volume_m3)->toBe(3.84)
+        ->and((float) $lot->width_m)->toBe(2.4);
+});
+
+test('scrap creates no lot and does not advance the sequence', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [
+            ['kind' => 'scrap', 'count' => 1, 'length_m' => 2.0, 'height_m' => 1.0],
+            ($this->blockGroup)(1, 2.0, 0.8),
+        ],
+    ])->assertStatus(201)->assertJsonPath('blocks_created', 1);
+
+    $batch->refresh();
+
+    // Scrap volume: 2.4 x 2.0 x 1.0 = 4.8
+    expect((float) $batch->scrap_volume_m3)->toBe(4.8)
+        ->and($batch->next_sequence)->toBe(2);
+
+    // The single block still takes sequence 1 — scrap consumed nothing.
+    expect(StockLot::where('production_batch_id', $batch->id)->first()->lot_number)->toBe('001-35-191');
+});
+
+test('block and scrap volumes reconcile to the run total', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [
+            ($this->blockGroup)(25, 2.0, 0.8),
+            ($this->blockGroup)(3, 1.99, 1.0),
+            ($this->blockGroup)(2, 1.38, 0.44),
+            ($this->blockGroup)(1, 2.3, 0.78),
+            ($this->blockGroup)(1, 2.5, 0.59),
+            ($this->blockGroup)(1, 1.95, 0.69),
+            ($this->blockGroup)(1, 2.3, 0.75),
+            ['kind' => 'scrap', 'count' => 1, 'length_m' => 2.0, 'height_m' => 1.0],
+            ['kind' => 'scrap', 'count' => 1, 'length_m' => 2.0, 'height_m' => 0.5],
+        ],
+    ])->assertStatus(201)->assertJsonPath('blocks_created', 34);
+
+    $batch->refresh();
+
+    $blockVolume = (float) StockLot::where('production_batch_id', $batch->id)->sum('volume_m3');
+    $total = round($blockVolume + (float) $batch->scrap_volume_m3, 3);
+
+    // Matches the printed total on the source production report.
+    expect($total)->toBe(135.657);
+});
+
+test('a block group without pressure is rejected', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [[
+            'kind' => 'block',
+            'count' => 1,
+            'length_m' => 2.0,
+            'height_m' => 0.8,
+            'inventory_item_id' => $this->blockItem->id,
+            'warehouse_id' => $this->warehouse->id,
+        ]],
+    ])->assertStatus(422);
+});
+
+test('two blocks in one batch can carry different measured pressures', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [
+            ($this->blockGroup)(1, 2.0, 0.8, 35),
+            ($this->blockGroup)(1, 2.0, 0.8, 40),
+        ],
+    ])->assertStatus(201);
+
+    $numbers = StockLot::where('production_batch_id', $batch->id)
+        ->orderBy('sequence_in_batch')
+        ->pluck('lot_number')
+        ->all();
+
+    expect($numbers)->toBe(['001-35-191', '002-40-191']);
+});
+
+test('pressure is stored as a column not a json attribute', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [[...($this->blockGroup)(1, 2.0, 0.8), 'color' => 'white']],
+    ])->assertStatus(201);
+
+    $lot = StockLot::where('production_batch_id', $batch->id)->first();
+
+    expect($lot->pressure)->toBe(35)
+        ->and($lot->attribute_values)->toBe(['color' => 'white']);
+});
+
+test('a duplicate operation number is rejected', function () {
+    ($this->makeBatch)(191);
+
+    ($this->api)()->postJson('/api/v1/production-batches', [
+        'operation_number' => 191,
+        'bun_width_m' => 2.4,
+        'confirm_non_sequential' => true,
+    ])->assertStatus(422)->assertJsonValidationErrors('operation_number');
+});
+
+test('a duplicate against a soft deleted batch is still rejected', function () {
+    ($this->makeBatch)(191)->delete();
+
+    ($this->api)()->postJson('/api/v1/production-batches', [
+        'operation_number' => 191,
+        'bun_width_m' => 2.4,
+        'confirm_non_sequential' => true,
+    ])->assertStatus(422)->assertJsonValidationErrors('operation_number');
+});
+
+test('a non sequential operation number warns but is not blocked', function () {
+    ($this->makeBatch)(190);
+
+    // Unconfirmed: warned, with the expected value returned.
+    ($this->api)()->postJson('/api/v1/production-batches', [
+        'operation_number' => 199,
+        'bun_width_m' => 2.4,
+    ])->assertStatus(422)
+        ->assertJsonPath('code', 'NON_SEQUENTIAL_OPERATION_NUMBER')
+        ->assertJsonPath('expected_operation_number', 191);
+
+    // Confirmed: accepted.
+    ($this->api)()->postJson('/api/v1/production-batches', [
+        'operation_number' => 199,
+        'bun_width_m' => 2.4,
+        'confirm_non_sequential' => true,
+    ])->assertStatus(201)->assertJsonPath('operation_number', 199);
+});
+
+test('the expected next operation number counts soft deleted batches', function () {
+    ($this->makeBatch)(191)->delete();
+
+    expect(app(ProductionBatchService::class)->nextExpectedOperationNumber())->toBe(192);
+});
+
+test('operation number is editable until a block is registered', function () {
+    $batch = ($this->makeBatch)(191);
+
+    ($this->api)()->putJson("/api/v1/production-batches/{$batch->id}", [
+        'operation_number' => 192,
+        'record_version' => $batch->record_version,
+    ])->assertStatus(200)->assertJsonPath('operation_number', 192);
+
+    $batch->refresh();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [($this->blockGroup)(1, 2.0, 0.8)],
+    ])->assertStatus(201);
+
+    $batch->refresh();
+
+    ($this->api)()->putJson("/api/v1/production-batches/{$batch->id}", [
+        'operation_number' => 193,
+        'record_version' => $batch->record_version,
+    ])->assertStatus(422)->assertJsonPath('code', 'OPERATION_NUMBER_IMMUTABLE');
+});
+
+test('a batch with registered blocks cannot be deleted', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->deleteJson("/api/v1/production-batches/{$batch->id}")->assertStatus(200);
+
+    $fresh = ($this->makeBatch)(192);
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$fresh->id}/blocks", [
+        'groups' => [($this->blockGroup)(1, 2.0, 0.8)],
+    ])->assertStatus(201);
+
+    ($this->api)()->deleteJson("/api/v1/production-batches/{$fresh->id}")
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'BATCH_HAS_BLOCKS');
+});
+
+test('a stock lot cannot reference a non existent production batch', function () {
+    ($this->api)()->postJson('/api/v1/stock-lots', [
+        'inventory_item_id' => $this->blockItem->id,
+        'warehouse_id' => $this->warehouse->id,
+        'lot_number' => 'MANUAL-001',
+        'quantity' => 1,
+        'unit_cost' => 10,
+        'production_batch_id' => '00000000-0000-4000-8000-000000000000',
+    ])->assertStatus(422)->assertJsonValidationErrors('production_batch_id');
+});
+
+test('duplicate sequences within a batch are rejected by the database', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [($this->blockGroup)(1, 2.0, 0.8)],
+    ])->assertStatus(201);
+
+    // Bypass the service to prove the constraint, not just the application logic.
+    expect(fn () => StockLot::create([
+        'inventory_item_id' => $this->blockItem->id,
+        'warehouse_id' => $this->warehouse->id,
+        'production_batch_id' => $batch->id,
+        'sequence_in_batch' => 1,
+        'pressure' => 35,
+        'lot_number' => 'DIFFERENT-CODE',
+        'quantity' => 1,
+        'unit_cost' => 10,
+    ]))->toThrow(QueryException::class);
+});
+
+test('stock lots can be filtered to a single production batch', function () {
+    $first = ($this->makeBatch)(191);
+    $second = ($this->makeBatch)(192);
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$first->id}/blocks", [
+        'groups' => [($this->blockGroup)(3, 2.0, 0.8)],
+    ])->assertStatus(201);
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$second->id}/blocks", [
+        'groups' => [($this->blockGroup)(2, 2.0, 0.8)],
+    ])->assertStatus(201);
+
+    $response = ($this->api)()
+        ->getJson("/api/v1/stock-lots?production_batch_id={$first->id}")
+        ->assertStatus(200);
+
+    expect($response->json('total'))->toBe(3);
+});
+
+test('warehouses are listed for the current operating unit', function () {
+    ($this->api)()->getJson('/api/v1/warehouses')
+        ->assertStatus(200)
+        ->assertJsonFragment(['name' => 'Main Warehouse']);
+});
+
+test('remnant numbering uses a per parent revision counter', function () {
+    $batch = ($this->makeBatch)();
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [($this->blockGroup)(1, 2.0, 0.8)],
+    ])->assertStatus(201);
+
+    $parent = StockLot::where('production_batch_id', $batch->id)->first();
+
+    $first = ($this->api)()->postJson("/api/v1/stock-lots/{$parent->id}/process-cut-remnant", [
+        'remnant_action' => 'restock_remnant',
+        'remnant_dimensions' => ['length_m' => 1.2, 'width_m' => 2.4, 'height_m' => 0.8],
+    ])->assertStatus(200);
+
+    expect($first->json('remnant_lot.lot_number'))->toBe('001-35-191-R1');
+
+    // Same second, same parent — the old time()-based scheme collided here.
+    $remnant = StockLot::find($first->json('remnant_lot.id'));
+    $remnant->update(['status' => 'available']);
+
+    $second = ($this->api)()->postJson("/api/v1/stock-lots/{$parent->id}/process-cut-remnant", [
+        'remnant_action' => 'restock_remnant',
+        'remnant_dimensions' => ['length_m' => 0.5, 'width_m' => 2.4, 'height_m' => 0.8],
+    ])->assertStatus(200);
+
+    expect($second->json('remnant_lot.lot_number'))->toBe('001-35-191-R2');
+});
