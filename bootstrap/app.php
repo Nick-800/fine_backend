@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\InsufficientComponentStockException;
 use App\Exceptions\InsufficientTankStockException;
 use App\Exceptions\InvalidOperatingUnitException;
 use App\Exceptions\InvalidStateTransitionException;
@@ -42,6 +43,13 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'message' => $e->getMessage(),
                 'code' => 'SERIALIZED_QUANTITY_INVALID',
+            ], 422);
+        });
+
+        $exceptions->render(function (InsufficientComponentStockException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INSUFFICIENT_COMPONENT_STOCK',
             ], 422);
         });
 

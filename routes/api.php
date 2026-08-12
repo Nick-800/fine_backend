@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\v1\AuditLogController;
 use App\Http\Controllers\Api\v1\AuthController;
 use App\Http\Controllers\Api\v1\BankHoldController;
+use App\Http\Controllers\Api\v1\BomController;
 use App\Http\Controllers\Api\v1\CashAccountController;
 use App\Http\Controllers\Api\v1\ClientController;
 use App\Http\Controllers\Api\v1\ConsumptionReportController;
@@ -24,7 +25,9 @@ use App\Http\Controllers\Api\v1\JournalEntryController;
 use App\Http\Controllers\Api\v1\LandedCostLineController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\PaymentRequestController;
+use App\Http\Controllers\Api\v1\ProductController;
 use App\Http\Controllers\Api\v1\ProductionBatchController;
+use App\Http\Controllers\Api\v1\ProductionOrderController;
 use App\Http\Controllers\Api\v1\RoleController;
 use App\Http\Controllers\Api\v1\StockAdjustmentRequestController;
 use App\Http\Controllers\Api\v1\StockLotController;
@@ -160,6 +163,25 @@ Route::prefix('v1')->group(function () {
             Route::put('/cutter-work-order-lines/{lineId}/assign-template', [CutterWorkOrderController::class, 'assignTemplate']);
             Route::get('/cutter-work-order-lines/{lineId}/available-blocks', [CutterWorkOrderController::class, 'availableBlocks']);
             Route::post('/cutter-work-order-lines/{lineId}/select-block', [CutterWorkOrderController::class, 'selectBlock']);
+
+            // Phase 06: Furniture Manufacturing
+            Route::apiResource('products', ProductController::class);
+            Route::get('/products/{id}/boms', [ProductController::class, 'boms']);
+            Route::post('/boms', [BomController::class, 'store']);
+            Route::get('/boms/{id}', [BomController::class, 'show']);
+            Route::post('/boms/{id}/activate', [BomController::class, 'activate']);
+            Route::post('/boms/{id}/clone', [BomController::class, 'clone']);
+            Route::get('/boms/{id}/price-preview', [BomController::class, 'pricePreview']);
+            Route::post('/boms/{id}/component-lines', [BomController::class, 'storeComponentLine']);
+            Route::delete('/boms/{id}/component-lines/{lineId}', [BomController::class, 'destroyComponentLine']);
+            Route::post('/boms/{id}/labor-requirements', [BomController::class, 'storeLaborRequirement']);
+            Route::delete('/boms/{id}/labor-requirements/{reqId}', [BomController::class, 'destroyLaborRequirement']);
+            Route::get('/production-orders', [ProductionOrderController::class, 'index']);
+            Route::post('/production-orders', [ProductionOrderController::class, 'store']);
+            Route::get('/production-orders/{id}', [ProductionOrderController::class, 'show']);
+            Route::post('/production-orders/{id}/transition', [ProductionOrderController::class, 'transition']);
+            Route::get('/production-orders/{id}/labor-logs', [ProductionOrderController::class, 'laborLogs']);
+            Route::post('/production-orders/{id}/labor-logs', [ProductionOrderController::class, 'storeLaborLog']);
 
             // Phase 08 (slice): double-entry ledger. Entries are posted by the
             // modules that cause them, never created directly here.

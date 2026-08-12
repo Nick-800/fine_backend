@@ -39,10 +39,12 @@ class ChartOfAccountsSeeder extends Seeder
             ['1120', 'Work In Process', 'asset', '1100'],
             ['1121', 'WIP — Foam Production', 'asset', '1120'],
             ['1122', 'WIP — Cutter Production', 'asset', '1120'],
+            ['1123', 'WIP — Furniture Production', 'asset', '1120'],
             ['1130', 'Finished Goods Inventory', 'asset', '1100'],
             ['1131', 'Finished Goods — Foam Blocks', 'asset', '1130'],
             ['1132', 'Finished Goods — Cut Pieces', 'asset', '1130'],
             ['1133', 'Finished Goods — Byproduct Fill', 'asset', '1130'],
+            ['1134', 'Finished Goods — Furniture', 'asset', '1130'],
             ['1200', 'Cash and Bank', 'asset', '1000'],
             ['1300', 'Accounts Receivable', 'asset', '1000'],
 
