@@ -175,6 +175,47 @@ test('the trial balance stays in balance after a batch closes', function () {
     expect((float) $wip['balance'])->toBe(0.0);
 });
 
+test('the chart of accounts lists every account with signed balances', function () {
+    $this->accounting->postJournal('Purchase', [
+        ['account_code' => '1110', 'debit' => 800.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '2100', 'credit' => 800.0, 'operating_unit_id' => $this->unit->id],
+    ]);
+
+    $accounts = ($this->api)()->getJson('/api/v1/accounts')
+        ->assertStatus(200)
+        ->json('data');
+
+    $byCode = collect($accounts)->keyBy('account_code');
+
+    // Both sides carry a positive balance in their natural sign.
+    expect((float) $byCode['1110']['balance'])->toBe(800.0)
+        ->and((float) $byCode['2100']['balance'])->toBe(800.0)
+        ->and($byCode['1110']['parent_account_id'])->toBe($byCode['1100']['id']);
+});
+
+test('an account ledger lists its lines newest first with entry context', function () {
+    $this->accounting->postJournal('First', [
+        ['account_code' => '1110', 'debit' => 100.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '2100', 'credit' => 100.0, 'operating_unit_id' => $this->unit->id],
+    ], entryDate: '2026-08-01');
+    $this->accounting->postJournal('Second', [
+        ['account_code' => '1110', 'debit' => 200.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '2100', 'credit' => 200.0, 'operating_unit_id' => $this->unit->id],
+    ], entryDate: '2026-08-10');
+
+    $accountId = collect(($this->api)()->getJson('/api/v1/accounts')->json('data'))
+        ->firstWhere('account_code', '1110')['id'];
+
+    $ledger = ($this->api)()->getJson("/api/v1/accounts/{$accountId}/ledger")
+        ->assertStatus(200)
+        ->json('data');
+
+    expect($ledger)->toHaveCount(2)
+        ->and((float) $ledger[0]['debit'])->toBe(200.0)
+        ->and($ledger[0]['journal_entry']['description'])->toBe('Second')
+        ->and((float) $ledger[1]['debit'])->toBe(100.0);
+});
+
 test('journal references do not collide', function () {
     $refs = collect(range(1, 5))->map(fn () => $this->accounting->postJournal('Entry', [
         ['account_code' => '1131', 'debit' => 1.0],

@@ -37,4 +37,9 @@ final class Account extends Model
     {
         return $this->hasMany(self::class, 'parent_account_id');
     }
+
+    public function journalLines(): HasMany
+    {
+        return $this->hasMany(JournalLine::class);
+    }
 }
