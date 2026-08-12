@@ -21,6 +21,7 @@ final class StoreImportOrderRequest extends FormRequest
             'currency' => 'sometimes|string|size:3',
             'negotiated_price' => 'required|numeric|min:0.0001',
             'quantity' => 'required|numeric|min:0.0001',
+            'booked_fx_rate' => 'sometimes|nullable|numeric|min:0.000001',
         ];
     }
 }

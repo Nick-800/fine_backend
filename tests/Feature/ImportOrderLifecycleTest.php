@@ -12,6 +12,7 @@ use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\ImportOrderStateService;
+use Database\Seeders\ChartOfAccountsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -24,6 +25,10 @@ beforeEach(function () {
         'transfer_pricing_mode' => 'cost_plus',
         'timezone' => 'UTC',
     ]);
+
+    // Completing an order now posts to the ledger, and a missing account is
+    // fatal by design (ACC-02).
+    $this->seed(ChartOfAccountsSeeder::class);
 
     $this->blueprint = UnitBlueprint::create([
         'name' => 'Standard Blueprint',

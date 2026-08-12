@@ -5,17 +5,24 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\ImportOrderStatus;
+use App\Enums\LandedCostType;
 use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
 use App\Models\BankHold;
+use App\Models\FxRate;
 use App\Models\GoodsReceipt;
 use App\Models\ImportOrder;
+use App\Models\LandedCostLine;
 use App\Models\PaymentRequest;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class ImportOrderStateService
 {
+    public function __construct(
+        private readonly AccountingService $accountingService,
+    ) {}
+
     public function transitionToPendingPayment(ImportOrder $order): ImportOrder
     {
         return DB::transaction(function () use ($order) {
@@ -210,9 +217,183 @@ final class ImportOrderStateService
                 throw new InvalidArgumentException('All landed cost lines must be confirmed before completing order.');
             }
 
+            // ACC-02/ACC-10: the purchase enters the ledger here, on Complete,
+            // or not at all. Posting before the status flip keeps the guard
+            // fatal — a completion that cannot post is refused, not skipped.
+            $this->postCompletionJournal($order);
+
             $order->update(['status' => ImportOrderStatus::Complete]);
 
             return $order->refresh();
         });
+    }
+
+    /**
+     * Phase 08 §8.4, ImportOrder.Complete — the purchase reaches the ledger.
+     *
+     *   DR  1110 Raw Material Inventory   (supplier cost at booked rate + landed costs)
+     *   DR  5300 FX Loss                  (realized > booked)
+     *   CR  2100 Accounts Payable         (supplier cost at realized rate)
+     *   CR  4200 FX Gain                  (realized < booked)
+     *   CR  2300 Landed Cost Clearing     (one line per confirmed cost component)
+     *
+     * Inventory carries the transaction-date (booked) value of the goods plus
+     * every confirmed landed cost; the payable reflects what treasury actually
+     * settled; the difference between the two rates is the FX gain/loss
+     * (phase-02 §2.8, ACC-09). Landed cost lines of type `supplier_price` are
+     * skipped: the order itself is the supplier-price component, and counting
+     * a mirror line again would double the inventory value.
+     */
+    private function postCompletionJournal(ImportOrder $order): void
+    {
+        $functionalCurrency = $order->operatingUnit?->company?->default_currency ?? 'LYD';
+
+        $supplierCostFc = round((float) $order->negotiated_price * (float) $order->quantity, 4);
+        $realizedRate = $this->realizedFxRate($order, $functionalCurrency);
+        $bookedRate = $this->bookedFxRate($order, $functionalCurrency) ?? $realizedRate;
+
+        $bookedCost = round($supplierCostFc * $bookedRate, 4);
+        $realizedCost = round($supplierCostFc * $realizedRate, 4);
+        $fxDifference = round($realizedCost - $bookedCost, 4);
+
+        $landedCostLines = $order->landedCostLines()
+            ->where('is_confirmed', true)
+            ->where('type', '!=', LandedCostType::SupplierPrice)
+            ->get();
+
+        $landedCostTotal = 0.0;
+        $clearingLines = [];
+
+        foreach ($landedCostLines as $line) {
+            $amount = $this->landedCostInFunctionalCurrency($line, $order, $functionalCurrency, $realizedRate);
+
+            if ($amount <= 0.0) {
+                continue;
+            }
+
+            $landedCostTotal = round($landedCostTotal + $amount, 4);
+            $clearingLines[] = [
+                'account_code' => '2300', // Landed Cost Clearing
+                'credit' => $amount,
+                'operating_unit_id' => $order->operating_unit_id,
+                'memo' => $line->type->value,
+            ];
+        }
+
+        $receivedQty = (float) $order->goodsReceipt->received_qty;
+        $inventoryValue = round($bookedCost + $landedCostTotal, 4);
+        $perUnit = $receivedQty > 0.0 ? round($inventoryValue / $receivedQty, 4) : 0.0;
+
+        $lines = [[
+            'account_code' => '1110', // Raw Material Inventory
+            'debit' => $inventoryValue,
+            'operating_unit_id' => $order->operating_unit_id,
+            'memo' => "{$receivedQty} received at {$perUnit}/unit landed",
+        ]];
+
+        if ($fxDifference > 0) {
+            $lines[] = [
+                'account_code' => '5300', // FX Loss
+                'debit' => $fxDifference,
+                'operating_unit_id' => $order->operating_unit_id,
+                'memo' => "booked {$bookedRate}, realized {$realizedRate}",
+            ];
+        }
+
+        $lines[] = [
+            'account_code' => '2100', // Accounts Payable
+            'credit' => $realizedCost,
+            'operating_unit_id' => $order->operating_unit_id,
+            'memo' => $order->supplier?->name,
+        ];
+
+        if ($fxDifference < 0) {
+            $lines[] = [
+                'account_code' => '4200', // FX Gain
+                'credit' => -$fxDifference,
+                'operating_unit_id' => $order->operating_unit_id,
+                'memo' => "booked {$bookedRate}, realized {$realizedRate}",
+            ];
+        }
+
+        $this->accountingService->postJournal(
+            "Import order from {$order->supplier?->name} completed",
+            array_merge($lines, $clearingLines),
+            'ImportOrder',
+            $order->id,
+            $order->operatingUnit?->company_id,
+        );
+    }
+
+    /**
+     * The rate treasury actually settled at. An order cannot reach Received
+     * without an executed payment, so a missing rate means the books cannot
+     * be made whole — refuse rather than guess.
+     */
+    private function realizedFxRate(ImportOrder $order, string $functionalCurrency): float
+    {
+        if ($order->currency === $functionalCurrency) {
+            return 1.0;
+        }
+
+        $rate = $order->paymentRequests()
+            ->where('status', PaymentRequestStatus::Paid)
+            ->whereNotNull('fx_rate_used')
+            ->latest('updated_at')
+            ->value('fx_rate_used');
+
+        if ($rate === null) {
+            throw new InvalidArgumentException(
+                'Order has no executed payment with an FX rate; cannot value the purchase for posting.'
+            );
+        }
+
+        return (float) $rate;
+    }
+
+    /**
+     * The booked estimate: the snapshot taken at order creation, falling back
+     * to the rate history for orders that predate the snapshot column. Null
+     * means no estimate ever existed — the caller treats booked = realized.
+     */
+    private function bookedFxRate(ImportOrder $order, string $functionalCurrency): ?float
+    {
+        if ($order->currency === $functionalCurrency) {
+            return 1.0;
+        }
+
+        if ($order->booked_fx_rate !== null) {
+            return (float) $order->booked_fx_rate;
+        }
+
+        $historical = FxRate::query()
+            ->where('from_currency', $order->currency)
+            ->where('to_currency', $functionalCurrency)
+            ->where('captured_at', '<=', $order->created_at)
+            ->latest('captured_at')
+            ->value('rate');
+
+        return $historical !== null ? (float) $historical : null;
+    }
+
+    private function landedCostInFunctionalCurrency(
+        LandedCostLine $line,
+        ImportOrder $order,
+        string $functionalCurrency,
+        float $realizedRate,
+    ): float {
+        $amount = round((float) $line->amount, 4);
+
+        if ($line->currency === $functionalCurrency) {
+            return $amount;
+        }
+
+        if ($line->currency === $order->currency) {
+            return round($amount * $realizedRate, 4);
+        }
+
+        throw new InvalidArgumentException(
+            "Landed cost line in {$line->currency} cannot be converted to {$functionalCurrency}; no rate is available."
+        );
     }
 }

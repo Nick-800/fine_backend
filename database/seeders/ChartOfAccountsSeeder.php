@@ -12,9 +12,10 @@ use Illuminate\Database\Seeder;
 /**
  * Chart of accounts for the manufacturing flow.
  *
- * Scoped to what the implemented modules actually post: inventory, WIP, payables
- * and COGS. Overhead, fixed assets and FX accounts belong with the rest of
- * Phase 08 and are deliberately absent rather than seeded unused.
+ * Scoped to what the implemented modules actually post: inventory, WIP,
+ * payables, COGS, landed cost clearing and FX gain/loss. Overhead and fixed
+ * asset accounts belong with the rest of Phase 08 and are deliberately absent
+ * rather than seeded unused.
  */
 class ChartOfAccountsSeeder extends Seeder
 {
@@ -51,16 +52,19 @@ class ChartOfAccountsSeeder extends Seeder
             ['2000', 'Liabilities', 'liability', null],
             ['2100', 'Accounts Payable', 'liability', '2000'],
             ['2200', 'Wages Payable', 'liability', '2000'],
+            ['2300', 'Landed Cost Clearing', 'liability', '2000'],
 
             ['3000', 'Equity', 'equity', null],
             ['3100', 'Retained Earnings', 'equity', '3000'],
 
             ['4000', 'Revenue', 'revenue', null],
             ['4100', 'Sales Revenue', 'revenue', '4000'],
+            ['4200', 'FX Gain', 'revenue', '4000'],
 
             ['5000', 'Expenses', 'expense', null],
             ['5100', 'Cost of Goods Sold', 'expense', '5000'],
             ['5200', 'Production Variance', 'expense', '5000'],
+            ['5300', 'FX Loss', 'expense', '5000'],
         ];
 
         $created = [];

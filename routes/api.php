@@ -112,7 +112,7 @@ Route::prefix('v1')->group(function () {
             // Phase 02: Procurement System
             Route::apiResource('suppliers', SupplierController::class);
             Route::apiResource('import-orders', ImportOrderController::class);
-            Route::post('/import-orders/{id}/status', [ImportOrderController::class, 'updateStatus']);
+            Route::post('/import-orders/{id}/transition', [ImportOrderController::class, 'transition']);
             Route::get('/import-orders/{id}/payment-requests', [PaymentRequestController::class, 'index']);
             Route::post('/import-orders/{id}/payment-requests', [PaymentRequestController::class, 'store']);
             Route::post('/import-orders/{id}/payment-requests/{requestId}/process', [PaymentRequestController::class, 'process']);

@@ -19,6 +19,7 @@ final class ImportOrderResource extends JsonResource
             'currency' => $this->currency,
             'negotiated_price' => (float) $this->negotiated_price,
             'quantity' => (float) $this->quantity,
+            'booked_fx_rate' => $this->booked_fx_rate !== null ? (float) $this->booked_fx_rate : null,
             'status' => $this->status->value ?? $this->status,
             'record_version' => $this->record_version,
             'payment_requests' => PaymentRequestResource::collection($this->whenLoaded('paymentRequests')),

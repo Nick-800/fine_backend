@@ -8,7 +8,9 @@ use App\Enums\PaymentRoute;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\v1\StoreImportOrderRequest;
 use App\Http\Resources\v1\ImportOrderResource;
+use App\Models\FxRate;
 use App\Models\ImportOrder;
+use App\Models\OperatingUnit;
 use App\Models\Warehouse;
 use App\Rules\ExistsInCurrentUnit;
 use App\Services\ImportOrderStateService;
@@ -39,11 +41,39 @@ final class ImportOrderController extends Controller
 
     public function store(StoreImportOrderRequest $request): JsonResponse
     {
-        $order = ImportOrder::create($request->validated());
+        $data = $request->validated();
+
+        // PROC-06: the booked FX estimate is captured when the order is
+        // booked, not reconstructed later. Completion posts FX gain/loss
+        // against this snapshot (phase-02 §2.8).
+        if (! isset($data['booked_fx_rate'])) {
+            $data['booked_fx_rate'] = $this->snapshotBookedFxRate(
+                $data['currency'] ?? 'USD',
+                $data['operating_unit_id'],
+            );
+        }
+
+        $order = ImportOrder::create($data);
 
         return (new ImportOrderResource($order->load('supplier')))
             ->response()
             ->setStatusCode(201);
+    }
+
+    private function snapshotBookedFxRate(string $currency, string $operatingUnitId): ?string
+    {
+        $functionalCurrency = OperatingUnit::query()
+            ->find($operatingUnitId)?->company?->default_currency ?? 'LYD';
+
+        if ($currency === $functionalCurrency) {
+            return '1';
+        }
+
+        return FxRate::query()
+            ->where('from_currency', $currency)
+            ->where('to_currency', $functionalCurrency)
+            ->latest('captured_at')
+            ->value('rate');
     }
 
     public function show(string $id): ImportOrderResource

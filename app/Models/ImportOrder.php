@@ -23,6 +23,7 @@ final class ImportOrder extends Model
         'currency',
         'negotiated_price',
         'quantity',
+        'booked_fx_rate',
         'status',
         'record_version',
     ];
@@ -31,6 +32,7 @@ final class ImportOrder extends Model
         'status' => ImportOrderStatus::class,
         'negotiated_price' => 'decimal:4',
         'quantity' => 'decimal:4',
+        'booked_fx_rate' => 'decimal:6',
         'record_version' => 'integer',
     ];
 
