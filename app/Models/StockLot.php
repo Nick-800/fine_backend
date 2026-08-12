@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class StockLot extends Model
@@ -122,5 +123,14 @@ class StockLot extends Model
     public function remnantOf(): BelongsTo
     {
         return $this->belongsTo(self::class, 'remnant_of_lot_id');
+    }
+
+    /**
+     * A block can only be cut once, so this is one-to-one. Used to keep already
+     * consumed blocks out of the cutter's selection list.
+     */
+    public function cutterConsumption(): HasOne
+    {
+        return $this->hasOne(FoamBlockConsumption::class);
     }
 }

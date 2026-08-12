@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\v1\BankHoldController;
 use App\Http\Controllers\Api\v1\CashAccountController;
 use App\Http\Controllers\Api\v1\ClientController;
 use App\Http\Controllers\Api\v1\ConsumptionReportController;
+use App\Http\Controllers\Api\v1\CutterWorkOrderController;
 use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityController;
 use App\Http\Controllers\Api\v1\ExternalEmployerController;
@@ -147,6 +148,18 @@ Route::prefix('v1')->group(function () {
             Route::get('/inventory/valuation/rollup', [InventoryValuationController::class, 'rollup']);
 
             Route::apiResource('warehouses', WarehouseController::class);
+
+            // Phase 05: Cutter Manufacturing
+            Route::get('/cutter-work-orders', [CutterWorkOrderController::class, 'index']);
+            Route::post('/cutter-work-orders', [CutterWorkOrderController::class, 'store']);
+            Route::get('/cutter-work-orders/{id}', [CutterWorkOrderController::class, 'show']);
+            Route::post('/cutter-work-orders/{id}/transition', [CutterWorkOrderController::class, 'transition']);
+            Route::post('/cutter-work-orders/{id}/lines', [CutterWorkOrderController::class, 'storeLine']);
+            Route::post('/cutter-work-orders/{id}/weigh-in', [CutterWorkOrderController::class, 'recordWeighIn']);
+            Route::get('/cutter-work-orders/{id}/byproduct-yields', [CutterWorkOrderController::class, 'byproductYields']);
+            Route::put('/cutter-work-order-lines/{lineId}/assign-template', [CutterWorkOrderController::class, 'assignTemplate']);
+            Route::get('/cutter-work-order-lines/{lineId}/available-blocks', [CutterWorkOrderController::class, 'availableBlocks']);
+            Route::post('/cutter-work-order-lines/{lineId}/select-block', [CutterWorkOrderController::class, 'selectBlock']);
 
             // Phase 08 (slice): double-entry ledger. Entries are posted by the
             // modules that cause them, never created directly here.
