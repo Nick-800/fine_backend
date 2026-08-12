@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\v1\CutterWorkOrderController;
 use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityController;
 use App\Http\Controllers\Api\v1\ExternalEmployerController;
+use App\Http\Controllers\Api\v1\FinancialReportController;
 use App\Http\Controllers\Api\v1\FxRateController;
 use App\Http\Controllers\Api\v1\GoodsReceiptController;
 use App\Http\Controllers\Api\v1\ImportOrderController;
@@ -216,6 +217,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/journal-entries/for-document/{type}/{documentId}', [JournalEntryController::class, 'forDocument']);
             Route::get('/journal-entries/{id}', [JournalEntryController::class, 'show']);
             Route::get('/reports/trial-balance', [JournalEntryController::class, 'trialBalance']);
+            Route::get('/reports/income-statement', [FinancialReportController::class, 'incomeStatement']);
+            Route::get('/reports/balance-sheet', [FinancialReportController::class, 'balanceSheet']);
+            Route::get('/reports/unit-profitability', [FinancialReportController::class, 'unitProfitability']);
 
             // Phase 04: Foam Manufacturing — Production Batches & Block Identity
             Route::post('/production-batches/{id}/blocks', [ProductionBatchController::class, 'registerBlocks']);
