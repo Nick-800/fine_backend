@@ -10,6 +10,7 @@ use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -42,6 +43,7 @@ class AccountingService
         ?string $companyId = null,
         bool $isManual = false,
         ?string $userId = null,
+        ?string $entryDate = null,
     ): JournalEntry {
         if ($lines === []) {
             throw new InvalidArgumentException('A journal entry needs at least one line.');
@@ -85,11 +87,13 @@ class AccountingService
             throw new InvalidArgumentException('A journal entry with no value has nothing to record.');
         }
 
-        return DB::transaction(function () use ($description, $lines, $sourceType, $sourceId, $companyId, $isManual, $userId): JournalEntry {
+        $entryDate ??= now()->toDateString();
+
+        return DB::transaction(function () use ($description, $lines, $sourceType, $sourceId, $companyId, $isManual, $userId, $entryDate): JournalEntry {
             $entry = JournalEntry::create([
                 'company_id' => $companyId,
-                'reference' => $this->nextReference(),
-                'entry_date' => now()->toDateString(),
+                'reference' => $this->nextReference($entryDate),
+                'entry_date' => $entryDate,
                 'description' => $description,
                 'source_document_type' => $sourceType,
                 'source_document_id' => $sourceId,
@@ -169,9 +173,14 @@ class AccountingService
         return $account;
     }
 
-    private function nextReference(): string
+    /**
+     * The sequence year follows the entry date, not the posting date — a
+     * backdated correction must count against its own year or two of them
+     * would collide on the same reference.
+     */
+    private function nextReference(string $entryDate): string
     {
-        $year = now()->format('Y');
+        $year = Carbon::parse($entryDate)->format('Y');
         $sequence = JournalEntry::withTrashed()->whereYear('entry_date', $year)->count() + 1;
 
         return sprintf('JE-%s-%05d', $year, $sequence);

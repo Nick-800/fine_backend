@@ -212,6 +212,7 @@ Route::prefix('v1')->group(function () {
             // Phase 08 (slice): double-entry ledger. Entries are posted by the
             // modules that cause them, never created directly here.
             Route::get('/journal-entries', [JournalEntryController::class, 'index']);
+            Route::post('/journal-entries', [JournalEntryController::class, 'store']);
             Route::get('/journal-entries/for-document/{type}/{documentId}', [JournalEntryController::class, 'forDocument']);
             Route::get('/journal-entries/{id}', [JournalEntryController::class, 'show']);
             Route::get('/reports/trial-balance', [JournalEntryController::class, 'trialBalance']);

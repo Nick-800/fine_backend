@@ -10,6 +10,7 @@ use App\Services\AccountingService;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
 
 class JournalEntryController extends Controller
 {
@@ -41,6 +42,52 @@ class JournalEntryController extends Controller
         }
 
         return response()->json($query->paginate($request->integer('per_page', 25)));
+    }
+
+    /**
+     * ACC-04: manual entries exist for corrections only, and only from someone
+     * accountable for the whole ledger. The entry itself still goes through
+     * postJournal, so a manual correction can no more unbalance the books than
+     * an auto-posted event can.
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->hasRole('owner') && ! $user->hasRole('accounting-manager')) {
+            return response()->json([
+                'message' => 'Only an accounting manager or the owner can post manual journal entries.',
+                'code' => 'MANUAL_JOURNAL_FORBIDDEN',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'description' => 'required|string|max:500',
+            'entry_date' => 'sometimes|nullable|date|before_or_equal:today',
+            'lines' => 'required|array|min:2',
+            'lines.*.account_code' => 'required|string',
+            'lines.*.debit' => 'sometimes|numeric|min:0',
+            'lines.*.credit' => 'sometimes|numeric|min:0',
+            'lines.*.operating_unit_id' => 'sometimes|nullable|uuid|exists:operating_units,id',
+            'lines.*.memo' => 'sometimes|nullable|string|max:500',
+        ]);
+
+        try {
+            $entry = $this->accountingService->postJournal(
+                $validated['description'],
+                $validated['lines'],
+                isManual: true,
+                userId: $user->id,
+                entryDate: $validated['entry_date'] ?? null,
+            );
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_JOURNAL',
+            ], 422);
+        }
+
+        return response()->json($entry->load('createdBy'), 201);
     }
 
     public function show(string $id): JsonResponse
