@@ -1,6 +1,7 @@
 <?php
 
 use App\Exceptions\InsufficientTankStockException;
+use App\Exceptions\InvalidOperatingUnitException;
 use App\Exceptions\InvalidStateTransitionException;
 use App\Exceptions\OptimisticLockConflictException;
 use App\Exceptions\SerializedQuantityException;
@@ -40,6 +41,13 @@ return Application::configure(basePath: dirname(__DIR__))
                 'message' => $e->getMessage(),
                 'code' => 'SERIALIZED_QUANTITY_INVALID',
             ], 422);
+        });
+
+        $exceptions->render(function (InvalidOperatingUnitException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_OPERATING_UNIT',
+            ], 400);
         });
 
         $exceptions->render(function (InsufficientTankStockException $e, Request $request) {

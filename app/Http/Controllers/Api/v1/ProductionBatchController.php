@@ -24,8 +24,10 @@ class ProductionBatchController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        // Counted separately: scrap lots are stock but not blocks, so folding them
+        // into one number would overstate a run's block output.
         $query = ProductionBatch::with(['operatingUnit', 'requestedByClient'])
-            ->withCount('stockLots');
+            ->withCount(['blocks', 'scrapLots']);
 
         if ($unitId = $this->unitContext->getUnitId()) {
             $query->where('operating_unit_id', $unitId);
@@ -97,7 +99,7 @@ class ProductionBatchController extends Controller
     public function show(string $id): JsonResponse
     {
         $batch = ProductionBatch::with(['operatingUnit', 'requestedByClient'])
-            ->withCount('stockLots')
+            ->withCount(['blocks', 'scrapLots'])
             ->findOrFail($id);
 
         return response()->json($batch);

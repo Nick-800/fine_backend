@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Exceptions\InvalidOperatingUnitException;
 use App\Models\OperatingUnit;
 use App\Models\User;
 use App\Support\CurrentUnitContext;
@@ -61,7 +62,11 @@ final class ScopeOperatingUnit
                 return $next($request);
             }
 
-            throw new BadRequestHttpException('Invalid Operating Unit ID.');
+            // Carries a code so the client can drop the stale id and recover.
+            // Without one it would keep resending the same bad header on retry.
+            throw new InvalidOperatingUnitException(
+                'The selected operating unit no longer exists. It may belong to a different database.'
+            );
         }
 
         // 3. Fallback to route parameter if header unit ID was not provided

@@ -105,6 +105,16 @@ beforeEach(function () {
     $this->asA = fn () => $this->actingAs($this->userA)->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id]);
 });
 
+test('a unit id from another database is rejected with a recoverable code', function () {
+    // A client holding a unit id from a reseeded database would otherwise retry
+    // the same bad header forever. The code lets it drop the stale value.
+    $this->actingAs($this->userA)
+        ->withHeaders(['X-Operating-Unit-ID' => '019ff000-0000-7000-8000-00000000dead'])
+        ->getJson('/api/v1/production-batches')
+        ->assertStatus(400)
+        ->assertJsonPath('code', 'INVALID_OPERATING_UNIT');
+});
+
 test('a unit-scoped user cannot read another unit production batch', function () {
     ($this->asA)()->getJson("/api/v1/production-batches/{$this->batchB->id}")->assertNotFound();
 });
