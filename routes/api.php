@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\v1\InventoryItemController;
 use App\Http\Controllers\Api\v1\InventoryMovementController;
 use App\Http\Controllers\Api\v1\InventoryValuationController;
 use App\Http\Controllers\Api\v1\ItemCategoryController;
+use App\Http\Controllers\Api\v1\JournalEntryController;
 use App\Http\Controllers\Api\v1\LandedCostLineController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\PaymentRequestController;
@@ -146,6 +147,13 @@ Route::prefix('v1')->group(function () {
             Route::get('/inventory/valuation/rollup', [InventoryValuationController::class, 'rollup']);
 
             Route::apiResource('warehouses', WarehouseController::class);
+
+            // Phase 08 (slice): double-entry ledger. Entries are posted by the
+            // modules that cause them, never created directly here.
+            Route::get('/journal-entries', [JournalEntryController::class, 'index']);
+            Route::get('/journal-entries/for-document/{type}/{documentId}', [JournalEntryController::class, 'forDocument']);
+            Route::get('/journal-entries/{id}', [JournalEntryController::class, 'show']);
+            Route::get('/reports/trial-balance', [JournalEntryController::class, 'trialBalance']);
 
             // Phase 04: Foam Manufacturing — Production Batches & Block Identity
             Route::post('/production-batches/{id}/blocks', [ProductionBatchController::class, 'registerBlocks']);

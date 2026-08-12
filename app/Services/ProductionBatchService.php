@@ -15,6 +15,8 @@ use InvalidArgumentException;
 
 class ProductionBatchService
 {
+    public function __construct(private readonly AccountingService $accountingService) {}
+
     /**
      * Compose the human-readable block label: {sequence}-{pressure}-{operation}.
      *
@@ -85,6 +87,7 @@ class ProductionBatchService
             // blocks by volume share, so a bigger block carries more of it.
             if ($target === ProductionBatchStatus::Closed) {
                 $this->apportionMaterialCost($locked);
+                $this->postClosingJournal($locked);
             }
 
             return $locked->fresh();
@@ -135,6 +138,47 @@ class ProductionBatchService
             $block->unit_cost = $cost;
             $block->save();
         }
+    }
+
+    /**
+     * Phase 04 §4.6: on close the run's value moves out of work in process and
+     * into finished goods.
+     *
+     *   DR  Finished Goods — Foam Blocks
+     *   CR  Work In Process — Foam Production
+     *
+     * Posted for the material cost actually apportioned onto blocks, not the
+     * batch's raw material cost. Scrap carries none of it, so if a run produced
+     * scrap the two differ — and finished goods must match what the blocks are
+     * really carrying, or the ledger and the stock ledger drift apart.
+     */
+    private function postClosingJournal(ProductionBatch $batch): void
+    {
+        $apportioned = round((float) $batch->blocks()->sum('unit_cost'), 4);
+
+        if ($apportioned <= 0.0) {
+            return;
+        }
+
+        $this->accountingService->postJournal(
+            "Foam operation {$batch->operation_number} closed",
+            [
+                [
+                    'account_code' => '1131', // Finished Goods — Foam Blocks
+                    'debit' => $apportioned,
+                    'operating_unit_id' => $batch->operating_unit_id,
+                    'memo' => "{$batch->blocks()->count()} blocks",
+                ],
+                [
+                    'account_code' => '1121', // WIP — Foam Production
+                    'credit' => $apportioned,
+                    'operating_unit_id' => $batch->operating_unit_id,
+                ],
+            ],
+            'ProductionBatch',
+            $batch->id,
+            $batch->operatingUnit?->company_id,
+        );
     }
 
     /**

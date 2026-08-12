@@ -207,6 +207,8 @@ class DatabaseSeeder extends Seeder
             DomainModelsSeeder::class,
             ProcurementTreasurySeeder::class,
             WorkOrderInventorySeeder::class,
+            // Accounts must exist before any module posts a journal against them.
+            ChartOfAccountsSeeder::class,
             InventorySeeder::class,
             FoamProductionSeeder::class,
         ]);

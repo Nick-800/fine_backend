@@ -3,8 +3,10 @@
 use App\Exceptions\InsufficientTankStockException;
 use App\Exceptions\InvalidOperatingUnitException;
 use App\Exceptions\InvalidStateTransitionException;
+use App\Exceptions\MissingAccountException;
 use App\Exceptions\OptimisticLockConflictException;
 use App\Exceptions\SerializedQuantityException;
+use App\Exceptions\UnbalancedJournalException;
 use App\Http\Middleware\EnsurePasswordIsUpdated;
 use App\Http\Middleware\ScopeOperatingUnit;
 use Illuminate\Foundation\Application;
@@ -40,6 +42,20 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'message' => $e->getMessage(),
                 'code' => 'SERIALIZED_QUANTITY_INVALID',
+            ], 422);
+        });
+
+        $exceptions->render(function (MissingAccountException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'MISSING_ACCOUNT',
+            ], 422);
+        });
+
+        $exceptions->render(function (UnbalancedJournalException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'UNBALANCED_JOURNAL',
             ], 422);
         });
 
