@@ -20,6 +20,7 @@ final class Client extends Model
         'entity_id',
         'operating_unit_id',
         'credit_limit',
+        'current_balance',
         'payment_terms_days',
         'account_id',
         'status',

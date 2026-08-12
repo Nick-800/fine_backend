@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\v1\BomController;
 use App\Http\Controllers\Api\v1\CashAccountController;
 use App\Http\Controllers\Api\v1\ClientController;
 use App\Http\Controllers\Api\v1\ConsumptionReportController;
+use App\Http\Controllers\Api\v1\CreditApprovalController;
 use App\Http\Controllers\Api\v1\CutterWorkOrderController;
 use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Api\v1\ExternalEmployerController;
 use App\Http\Controllers\Api\v1\FxRateController;
 use App\Http\Controllers\Api\v1\GoodsReceiptController;
 use App\Http\Controllers\Api\v1\ImportOrderController;
+use App\Http\Controllers\Api\v1\InternalRestockController;
 use App\Http\Controllers\Api\v1\InventoryAttributeController;
 use App\Http\Controllers\Api\v1\InventoryItemController;
 use App\Http\Controllers\Api\v1\InventoryMovementController;
@@ -25,10 +27,12 @@ use App\Http\Controllers\Api\v1\JournalEntryController;
 use App\Http\Controllers\Api\v1\LandedCostLineController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\PaymentRequestController;
+use App\Http\Controllers\Api\v1\PosController;
 use App\Http\Controllers\Api\v1\ProductController;
 use App\Http\Controllers\Api\v1\ProductionBatchController;
 use App\Http\Controllers\Api\v1\ProductionOrderController;
 use App\Http\Controllers\Api\v1\RoleController;
+use App\Http\Controllers\Api\v1\SalesOrderController;
 use App\Http\Controllers\Api\v1\StockAdjustmentRequestController;
 use App\Http\Controllers\Api\v1\StockLotController;
 use App\Http\Controllers\Api\v1\SupplierController;
@@ -182,6 +186,28 @@ Route::prefix('v1')->group(function () {
             Route::post('/production-orders/{id}/transition', [ProductionOrderController::class, 'transition']);
             Route::get('/production-orders/{id}/labor-logs', [ProductionOrderController::class, 'laborLogs']);
             Route::post('/production-orders/{id}/labor-logs', [ProductionOrderController::class, 'storeLaborLog']);
+
+            // Phase 07: Sales, POS & Credit. Actions decide outcomes — there is
+            // no free-target transition, so the credit gate cannot be bypassed.
+            Route::get('/sales-orders', [SalesOrderController::class, 'index']);
+            Route::post('/sales-orders', [SalesOrderController::class, 'store']);
+            Route::get('/sales-orders/{id}', [SalesOrderController::class, 'show']);
+            Route::post('/sales-orders/{id}/submit', [SalesOrderController::class, 'submit']);
+            Route::post('/sales-orders/{id}/fulfill', [SalesOrderController::class, 'fulfill']);
+            Route::post('/sales-orders/{id}/record-payment', [SalesOrderController::class, 'recordPayment']);
+            Route::post('/sales-orders/{id}/complete', [SalesOrderController::class, 'complete']);
+            Route::get('/sales-orders/{id}/invoice', [SalesOrderController::class, 'invoice']);
+            Route::get('/credit-approval-requests', [CreditApprovalController::class, 'index']);
+            Route::put('/credit-approval-requests/{id}/approve', [CreditApprovalController::class, 'approve']);
+            Route::put('/credit-approval-requests/{id}/reject', [CreditApprovalController::class, 'reject']);
+            Route::post('/pos/sales', [PosController::class, 'checkout']);
+            Route::get('/pos/daily-report', [PosController::class, 'dailyReport']);
+            Route::get('/pos/sales/{id}', [PosController::class, 'show']);
+            Route::get('/internal-restock-requests', [InternalRestockController::class, 'index']);
+            Route::post('/internal-restock-requests', [InternalRestockController::class, 'store']);
+            Route::put('/internal-restock-requests/{id}/approve', [InternalRestockController::class, 'approve']);
+            Route::put('/internal-restock-requests/{id}/reject', [InternalRestockController::class, 'reject']);
+            Route::post('/internal-restock-requests/{id}/fulfill', [InternalRestockController::class, 'fulfill']);
 
             // Phase 08 (slice): double-entry ledger. Entries are posted by the
             // modules that cause them, never created directly here.
