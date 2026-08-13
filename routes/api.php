@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityController;
 use App\Http\Controllers\Api\v1\ExternalEmployerController;
 use App\Http\Controllers\Api\v1\FinancialReportController;
+use App\Http\Controllers\Api\v1\FixedAssetController;
 use App\Http\Controllers\Api\v1\FxRateController;
 use App\Http\Controllers\Api\v1\GoodsReceiptController;
 use App\Http\Controllers\Api\v1\ImportOrderController;
@@ -28,6 +29,7 @@ use App\Http\Controllers\Api\v1\ItemCategoryController;
 use App\Http\Controllers\Api\v1\JournalEntryController;
 use App\Http\Controllers\Api\v1\LandedCostLineController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
+use App\Http\Controllers\Api\v1\OverheadExpenseController;
 use App\Http\Controllers\Api\v1\PaymentRequestController;
 use App\Http\Controllers\Api\v1\PosController;
 use App\Http\Controllers\Api\v1\ProductController;
@@ -223,6 +225,20 @@ Route::prefix('v1')->group(function () {
             Route::get('/reports/income-statement', [FinancialReportController::class, 'incomeStatement']);
             Route::get('/reports/balance-sheet', [FinancialReportController::class, 'balanceSheet']);
             Route::get('/reports/unit-profitability', [FinancialReportController::class, 'unitProfitability']);
+
+            // Phase 08: overhead + fixed assets
+            Route::get('/overhead-expenses', [OverheadExpenseController::class, 'index']);
+            Route::post('/overhead-expenses', [OverheadExpenseController::class, 'store']);
+            Route::post('/overhead-expenses/{id}/allocate', [OverheadExpenseController::class, 'allocate']);
+            Route::get('/overhead-allocation-rules', [OverheadExpenseController::class, 'rules']);
+            Route::post('/overhead-allocation-rules', [OverheadExpenseController::class, 'storeRule']);
+            Route::get('/fixed-assets', [FixedAssetController::class, 'index']);
+            Route::post('/fixed-assets', [FixedAssetController::class, 'store']);
+            Route::get('/fixed-assets/{id}', [FixedAssetController::class, 'show']);
+            Route::post('/fixed-assets/{id}/depreciate', [FixedAssetController::class, 'depreciate']);
+            Route::post('/fixed-assets/{id}/dispose', [FixedAssetController::class, 'dispose']);
+            Route::post('/fixed-assets/{id}/transition', [FixedAssetController::class, 'transition']);
+            Route::get('/fixed-assets/{id}/depreciation-schedule', [FixedAssetController::class, 'depreciationSchedule']);
 
             // Phase 04: Foam Manufacturing — Production Batches & Block Identity
             Route::post('/production-batches/{id}/blocks', [ProductionBatchController::class, 'registerBlocks']);

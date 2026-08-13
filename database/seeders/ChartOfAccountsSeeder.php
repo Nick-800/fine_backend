@@ -13,9 +13,8 @@ use Illuminate\Database\Seeder;
  * Chart of accounts for the manufacturing flow.
  *
  * Scoped to what the implemented modules actually post: inventory, WIP,
- * payables, COGS, landed cost clearing and FX gain/loss. Overhead and fixed
- * asset accounts belong with the rest of Phase 08 and are deliberately absent
- * rather than seeded unused.
+ * payables, COGS, landed cost clearing, FX gain/loss, overhead and fixed
+ * assets.
  */
 class ChartOfAccountsSeeder extends Seeder
 {
@@ -48,6 +47,9 @@ class ChartOfAccountsSeeder extends Seeder
             ['1134', 'Finished Goods — Furniture', 'asset', '1130'],
             ['1200', 'Cash and Bank', 'asset', '1000'],
             ['1300', 'Accounts Receivable', 'asset', '1000'],
+            ['1400', 'Fixed Assets', 'asset', '1000'],
+            // Contra-asset: carries a credit balance against 1400.
+            ['1450', 'Accumulated Depreciation', 'asset', '1000'],
 
             ['2000', 'Liabilities', 'liability', null],
             ['2100', 'Accounts Payable', 'liability', '2000'],
@@ -60,11 +62,15 @@ class ChartOfAccountsSeeder extends Seeder
             ['4000', 'Revenue', 'revenue', null],
             ['4100', 'Sales Revenue', 'revenue', '4000'],
             ['4200', 'FX Gain', 'revenue', '4000'],
+            ['4300', 'Gain on Asset Disposal', 'revenue', '4000'],
 
             ['5000', 'Expenses', 'expense', null],
             ['5100', 'Cost of Goods Sold', 'expense', '5000'],
             ['5200', 'Production Variance', 'expense', '5000'],
             ['5300', 'FX Loss', 'expense', '5000'],
+            ['5400', 'Overhead Expense', 'expense', '5000'],
+            ['5500', 'Depreciation Expense', 'expense', '5000'],
+            ['5600', 'Loss on Asset Disposal', 'expense', '5000'],
         ];
 
         $created = [];

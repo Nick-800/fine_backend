@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Models\FixedAsset;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
 use App\Models\OperatingUnit;
+use App\Models\OverheadExpense;
 use App\Models\ProductionBatch;
 use App\Models\Role;
 use App\Models\StockAdjustmentRequest;
@@ -46,5 +48,10 @@ class AppServiceProvider extends ServiceProvider
         TankStock::observe(AuditObserver::class);
         StockAdjustmentRequest::observe(AuditObserver::class);
         ProductionBatch::observe(AuditObserver::class);
+
+        // Phase 08: overhead and fixed assets carry money — every change is
+        // audit-logged like the inventory value carriers above.
+        OverheadExpense::observe(AuditObserver::class);
+        FixedAsset::observe(AuditObserver::class);
     }
 }
