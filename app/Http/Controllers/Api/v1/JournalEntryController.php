@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\v1;
 
+use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
 use App\Models\JournalEntry;
 use App\Services\AccountingService;
@@ -14,6 +15,8 @@ use InvalidArgumentException;
 
 class JournalEntryController extends Controller
 {
+    use ResolvesReportScope;
+
     public function __construct(
         public AccountingService $accountingService,
         public CurrentUnitContext $unitContext,
@@ -37,7 +40,7 @@ class JournalEntryController extends Controller
 
         // Filtered through lines, since an entry itself is company-level while its
         // lines carry the unit.
-        if ($unitId = $this->unitContext->getUnitId()) {
+        if ($unitId = $this->resolveReportUnitId($request, $this->unitContext)) {
             $query->whereHas('lines', fn ($q) => $q->where('operating_unit_id', $unitId));
         }
 
@@ -115,7 +118,7 @@ class JournalEntryController extends Controller
     public function trialBalance(Request $request): JsonResponse
     {
         // Owner sees company-wide; a unit-scoped caller sees their own subledger.
-        $unitId = $request->query('operating_unit_id') ?? $this->unitContext->getUnitId();
+        $unitId = $this->resolveReportUnitId($request, $this->unitContext);
 
         return response()->json($this->accountingService->trialBalance($unitId));
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\v1;
 
+use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\JournalLine;
@@ -18,6 +19,8 @@ use Illuminate\Http\Request;
  */
 final class AccountController extends Controller
 {
+    use ResolvesReportScope;
+
     public function __construct(
         private readonly CurrentUnitContext $unitContext,
     ) {}
@@ -70,7 +73,7 @@ final class AccountController extends Controller
             ->orderByDesc('journal_entries.created_at')
             ->select('journal_lines.*');
 
-        if ($unitId = $this->unitContext->getUnitId()) {
+        if ($unitId = $this->resolveReportUnitId($request, $this->unitContext)) {
             $query->where('journal_lines.operating_unit_id', $unitId);
         }
 

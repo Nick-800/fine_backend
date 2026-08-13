@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\v1;
 
+use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
 use App\Services\FinancialReportService;
 use App\Support\CurrentUnitContext;
@@ -12,6 +13,8 @@ use Illuminate\Http\Request;
 
 final class FinancialReportController extends Controller
 {
+    use ResolvesReportScope;
+
     public function __construct(
         private readonly FinancialReportService $reports,
         private readonly CurrentUnitContext $unitContext,
@@ -63,6 +66,6 @@ final class FinancialReportController extends Controller
      */
     private function resolveUnitId(Request $request): ?string
     {
-        return $request->query('operating_unit_id') ?? $this->unitContext->getUnitId();
+        return $this->resolveReportUnitId($request, $this->unitContext);
     }
 }

@@ -154,6 +154,41 @@ test('a unit-scoped caller sees only their own income statement', function () {
         ->and((float) $report['net_income'])->toBe(700.0);
 });
 
+test('a company-wide caller can bypass a pinned unit with company_wide=1', function () {
+    // The desktop shell always pins a unit context — company_wide is how the
+    // owner sees the whole ledger from the app.
+    $scoped = ($this->asOwner)()
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
+        ->getJson('/api/v1/reports/income-statement')
+        ->assertStatus(200)->json();
+
+    $companyWide = ($this->asOwner)()
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
+        ->getJson('/api/v1/reports/income-statement?company_wide=1')
+        ->assertStatus(200)->json();
+
+    expect((float) $scoped['revenue']['total'])->toBe(1300.0)
+        ->and((float) $companyWide['revenue']['total'])->toBe(1800.0);
+
+    $entries = ($this->asOwner)()
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
+        ->getJson('/api/v1/journal-entries?company_wide=1')
+        ->assertStatus(200)->json();
+
+    expect($entries['total'])->toBe(6);
+});
+
+test('a unit manager cannot escape their unit with company_wide=1', function () {
+    $report = $this->actingAs($this->manager)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
+        ->getJson('/api/v1/reports/income-statement?company_wide=1')
+        ->assertStatus(200)
+        ->json();
+
+    expect((float) $report['revenue']['total'])->toBe(1300.0)
+        ->and((float) $report['net_income'])->toBe(700.0);
+});
+
 test('report date parameters are validated', function () {
     ($this->asOwner)()->getJson('/api/v1/reports/income-statement?from=not-a-date')
         ->assertStatus(422);

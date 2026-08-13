@@ -125,6 +125,8 @@ final class ProcurementTreasurySeeder extends Seeder
         ]);
 
         // 5. Seed Import Order 2 (Received at Warehouse)
+        // Booked at 5.05, settled at 5.15 — completing this order in a demo
+        // shows the landed cost allocation and a realized FX loss.
         $order2 = ImportOrder::create([
             'id' => (string) Str::uuid(),
             'operating_unit_id' => $unit->id,
@@ -132,7 +134,21 @@ final class ProcurementTreasurySeeder extends Seeder
             'currency' => 'USD',
             'negotiated_price' => 85.00,
             'quantity' => 500,
+            'booked_fx_rate' => 5.050000,
             'status' => ImportOrderStatus::Received,
+        ]);
+
+        // An order cannot reach Received without an executed payment, and
+        // completion refuses to post without one — the trail must exist.
+        PaymentRequest::create([
+            'id' => (string) Str::uuid(),
+            'operating_unit_id' => $unit->id,
+            'import_order_id' => $order2->id,
+            'route' => PaymentRoute::Market,
+            'invoice_ref' => 'INV-CHEM-2026-002',
+            'amount_requested' => 42500.00,
+            'status' => PaymentRequestStatus::Paid,
+            'fx_rate_used' => 5.150000,
         ]);
 
         $warehouse = Warehouse::where('operating_unit_id', $unit->id)->first() ?? Warehouse::create([
