@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Enums\FixedAssetStatus;
+use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\FixedAsset;
+use App\Models\Scopes\OperatingUnitOrSharedScope;
 use App\Services\FixedAssetService;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
@@ -16,6 +18,8 @@ use InvalidArgumentException;
 
 final class FixedAssetController extends Controller
 {
+    use ResolvesReportScope;
+
     public function __construct(
         private readonly FixedAssetService $assetService,
         private readonly CurrentUnitContext $unitContext,
@@ -25,6 +29,12 @@ final class FixedAssetController extends Controller
     {
         $query = FixedAsset::with('operatingUnit')->orderBy('asset_code');
 
+        // The register is an accounting view: a company-wide caller sees all
+        // units' assets, same escape hatch as the reports.
+        if ($request->boolean('company_wide') && $this->hasCompanyWideRole($request)) {
+            $query->withoutGlobalScope(OperatingUnitOrSharedScope::class);
+        }
+
         if ($request->filled('status')) {
             $query->where('status', $request->query('status'));
         }
@@ -32,11 +42,11 @@ final class FixedAssetController extends Controller
         return response()->json($query->paginate($request->integer('per_page', 25)));
     }
 
-    public function show(string $id): JsonResponse
+    public function show(Request $request, string $id): JsonResponse
     {
         return response()->json(
-            FixedAsset::with(['operatingUnit', 'depreciationEntries' => fn ($q) => $q->orderByDesc('period')])
-                ->findOrFail($id)
+            $this->findAsset($request, $id)
+                ->load(['operatingUnit', 'depreciationEntries' => fn ($q) => $q->orderByDesc('period')])
         );
     }
 
@@ -87,7 +97,7 @@ final class FixedAssetController extends Controller
 
     public function depreciate(Request $request, string $id): JsonResponse
     {
-        $asset = FixedAsset::findOrFail($id);
+        $asset = $this->findAsset($request, $id);
 
         $request->validate([
             'period' => ['sometimes', 'nullable', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
@@ -115,7 +125,7 @@ final class FixedAssetController extends Controller
 
     public function dispose(Request $request, string $id): JsonResponse
     {
-        $asset = FixedAsset::findOrFail($id);
+        $asset = $this->findAsset($request, $id);
 
         $validated = $request->validate([
             'proceeds' => 'required|numeric|min:0',
@@ -137,7 +147,7 @@ final class FixedAssetController extends Controller
 
     public function transition(Request $request, string $id): JsonResponse
     {
-        $asset = FixedAsset::findOrFail($id);
+        $asset = $this->findAsset($request, $id);
 
         $validated = $request->validate([
             'status' => 'required|string|in:active,under_maintenance',
@@ -152,14 +162,28 @@ final class FixedAssetController extends Controller
         return response()->json(['message' => 'Status updated.', 'data' => $asset]);
     }
 
-    public function depreciationSchedule(string $id): JsonResponse
+    public function depreciationSchedule(Request $request, string $id): JsonResponse
     {
-        $asset = FixedAsset::findOrFail($id);
+        $asset = $this->findAsset($request, $id);
 
         return response()->json([
             'asset_id' => $asset->id,
             'book_value' => $asset->bookValue(),
             'rows' => $this->assetService->schedule($asset),
         ]);
+    }
+
+    /**
+     * A company-wide caller may act on any unit's asset even while the
+     * desktop shell pins a unit context; everyone else stays inside their
+     * unit scope.
+     */
+    private function findAsset(Request $request, string $id): FixedAsset
+    {
+        $query = $this->hasCompanyWideRole($request)
+            ? FixedAsset::withoutGlobalScopes()
+            : FixedAsset::query();
+
+        return $query->findOrFail($id);
     }
 }

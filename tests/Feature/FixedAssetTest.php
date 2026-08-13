@@ -232,6 +232,42 @@ test('the scheduled command depreciates every active asset once', function () {
         ->assertExitCode(0);
 });
 
+test('a company-wide caller sees other units assets with company_wide=1', function () {
+    ($this->straightLineAsset)();
+
+    $otherBlueprint = UnitBlueprint::create([
+        'name' => 'Store', 'workflow_set' => ['sales_order' => []],
+        'default_role_template' => [], 'default_inventory_config' => [],
+    ]);
+    $otherUnit = OperatingUnit::create([
+        'company_id' => $this->company->id, 'blueprint_id' => $otherBlueprint->id,
+        'name' => 'Showroom', 'code' => 'STORE-01', 'unit_type' => 'store', 'status' => 'active',
+    ]);
+
+    // Pinned to the other unit: the foam asset is invisible without the flag.
+    $scoped = $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $otherUnit->id])
+        ->getJson('/api/v1/fixed-assets')
+        ->assertStatus(200)->json('total');
+
+    $companyWide = $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $otherUnit->id])
+        ->getJson('/api/v1/fixed-assets?company_wide=1')
+        ->assertStatus(200)->json('total');
+
+    expect($scoped)->toBe(0)
+        ->and($companyWide)->toBe(1);
+
+    // And can act on it — depreciating from a different pinned unit must not 404.
+    $assetId = $this->actingAs($this->owner)
+        ->getJson('/api/v1/fixed-assets?company_wide=1')->json('data.0.id');
+
+    $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $otherUnit->id])
+        ->postJson("/api/v1/fixed-assets/{$assetId}/depreciate", ['period' => '2026-02'])
+        ->assertStatus(201);
+});
+
 test('the trial balance stays balanced through acquire, depreciate and dispose', function () {
     $asset = ($this->straightLineAsset)();
     $this->assets->depreciateForPeriod($asset, '2026-02');

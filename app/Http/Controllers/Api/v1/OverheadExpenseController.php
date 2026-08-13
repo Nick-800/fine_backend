@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Enums\AllocationMethod;
+use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\OverheadAllocationRule;
 use App\Models\OverheadExpense;
+use App\Models\Scopes\OperatingUnitOrSharedScope;
 use App\Services\OverheadService;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +19,8 @@ use InvalidArgumentException;
 
 final class OverheadExpenseController extends Controller
 {
+    use ResolvesReportScope;
+
     public function __construct(
         private readonly OverheadService $overheadService,
         private readonly CurrentUnitContext $unitContext,
@@ -25,6 +29,10 @@ final class OverheadExpenseController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = OverheadExpense::with(['operatingUnit', 'allocations.operatingUnit'])->latest('expense_date');
+
+        if ($request->boolean('company_wide') && $this->hasCompanyWideRole($request)) {
+            $query->withoutGlobalScope(OperatingUnitOrSharedScope::class);
+        }
 
         if ($request->filled('status')) {
             $query->where('status', $request->query('status'));
