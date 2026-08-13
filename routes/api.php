@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\v1\ClientController;
 use App\Http\Controllers\Api\v1\ConsumptionReportController;
 use App\Http\Controllers\Api\v1\CreditApprovalController;
 use App\Http\Controllers\Api\v1\CutterWorkOrderController;
+use App\Http\Controllers\Api\v1\DashboardController;
 use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityController;
 use App\Http\Controllers\Api\v1\ExternalEmployerController;
@@ -254,6 +255,13 @@ Route::prefix('v1')->group(function () {
             Route::get('/reports/income-statement', [FinancialReportController::class, 'incomeStatement']);
             Route::get('/reports/balance-sheet', [FinancialReportController::class, 'balanceSheet']);
             Route::get('/reports/unit-profitability', [FinancialReportController::class, 'unitProfitability']);
+
+            // Phase 10: owner dashboard (company-wide oversight)
+            Route::get('/dashboard/kpis', [DashboardController::class, 'kpis']);
+            Route::get('/dashboard/unit-comparison', [DashboardController::class, 'unitComparison']);
+            Route::get('/dashboard/inventory-rollup', [DashboardController::class, 'inventoryRollup']);
+            Route::get('/dashboard/operational-pipeline', [DashboardController::class, 'operationalPipeline']);
+            Route::get('/dashboard/pending-approvals', [DashboardController::class, 'pendingApprovals']);
 
             // Phase 08: overhead + fixed assets
             Route::get('/overhead-expenses', [OverheadExpenseController::class, 'index']);
