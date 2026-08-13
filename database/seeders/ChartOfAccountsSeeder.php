@@ -54,6 +54,7 @@ class ChartOfAccountsSeeder extends Seeder
             ['2000', 'Liabilities', 'liability', null],
             ['2100', 'Accounts Payable', 'liability', '2000'],
             ['2200', 'Wages Payable', 'liability', '2000'],
+            ['2210', 'Payroll Deductions Payable', 'liability', '2000'],
             ['2300', 'Landed Cost Clearing', 'liability', '2000'],
 
             ['3000', 'Equity', 'equity', null],
@@ -71,6 +72,7 @@ class ChartOfAccountsSeeder extends Seeder
             ['5400', 'Overhead Expense', 'expense', '5000'],
             ['5500', 'Depreciation Expense', 'expense', '5000'],
             ['5600', 'Loss on Asset Disposal', 'expense', '5000'],
+            ['5700', 'Wage Expense', 'expense', '5000'],
         ];
 
         $created = [];

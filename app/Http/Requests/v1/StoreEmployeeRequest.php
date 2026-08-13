@@ -34,7 +34,10 @@ final class StoreEmployeeRequest extends FormRequest
                 Rule::notIn(array_filter([$entityId])),
             ],
             'job_title' => ['required', 'string', 'max:150'],
+            'labor_role' => ['nullable', 'string', 'max:100'],
             'pay_type' => ['required', Rule::enum(PayType::class)],
+            'monthly_salary' => ['nullable', 'numeric', 'min:0'],
+            'hourly_rate' => ['nullable', 'numeric', 'min:0'],
             'hire_date' => ['required', 'date'],
             'status' => ['nullable', Rule::enum(EmployeeStatus::class)],
         ];

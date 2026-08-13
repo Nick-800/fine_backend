@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\v1\AccountController;
+use App\Http\Controllers\Api\v1\AttendanceController;
 use App\Http\Controllers\Api\v1\AuditLogController;
 use App\Http\Controllers\Api\v1\AuthController;
 use App\Http\Controllers\Api\v1\BankHoldController;
@@ -27,10 +28,13 @@ use App\Http\Controllers\Api\v1\InventoryMovementController;
 use App\Http\Controllers\Api\v1\InventoryValuationController;
 use App\Http\Controllers\Api\v1\ItemCategoryController;
 use App\Http\Controllers\Api\v1\JournalEntryController;
+use App\Http\Controllers\Api\v1\LaborRoleRateController;
 use App\Http\Controllers\Api\v1\LandedCostLineController;
+use App\Http\Controllers\Api\v1\LeaveRequestController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\OverheadExpenseController;
 use App\Http\Controllers\Api\v1\PaymentRequestController;
+use App\Http\Controllers\Api\v1\PayrollRunController;
 use App\Http\Controllers\Api\v1\PosController;
 use App\Http\Controllers\Api\v1\ProductController;
 use App\Http\Controllers\Api\v1\ProductionBatchController;
@@ -106,7 +110,32 @@ Route::prefix('v1')->group(function () {
             // Employees CRUD
             Route::post('/employees/{id}/split-entity', [EmployeeController::class, 'splitEntity']);
             Route::post('/employees/{id}/relink-entity', [EmployeeController::class, 'relinkEntity']);
+            Route::get('/employees/{id}/attendance', [EmployeeController::class, 'attendance']);
+            Route::get('/employees/{id}/labor-logs', [EmployeeController::class, 'laborLogs']);
+            Route::get('/employees/{id}/payslips', [EmployeeController::class, 'payslips']);
             Route::apiResource('employees', EmployeeController::class);
+
+            // Phase 09: HR & payroll
+            Route::get('/attendance', [AttendanceController::class, 'index']);
+            Route::post('/attendance/bulk', [AttendanceController::class, 'bulk']);
+            Route::put('/attendance/{id}', [AttendanceController::class, 'update']);
+            Route::get('/labor-role-rates', [LaborRoleRateController::class, 'index']);
+            Route::get('/labor-role-rates/current', [LaborRoleRateController::class, 'current']);
+            Route::post('/labor-role-rates', [LaborRoleRateController::class, 'store']);
+            Route::get('/payroll-runs', [PayrollRunController::class, 'index']);
+            Route::post('/payroll-runs', [PayrollRunController::class, 'store']);
+            Route::post('/payroll-runs/{id}/calculate', [PayrollRunController::class, 'calculate']);
+            Route::post('/payroll-runs/{id}/submit', [PayrollRunController::class, 'submit']);
+            Route::post('/payroll-runs/{id}/approve', [PayrollRunController::class, 'approve']);
+            Route::post('/payroll-runs/{id}/mark-paid', [PayrollRunController::class, 'markPaid']);
+            Route::post('/payroll-runs/{id}/post', [PayrollRunController::class, 'post']);
+            Route::get('/payroll-runs/{id}/payslips', [PayrollRunController::class, 'payslips']);
+            Route::get('/payslips/{id}', [PayrollRunController::class, 'showPayslip']);
+            Route::put('/payslips/{id}/deductions', [PayrollRunController::class, 'setDeductions']);
+            Route::get('/leave-requests', [LeaveRequestController::class, 'index']);
+            Route::post('/leave-requests', [LeaveRequestController::class, 'store']);
+            Route::put('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']);
+            Route::put('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']);
 
             // External Employers CRUD
             Route::post('/external-employers/{id}/split-entity', [ExternalEmployerController::class, 'splitEntity']);

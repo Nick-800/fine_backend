@@ -7,6 +7,7 @@ use App\Models\Company;
 use App\Models\Employee;
 use App\Models\Entity;
 use App\Models\InventoryItem;
+use App\Models\LaborRoleRate;
 use App\Models\OperatingUnit;
 use App\Models\ProductionOrder;
 use App\Models\Role;
@@ -220,6 +221,30 @@ test('labor logs snapshot the rate and later rate edits do not move history', fu
 
     $logs = ($this->api)()->getJson("/api/v1/production-orders/{$order['id']}/labor-logs")->json();
     expect((float) $logs[0]['hourly_rate_at_log'])->toBe(15.0);
+});
+
+test('a versioned labor role rate takes precedence over the BOM rate', function () {
+    // Phase 09: labor_role_rates are the source of truth; the BOM's 15 is
+    // now only a fallback for roles with no rate history.
+    LaborRoleRate::create([
+        'role' => 'tailor', 'hourly_rate' => 20, 'effective_from' => now()->subDay()->toDateString(),
+    ]);
+
+    ($this->lot)($this->pieceItem, 'PC-1', 1, 45);
+    ($this->lot)($this->pieceItem, 'PC-2', 1, 45);
+    ($this->lot)($this->fabricItem, 'FAB-1', 10, 8);
+
+    $order = ($this->makeOrder)();
+    ($this->move)($order['id'], 'bom_confirmed');
+    ($this->move)($order['id'], 'in_production');
+
+    $log = ($this->api)()->postJson("/api/v1/production-orders/{$order['id']}/labor-logs", [
+        'employee_id' => $this->employee->id,
+        'role' => 'tailor',
+        'hours_logged' => 2,
+    ])->assertStatus(201)->json();
+
+    expect((float) $log['hourly_rate_at_log'])->toBe(20.0);
 });
 
 test('labor cannot be logged before production starts', function () {

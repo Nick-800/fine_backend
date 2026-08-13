@@ -11,6 +11,7 @@ use App\Models\Bom;
 use App\Models\Employee;
 use App\Models\InventoryMovement;
 use App\Models\LaborLog;
+use App\Models\LaborRoleRate;
 use App\Models\ProductionOrder;
 use App\Models\StockLot;
 use Illuminate\Support\Facades\DB;
@@ -378,9 +379,13 @@ class ProductionOrderService
         }
 
         if ($hourlyRate === null) {
-            $hourlyRate = (float) ($order->bom->laborRequirements()
-                ->where('role', $role)
-                ->value('hourly_rate') ?? 0.0);
+            // Phase 09: versioned role rates are the source of truth; the
+            // BOM's requirement rate remains as fallback for roles that have
+            // no rate history yet. The snapshot below makes the swap safe.
+            $hourlyRate = LaborRoleRate::rateFor($role)
+                ?? (float) ($order->bom->laborRequirements()
+                    ->where('role', $role)
+                    ->value('hourly_rate') ?? 0.0);
 
             if ($hourlyRate <= 0) {
                 throw new InvalidArgumentException(

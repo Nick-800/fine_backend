@@ -7,6 +7,7 @@ use App\Models\InventoryItem;
 use App\Models\ItemCategory;
 use App\Models\OperatingUnit;
 use App\Models\OverheadExpense;
+use App\Models\PayrollRun;
 use App\Models\ProductionBatch;
 use App\Models\Role;
 use App\Models\StockAdjustmentRequest;
@@ -53,5 +54,8 @@ class AppServiceProvider extends ServiceProvider
         // audit-logged like the inventory value carriers above.
         OverheadExpense::observe(AuditObserver::class);
         FixedAsset::observe(AuditObserver::class);
+
+        // Phase 09: payroll moves wages — same treatment.
+        PayrollRun::observe(AuditObserver::class);
     }
 }

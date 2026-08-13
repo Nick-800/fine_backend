@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 final class Employee extends Model
@@ -23,7 +24,10 @@ final class Employee extends Model
         'operating_unit_id',
         'employer_entity_id',
         'job_title',
+        'labor_role',
         'pay_type',
+        'monthly_salary',
+        'hourly_rate',
         'hire_date',
         'status',
         'record_version',
@@ -34,6 +38,8 @@ final class Employee extends Model
         return [
             'pay_type' => PayType::class,
             'status' => EmployeeStatus::class,
+            'monthly_salary' => 'decimal:4',
+            'hourly_rate' => 'decimal:4',
             'hire_date' => 'date',
             'record_version' => 'integer',
         ];
@@ -52,5 +58,25 @@ final class Employee extends Model
     public function employerEntity(): BelongsTo
     {
         return $this->belongsTo(Entity::class, 'employer_entity_id');
+    }
+
+    public function attendances(): HasMany
+    {
+        return $this->hasMany(Attendance::class);
+    }
+
+    public function laborLogs(): HasMany
+    {
+        return $this->hasMany(LaborLog::class);
+    }
+
+    public function payslips(): HasMany
+    {
+        return $this->hasMany(Payslip::class);
+    }
+
+    public function leaveRequests(): HasMany
+    {
+        return $this->hasMany(LeaveRequest::class);
     }
 }

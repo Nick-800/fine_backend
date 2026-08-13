@@ -100,6 +100,35 @@ final class EmployeeController extends Controller
     /**
      * Update the specified employee.
      */
+    public function attendance(Request $request, string $id): JsonResponse
+    {
+        $employee = Employee::findOrFail($id);
+
+        return response()->json(
+            $employee->attendances()->orderByDesc('work_date')->paginate($request->integer('per_page', 31))
+        );
+    }
+
+    public function laborLogs(Request $request, string $id): JsonResponse
+    {
+        $employee = Employee::findOrFail($id);
+
+        return response()->json(
+            $employee->laborLogs()->with('productionOrder:id,order_number')
+                ->orderByDesc('logged_at')->paginate($request->integer('per_page', 25))
+        );
+    }
+
+    public function payslips(Request $request, string $id): JsonResponse
+    {
+        $employee = Employee::findOrFail($id);
+
+        return response()->json(
+            $employee->payslips()->with('payrollRun:id,period,status')
+                ->latest()->paginate($request->integer('per_page', 24))
+        );
+    }
+
     public function update(Request $request, string $id): EmployeeResource
     {
         $employee = Employee::findOrFail($id);
@@ -108,7 +137,10 @@ final class EmployeeController extends Controller
             'operating_unit_id' => 'sometimes|required|uuid|exists:operating_units,id',
             'employer_entity_id' => 'nullable|uuid|exists:entities,id|different:entity_id',
             'job_title' => 'sometimes|required|string|max:150',
+            'labor_role' => 'sometimes|nullable|string|max:100',
             'pay_type' => 'sometimes|required|string',
+            'monthly_salary' => 'sometimes|nullable|numeric|min:0',
+            'hourly_rate' => 'sometimes|nullable|numeric|min:0',
             'hire_date' => 'sometimes|required|date',
             'status' => 'sometimes|required|string',
             'record_version' => 'required|integer',
@@ -118,7 +150,10 @@ final class EmployeeController extends Controller
             'operating_unit_id',
             'employer_entity_id',
             'job_title',
+            'labor_role',
             'pay_type',
+            'monthly_salary',
+            'hourly_rate',
             'hire_date',
             'status',
             'record_version'
