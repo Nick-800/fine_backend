@@ -1,3 +1,34 @@
+# CLAUDE.md
+
+Guidance for Claude Code in this repository. Read `../HANDOFF.md` first — it is the authoritative project state and carries hard-won dev-environment gotchas.
+
+## What this is
+
+Laravel 13 / PHP 8.4 API ("fine_backend", SQLite in dev) for **Al-Amana Foam & Furniture Co.** — a five-unit foam-to-furniture manufacturer ERP. All ten phases are built: foundation/RBAC, procurement+treasury, inventory, foam, cutter, furniture, sales/POS, full accounting (ledger, landed cost/FX, overhead, fixed assets), HR/payroll, owner dashboard. The desktop client is the sibling `fine-desktop` repo (different GitHub account: Nick-800 here, NoraldenElhouni there).
+
+**Architecture is online-only** (offline-sync removed 2026-08-04). `SyncService`/`SyncConflict` are dead remnants — do not build on them.
+
+## Invariants (do not silently reverse)
+
+- **Ledger**: modules post via `AccountingService::postJournal` only. ACC-01 (debits=credits) and missing accounts are **fatal before write** — an operation that moves value but can't post is refused, never skipped. Journal lines carry `operating_unit_id`; subledgers/reports derive from lines. Journal API is read-only except gated manual entries.
+- **Inventory**: stock never appears/leaves without an `inventory_movements` row (INV-06); movements are append-only.
+- **Costing is actuals, never estimates**: orders cost from lots actually drawn; labor/FX/pay rates snapshot at event time and history never moves.
+- **Unit scoping**: `X-Operating-Unit-ID` header → `ScopeOperatingUnit` → `CurrentUnitContext` → global scopes. Three scope types (plain, warehouse-derived, shared-or-unit). `operating_unit_id` is never accepted in request bodies for unit-scoped writes. FK validation uses `ExistsInCurrentUnit`. Company-wide roles (null-unit `user_roles`) pass with no header; accounting/dashboard reads accept `company_wide=1` for them only.
+- Guard failures render **422 with a `code`** (see `bootstrap/app.php`); business rules are cited in comments by ID (INV-xx, FOAM-xx, ACC-xx, HR-xx…) mapping to `docs/phase-0X-*.md`.
+
+## Module pattern
+
+migration → enum (`allowedNext()`) → models (`Auditable`+observer registration in `AppServiceProvider`, `HasUuids`, `HasOptimisticLocking`, SoftDeletes) → service (all writes in `DB::transaction` with `lockForUpdate`) → controller → `routes/api.php` → Pest feature test seeding `ChartOfAccountsSeeder`. Run `vendor/bin/pint --dirty --format agent` after PHP changes.
+
+## Environment gotchas (the expensive ones)
+
+- PHP exists only in **PowerShell** (Herd shim), not Bash.
+- The user's own server runs on port **8000** against the real dev DB — never migrate/seed it. Use **8010** with `php -S` from `public/` and an explicit `$env:DB_DATABASE` scratch file (`php artisan serve` does NOT inherit `DB_DATABASE`).
+- Old seeded DBs lack newer chart-of-accounts codes → `MISSING_ACCOUNT` on posting → reseed (`migrate:fresh --seed`).
+- PowerShell pipes into `php artisan tinker` inject a BOM and break class resolution — write a script that requires `vendor/autoload.php` + `bootstrap/app.php` and run `php script.php` instead.
+- `withoutGlobalScopes()` does not reach `whereHas()` subqueries; `date`-cast columns store midnight timestamps, so lookups/uniqueness go through `whereDate` (both have caused real bugs).
+- Tests: `php artisan test --compact` (a `|` in `--filter` breaks under the PowerShell→cmd shim — pass file paths instead).
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
