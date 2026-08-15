@@ -1,0 +1,152 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\Company;
+use App\Models\ImportOrder;
+use App\Models\InventoryItem;
+use App\Models\InventoryMovement;
+use App\Models\JournalEntry;
+use App\Models\OperatingUnit;
+use App\Models\Role;
+use App\Models\StockLot;
+use App\Models\Supplier;
+use App\Models\UnitBlueprint;
+use App\Models\User;
+use App\Models\UserRole;
+use App\Models\Warehouse;
+use Database\Seeders\ChartOfAccountsSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    $this->company = Company::create(['name' => 'Fine Foam Mfg', 'default_currency' => 'LYD']);
+    $this->seed(ChartOfAccountsSeeder::class);
+
+    $blueprint = UnitBlueprint::create([
+        'name' => 'Blueprint', 'workflow_set' => [], 'default_role_template' => [], 'default_inventory_config' => [],
+    ]);
+    $this->unit = OperatingUnit::create([
+        'company_id' => $this->company->id, 'blueprint_id' => $blueprint->id,
+        'name' => 'Foam Plant', 'code' => 'FOAM-01', 'unit_type' => 'manufactory', 'status' => 'active',
+    ]);
+    $this->warehouse = Warehouse::create([
+        'operating_unit_id' => $this->unit->id, 'name' => 'WH', 'code' => 'WH-1',
+    ]);
+    $this->fabric = InventoryItem::create([
+        'name' => 'Fabric', 'sku' => 'FAB-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'meter',
+    ]);
+
+    $this->user = User::factory()->create(['must_change_password' => false]);
+    $role = Role::create(['name' => 'Foam Manager', 'slug' => 'foam-manager']);
+    UserRole::create(['user_id' => $this->user->id, 'role_id' => $role->id, 'operating_unit_id' => $this->unit->id]);
+
+    $this->api = fn () => $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
+
+    $this->intake = fn (array $overrides = []) => ($this->api)()->postJson('/api/v1/stock-lots/intake', array_merge([
+        'inventory_item_id' => $this->fabric->id,
+        'warehouse_id' => $this->warehouse->id,
+        'lot_number' => 'FAB-'.fake()->unique()->numberBetween(1000, 9999),
+        'quantity' => 100,
+        'unit_cost' => 8.5,
+        'source' => 'purchase_credit',
+    ], $overrides));
+});
+
+test('intake creates the lot, the movement and the journal in one stroke', function () {
+    $response = ($this->intake)()->assertStatus(201);
+
+    $lot = StockLot::find($response->json('id'));
+    expect((float) $lot->quantity)->toBe(100.0)
+        ->and($lot->status)->toBe('available');
+
+    // INV-06: the appearance is on the movement ledger.
+    $movement = InventoryMovement::where('stock_lot_id', $lot->id)->sole();
+    expect($movement->movement_type)->toBe('intake')
+        ->and((float) $movement->quantity_delta)->toBe(100.0)
+        ->and($movement->reason)->toBe('purchase_credit')
+        ->and($movement->to_warehouse_id)->toBe($this->warehouse->id);
+
+    // ACC-02: 850 of fabric on credit → DR 1110 / CR 2100.
+    $entry = JournalEntry::where('source_document_type', 'StockLot')
+        ->where('source_document_id', $lot->id)->sole();
+    $lines = $entry->lines()->with('account')->get();
+
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1110')->debit)->toBe(850.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '2100')->credit)->toBe(850.0);
+});
+
+test('an opening balance lands against retained earnings and cash purchases against cash', function () {
+    $opening = ($this->intake)(['source' => 'opening_balance'])->assertStatus(201);
+    $cash = ($this->intake)(['source' => 'purchase_cash', 'quantity' => 10, 'unit_cost' => 2])->assertStatus(201);
+
+    $openingEntry = JournalEntry::where('source_document_id', $opening->json('id'))->sole();
+    $cashEntry = JournalEntry::where('source_document_id', $cash->json('id'))->sole();
+
+    expect($openingEntry->lines()->with('account')->get()
+        ->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('3100')
+        ->and($cashEntry->lines()->with('account')->get()
+            ->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('1200');
+
+    $tb = ($this->api)()->getJson('/api/v1/reports/trial-balance')->assertStatus(200)->json();
+    expect($tb['balanced'])->toBeTrue();
+});
+
+test('an import receipt materialises lots without double-posting the ledger', function () {
+    $supplier = Supplier::create([
+        'operating_unit_id' => $this->unit->id, 'name' => 'Chem Co', 'default_currency' => 'USD',
+    ]);
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id, 'supplier_id' => $supplier->id,
+        'currency' => 'USD', 'negotiated_price' => 100, 'quantity' => 50, 'status' => 'received',
+    ]);
+
+    $response = ($this->intake)([
+        'source' => 'import_receipt',
+        'import_order_id' => $order->id,
+    ])->assertStatus(201);
+
+    // The movement carries the trail back to the order…
+    $movement = InventoryMovement::where('stock_lot_id', $response->json('id'))->sole();
+    expect($movement->reference_document_type)->toBe('ImportOrder')
+        ->and($movement->reference_id)->toBe($order->id);
+
+    // …but no journal: ImportOrder.Complete posts the landed value.
+    expect(JournalEntry::where('source_document_type', 'StockLot')->count())->toBe(0);
+});
+
+test('an import receipt without its order is refused, as is an unknown source', function () {
+    ($this->intake)(['source' => 'import_receipt'])->assertStatus(422);
+    ($this->intake)(['source' => 'found_it_somewhere'])->assertStatus(422);
+});
+
+test('finished-good item types land on their own inventory accounts', function () {
+    $block = InventoryItem::create([
+        'name' => 'Foam Block', 'sku' => 'BLK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
+    ]);
+
+    // Serialized items keep their rules on this path too: two blocks in one
+    // lot is refused (SERIALIZED_QUANTITY_INVALID)…
+    ($this->intake)([
+        'inventory_item_id' => $block->id,
+        'source' => 'opening_balance',
+        'quantity' => 2,
+        'unit_cost' => 300,
+    ])->assertStatus(422)->assertJsonPath('code', 'SERIALIZED_QUANTITY_INVALID');
+
+    // …while a single block lands on 1131 Finished Goods — Foam Blocks.
+    $response = ($this->intake)([
+        'inventory_item_id' => $block->id,
+        'source' => 'opening_balance',
+        'quantity' => 1,
+        'unit_cost' => 600,
+    ])->assertStatus(201);
+
+    $entry = JournalEntry::where('source_document_id', $response->json('id'))->sole();
+    $debit = $entry->lines()->with('account')->get()->firstWhere(fn ($l) => (float) $l->debit > 0);
+
+    expect($debit->account->account_code)->toBe('1131')
+        ->and((float) $debit->debit)->toBe(600.0);
+});

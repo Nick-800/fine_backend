@@ -177,6 +177,7 @@ Route::prefix('v1')->group(function () {
 
             Route::apiResource('inventory-items', InventoryItemController::class);
             Route::get('/stock-lots/available-for-cutting', [StockLotController::class, 'availableForCutting']);
+            Route::post('/stock-lots/intake', [StockLotController::class, 'intake']);
             Route::post('/stock-lots/{id}/process-cut-remnant', [StockLotController::class, 'processCutRemnant']);
             // No destroy: INV-06 — stock never disappears without a movement.
             Route::apiResource('stock-lots', StockLotController::class)->except(['destroy']);

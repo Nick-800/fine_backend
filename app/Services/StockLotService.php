@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
 use App\Models\StockLot;
+use App\Models\Warehouse;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -14,6 +16,108 @@ use InvalidArgumentException;
 
 class StockLotService
 {
+    public function __construct(
+        private readonly AccountingService $accountingService,
+    ) {}
+
+    /**
+     * Goods intake: purchased material arriving, or an opening balance.
+     *
+     * The one UI path by which quantities enter the system by hand — and it
+     * enters properly: the lot is created, the INV-06 movement is recorded,
+     * and the value reaches the ledger (ACC-02) according to where it came
+     * from:
+     *
+     *   opening_balance  DR inventory / CR 3100 Retained Earnings
+     *   purchase_cash    DR inventory / CR 1200 Cash and Bank
+     *   purchase_credit  DR inventory / CR 2100 Accounts Payable
+     *   import_receipt   no journal — ImportOrder.Complete already posts the
+     *                    landed value; this only materialises the physical lots
+     *
+     * @param array{inventory_item_id: string, warehouse_id: string, lot_number: string,
+     *     quantity: float, unit_cost: float, source: string, import_order_id?: string|null,
+     *     attribute_values?: array<string, mixed>|null} $data
+     */
+    public function intake(array $data): StockLot
+    {
+        return DB::transaction(function () use ($data) {
+            $item = InventoryItem::findOrFail($data['inventory_item_id']);
+            $warehouse = Warehouse::findOrFail($data['warehouse_id']);
+
+            $lot = StockLot::create([
+                'inventory_item_id' => $item->id,
+                'warehouse_id' => $warehouse->id,
+                'lot_number' => $data['lot_number'],
+                'quantity' => round((float) $data['quantity'], 4),
+                'unit_cost' => round((float) $data['unit_cost'], 4),
+                'attribute_values' => $data['attribute_values'] ?? null,
+                'status' => 'available',
+            ]);
+
+            $isImportReceipt = $data['source'] === 'import_receipt';
+
+            InventoryMovement::create([
+                'operating_unit_id' => $warehouse->operating_unit_id,
+                'stock_lot_id' => $lot->id,
+                'to_warehouse_id' => $warehouse->id,
+                'sku' => $item->sku,
+                'movement_type' => 'intake',
+                'quantity_delta' => round((float) $data['quantity'], 4),
+                'unit_cost' => round((float) $data['unit_cost'], 4),
+                'reason' => $data['source'],
+                'reference_document_type' => $isImportReceipt && isset($data['import_order_id']) ? 'ImportOrder' : null,
+                'reference_id' => $isImportReceipt ? ($data['import_order_id'] ?? null) : null,
+            ]);
+
+            $value = round((float) $data['quantity'] * (float) $data['unit_cost'], 4);
+
+            if (! $isImportReceipt && $value > 0) {
+                $creditAccount = match ($data['source']) {
+                    'opening_balance' => '3100', // Retained Earnings
+                    'purchase_cash' => '1200',   // Cash and Bank
+                    'purchase_credit' => '2100', // Accounts Payable
+                    default => throw new InvalidArgumentException("Unknown intake source \"{$data['source']}\"."),
+                };
+
+                $this->accountingService->postJournal(
+                    "Stock intake: {$item->sku} lot {$data['lot_number']} ({$data['source']})",
+                    [
+                        [
+                            'account_code' => $this->inventoryAccountFor($item),
+                            'debit' => $value,
+                            'operating_unit_id' => $warehouse->operating_unit_id,
+                            'memo' => "{$data['quantity']} × {$data['unit_cost']}",
+                        ],
+                        [
+                            'account_code' => $creditAccount,
+                            'credit' => $value,
+                            'operating_unit_id' => $warehouse->operating_unit_id,
+                        ],
+                    ],
+                    'StockLot',
+                    $lot->id,
+                    $warehouse->operatingUnit?->company_id,
+                );
+            }
+
+            return $lot->load(['inventoryItem.category', 'warehouse']);
+        });
+    }
+
+    /**
+     * Which inventory account carries this item's value, by item type.
+     */
+    private function inventoryAccountFor(InventoryItem $item): string
+    {
+        return match ($item->item_type) {
+            'foam_block' => '1131',
+            'cut_template_piece', 'slice' => '1132',
+            'byproduct_fill' => '1133',
+            'furniture_finished_good', 'finished_good' => '1134',
+            default => '1110', // raw materials, chemicals, containers, fabric…
+        };
+    }
+
     /**
      * Build filtered StockLot query including dynamic JSON attribute filters.
      */

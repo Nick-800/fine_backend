@@ -41,6 +41,29 @@ class StockLotController extends Controller
         return response()->json($blocks);
     }
 
+    /**
+     * Goods intake — the manual path by which quantities enter stock.
+     * Unlike the bare store(), this records the INV-06 movement and posts
+     * the value to the ledger according to its source.
+     */
+    public function intake(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
+            'warehouse_id' => ['required', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
+            'lot_number' => ['required', 'string', 'unique:stock_lots,lot_number'],
+            'quantity' => ['required', 'numeric', 'min:0.0001'],
+            'unit_cost' => ['required', 'numeric', 'min:0'],
+            'source' => ['required', 'string', 'in:opening_balance,purchase_cash,purchase_credit,import_receipt'],
+            'import_order_id' => ['nullable', 'uuid', 'exists:import_orders,id', 'required_if:source,import_receipt'],
+            'attribute_values' => ['nullable', 'array'],
+        ]);
+
+        $lot = $this->stockLotService->intake($validated);
+
+        return response()->json($lot, 201);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
