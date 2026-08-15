@@ -122,6 +122,20 @@ final class ExternalEmployerController extends Controller
     }
 
     /**
+     * Soft-delete the external employer — the resource route always offered
+     * this, but the method never existed and the call 500ed.
+     */
+    public function destroy(string $id): JsonResponse
+    {
+        $externalEmployer = ExternalEmployer::findOrFail($id);
+        $externalEmployer->delete();
+
+        return response()->json([
+            'message' => 'External employer deleted successfully.',
+        ]);
+    }
+
+    /**
      * Re-link this external employer to a different Entity.
      */
     public function relinkEntity(Request $request, string $id, EntityService $entityService): JsonResponse

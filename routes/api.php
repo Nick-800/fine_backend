@@ -145,14 +145,18 @@ Route::prefix('v1')->group(function () {
 
             // Phase 02: Procurement System
             Route::apiResource('suppliers', SupplierController::class);
-            Route::apiResource('import-orders', ImportOrderController::class);
+            // Import orders are immutable outside the state machine: no
+            // update, no delete — money and journals hang off them.
+            Route::apiResource('import-orders', ImportOrderController::class)->only(['index', 'store', 'show']);
             Route::post('/import-orders/{id}/transition', [ImportOrderController::class, 'transition']);
+            Route::get('/payment-requests', [PaymentRequestController::class, 'all']);
             Route::get('/import-orders/{id}/payment-requests', [PaymentRequestController::class, 'index']);
             Route::post('/import-orders/{id}/payment-requests/{requestId}/process', [PaymentRequestController::class, 'process']);
             Route::post('/payment-requests/{id}/execute', [PaymentRequestController::class, 'execute']);
-            Route::get('/import-orders/{id}/bank-holds', [BankHoldController::class, 'index']);
-            Route::post('/import-orders/{id}/bank-holds', [BankHoldController::class, 'store']);
-            Route::post('/import-orders/{id}/bank-holds/{holdId}/release', [BankHoldController::class, 'release']);
+            // Bank holds are created by selectPaymentRoute and released by
+            // executePayment — read-only over HTTP, no manual store/release.
+            Route::get('/bank-holds', [BankHoldController::class, 'index']);
+            Route::get('/import-orders/{id}/bank-holds', [BankHoldController::class, 'forOrder']);
             Route::get('/import-orders/{id}/landed-cost-lines', [LandedCostLineController::class, 'index']);
             Route::post('/import-orders/{id}/landed-cost-lines', [LandedCostLineController::class, 'store']);
             Route::post('/import-orders/{id}/landed-cost-lines/{lineId}/confirm', [LandedCostLineController::class, 'confirm']);
@@ -174,7 +178,8 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('inventory-items', InventoryItemController::class);
             Route::get('/stock-lots/available-for-cutting', [StockLotController::class, 'availableForCutting']);
             Route::post('/stock-lots/{id}/process-cut-remnant', [StockLotController::class, 'processCutRemnant']);
-            Route::apiResource('stock-lots', StockLotController::class);
+            // No destroy: INV-06 — stock never disappears without a movement.
+            Route::apiResource('stock-lots', StockLotController::class)->except(['destroy']);
             Route::get('/tank-stocks', [TankStockController::class, 'index']);
             // Balanced refill sourced from a real lot; /refill remains as the
             // unsourced adjustment path for opening balances and corrections.

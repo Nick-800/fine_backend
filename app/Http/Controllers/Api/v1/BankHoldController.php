@@ -18,4 +18,17 @@ final class BankHoldController extends Controller
 
         return BankHoldResource::collection($query->latest()->get());
     }
+
+    /**
+     * Holds belonging to one import order's payment requests.
+     */
+    public function forOrder(string $id): AnonymousResourceCollection
+    {
+        $holds = BankHold::with('paymentRequest')
+            ->whereHas('paymentRequest', fn ($q) => $q->where('import_order_id', $id))
+            ->latest()
+            ->get();
+
+        return BankHoldResource::collection($holds);
+    }
 }

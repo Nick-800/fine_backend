@@ -20,6 +20,25 @@ final class PaymentRequestController extends Controller
     ) {}
 
     /**
+     * The company-wide treasury queue: every payment request, filterable by
+     * status and unit — what the treasury screen lists.
+     */
+    public function all(Request $request): AnonymousResourceCollection
+    {
+        $query = PaymentRequest::with(['importOrder', 'bankHold']);
+
+        if ($request->has('operating_unit_id')) {
+            $query->where('operating_unit_id', $request->query('operating_unit_id'));
+        }
+
+        if ($request->has('status')) {
+            $query->where('status', $request->query('status'));
+        }
+
+        return PaymentRequestResource::collection($query->latest()->get());
+    }
+
+    /**
      * Payment requests of one import order — the route carries the order id
      * and the listing is scoped to it (it used to ignore the id and return
      * everything, which made every order detail screen show all payments).
