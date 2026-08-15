@@ -8,6 +8,7 @@ use App\Enums\ImportOrderStatus;
 use App\Enums\LandedCostType;
 use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
+use App\Exceptions\InvalidStateTransitionException;
 use App\Models\BankHold;
 use App\Models\FxRate;
 use App\Models\GoodsReceipt;
@@ -27,7 +28,7 @@ final class ImportOrderStateService
     {
         return DB::transaction(function () use ($order) {
             if ($order->status !== ImportOrderStatus::Draft) {
-                throw new InvalidArgumentException('Order must be in draft status to transition to pending payment.');
+                throw new InvalidStateTransitionException('Order must be in draft status to transition to pending payment.');
             }
 
             $amountRequested = (float) $order->negotiated_price * (float) $order->quantity;
@@ -57,7 +58,7 @@ final class ImportOrderStateService
     ): ImportOrder {
         return DB::transaction(function () use ($order, $route, $amountRequested, $heldAmountLyd, $invoiceRef) {
             if ($order->status !== ImportOrderStatus::PendingPayment) {
-                throw new InvalidArgumentException('Order must be in pending_payment status to select payment route.');
+                throw new InvalidStateTransitionException('Order must be in pending_payment status to select payment route.');
             }
 
             $paymentRequest = $order->paymentRequests()->where('status', PaymentRequestStatus::Pending)->first();
@@ -107,7 +108,7 @@ final class ImportOrderStateService
     ): PaymentRequest {
         return DB::transaction(function () use ($paymentRequest, $fxRateUsed, $exactAmountUsedLyd, $bankReference) {
             if ($paymentRequest->status !== PaymentRequestStatus::Pending) {
-                throw new InvalidArgumentException('Payment request is not pending.');
+                throw new InvalidStateTransitionException('Payment request is not pending.');
             }
 
             $paymentRequest->update([
@@ -138,7 +139,7 @@ final class ImportOrderStateService
     {
         return DB::transaction(function () use ($order) {
             if ($order->status !== ImportOrderStatus::Paid) {
-                throw new InvalidArgumentException('Order must be paid before confirming shipment.');
+                throw new InvalidStateTransitionException('Order must be paid before confirming shipment.');
             }
 
             $order->update(['status' => ImportOrderStatus::InTransit]);
@@ -151,7 +152,7 @@ final class ImportOrderStateService
     {
         return DB::transaction(function () use ($order) {
             if ($order->status !== ImportOrderStatus::InTransit) {
-                throw new InvalidArgumentException('Order must be in_transit before arriving at port.');
+                throw new InvalidStateTransitionException('Order must be in_transit before arriving at port.');
             }
 
             $order->update(['status' => ImportOrderStatus::AtPort]);
@@ -164,7 +165,7 @@ final class ImportOrderStateService
     {
         return DB::transaction(function () use ($order) {
             if ($order->status !== ImportOrderStatus::AtPort) {
-                throw new InvalidArgumentException('Order must be at_port before transporting to warehouse.');
+                throw new InvalidStateTransitionException('Order must be at_port before transporting to warehouse.');
             }
 
             $order->update(['status' => ImportOrderStatus::AwaitingReceipt]);
@@ -181,7 +182,7 @@ final class ImportOrderStateService
     ): GoodsReceipt {
         return DB::transaction(function () use ($order, $warehouseId, $receivedQty, $notes) {
             if ($order->status !== ImportOrderStatus::AwaitingReceipt) {
-                throw new InvalidArgumentException('Order must be awaiting_receipt before receiving goods.');
+                throw new InvalidStateTransitionException('Order must be awaiting_receipt before receiving goods.');
             }
 
             if ($receivedQty > (float) $order->quantity) {
@@ -205,7 +206,7 @@ final class ImportOrderStateService
     {
         return DB::transaction(function () use ($order) {
             if ($order->status !== ImportOrderStatus::Received) {
-                throw new InvalidArgumentException('Order must be in received status to complete.');
+                throw new InvalidStateTransitionException('Order must be in received status to complete.');
             }
 
             if (! $order->goodsReceipt) {

@@ -257,6 +257,68 @@ test('an explicitly provided booked FX rate wins over the snapshot lookup', func
     expect($response->json('data.booked_fx_rate'))->toBe(4.9);
 });
 
+test('the payment requests endpoint returns only the addressed order\'s requests', function () {
+    $orderA = ($this->orderReadyToComplete)();
+    $orderB = ($this->orderReadyToComplete)();
+
+    $listed = ($this->api)()->getJson("/api/v1/import-orders/{$orderA->id}/payment-requests")
+        ->assertStatus(200)
+        ->json('data');
+
+    expect($listed)->toHaveCount(1)
+        ->and($listed[0]['id'])->toBe($orderA->paymentRequests()->sole()->id)
+        ->and($listed[0]['id'])->not->toBe($orderB->paymentRequests()->sole()->id);
+});
+
+test('a wrong-state transition over the API is a 422 with a code, not a 500', function () {
+    $order = ($this->orderReadyToComplete)();
+
+    // Received cannot go back to shipment.
+    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/transition", [
+        'action' => 'shipment',
+    ])->assertStatus(422)->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
+});
+
+test('an input-guard refusal over the API is a 422 with a code, not a 500', function () {
+    $order = ($this->orderReadyToComplete)();
+    $order->landedCostLines()->create(['type' => 'customs', 'amount' => 100, 'is_confirmed' => false]);
+
+    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/transition", [
+        'action' => 'complete',
+    ])->assertStatus(422)->assertJsonPath('code', 'INVALID_IMPORT_ORDER_OPERATION');
+});
+
+test('payments execute over both routes and refuse to execute twice', function () {
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 100,
+        'quantity' => 10,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $requestId = $order->paymentRequests()->sole()->id;
+
+    // The flat route the desktop treasury screen calls.
+    ($this->api)()->postJson("/api/v1/payment-requests/{$requestId}/execute", [
+        'fx_rate_used' => 5.1,
+    ])->assertStatus(200);
+
+    expect($order->fresh()->status->value)->toBe('paid');
+
+    // Executing an already-paid request is a state refusal.
+    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/payment-requests/{$requestId}/process", [
+        'fx_rate_used' => 5.2,
+    ])->assertStatus(422)->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
+
+    // And the nested route rejects a request id that belongs to another order.
+    $other = ($this->orderReadyToComplete)();
+    ($this->api)()->postJson("/api/v1/import-orders/{$other->id}/payment-requests/{$requestId}/process", [
+        'fx_rate_used' => 5.2,
+    ])->assertStatus(404);
+});
+
 test('the completion transition is reachable over the API', function () {
     $order = ($this->orderReadyToComplete)(bookedRate: 5.0, realizedRate: 5.0);
 

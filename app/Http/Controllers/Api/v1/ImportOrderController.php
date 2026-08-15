@@ -17,6 +17,7 @@ use App\Services\ImportOrderStateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use InvalidArgumentException;
 
 final class ImportOrderController extends Controller
 {
@@ -101,26 +102,37 @@ final class ImportOrderController extends Controller
 
         $action = $request->input('action');
 
-        match ($action) {
-            'pending_payment' => $this->stateService->transitionToPendingPayment($order),
-            'select_route' => $this->stateService->selectPaymentRoute(
-                $order,
-                PaymentRoute::from($request->input('route')),
-                (float) $request->input('amount_requested'),
-                $request->filled('held_amount_lyd') ? (float) $request->input('held_amount_lyd') : null,
-                $request->input('invoice_ref')
-            ),
-            'shipment' => $this->stateService->confirmShipment($order),
-            'arrive_port' => $this->stateService->arriveAtPort($order),
-            'transport_warehouse' => $this->stateService->transportToWarehouse($order),
-            'receive_goods' => $this->stateService->receiveGoods(
-                $order,
-                $request->input('warehouse_id'),
-                (float) $request->input('received_qty'),
-                $request->input('condition_notes')
-            ),
-            'complete' => $this->stateService->completeOrder($order),
-        };
+        try {
+            match ($action) {
+                'pending_payment' => $this->stateService->transitionToPendingPayment($order),
+                'select_route' => $this->stateService->selectPaymentRoute(
+                    $order,
+                    PaymentRoute::from($request->input('route')),
+                    (float) $request->input('amount_requested'),
+                    $request->filled('held_amount_lyd') ? (float) $request->input('held_amount_lyd') : null,
+                    $request->input('invoice_ref')
+                ),
+                'shipment' => $this->stateService->confirmShipment($order),
+                'arrive_port' => $this->stateService->arriveAtPort($order),
+                'transport_warehouse' => $this->stateService->transportToWarehouse($order),
+                'receive_goods' => $this->stateService->receiveGoods(
+                    $order,
+                    $request->input('warehouse_id'),
+                    (float) $request->input('received_qty'),
+                    $request->input('condition_notes')
+                ),
+                'complete' => $this->stateService->completeOrder($order),
+            };
+        } catch (InvalidArgumentException $e) {
+            // Wrong-state guards throw InvalidStateTransitionException and
+            // render 422 globally; this catches the input-shaped refusals
+            // (missing hold amount, unconfirmed cost lines, unpostable
+            // completion) so they are 422s too, not 500s.
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_IMPORT_ORDER_OPERATION',
+            ], 422);
+        }
 
         return response()->json([
             'message' => 'Transition applied successfully.',

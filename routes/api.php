@@ -148,8 +148,8 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('import-orders', ImportOrderController::class);
             Route::post('/import-orders/{id}/transition', [ImportOrderController::class, 'transition']);
             Route::get('/import-orders/{id}/payment-requests', [PaymentRequestController::class, 'index']);
-            Route::post('/import-orders/{id}/payment-requests', [PaymentRequestController::class, 'store']);
             Route::post('/import-orders/{id}/payment-requests/{requestId}/process', [PaymentRequestController::class, 'process']);
+            Route::post('/payment-requests/{id}/execute', [PaymentRequestController::class, 'execute']);
             Route::get('/import-orders/{id}/bank-holds', [BankHoldController::class, 'index']);
             Route::post('/import-orders/{id}/bank-holds', [BankHoldController::class, 'store']);
             Route::post('/import-orders/{id}/bank-holds/{holdId}/release', [BankHoldController::class, 'release']);
