@@ -48,6 +48,9 @@ class ChartOfAccountsSeeder extends Seeder
             ['1200', 'Cash and Bank', 'asset', '1000'],
             ['1300', 'Accounts Receivable', 'asset', '1000'],
             ['1400', 'Fixed Assets', 'asset', '1000'],
+            // Import payments precede receipt: cash out sits here until the
+            // order completes and moves the value into inventory.
+            ['1500', 'Advances to Suppliers', 'asset', '1000'],
             // Contra-asset: carries a credit balance against 1400.
             ['1450', 'Accumulated Depreciation', 'asset', '1000'],
 

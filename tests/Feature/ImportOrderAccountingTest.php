@@ -103,7 +103,7 @@ test('completing an import order posts inventory, payable, landed cost and FX lo
     // Inventory carries booked supplier cost + all landed costs: 4800 + 450.
     expect((float) $byCode('1110')->sole()['debit'])->toBe(5250.0)
         ->and((float) $byCode('5300')->sole()['debit'])->toBe(200.0)
-        ->and((float) $byCode('2100')->sole()['credit'])->toBe(5000.0)
+        ->and((float) $byCode('1500')->sole()['credit'])->toBe(5000.0)
         ->and($byCode('2300')->pluck('credit')->map(fn ($c) => (float) $c)->sort()->values()->all())->toBe([150.0, 300.0]);
 });
 
@@ -117,7 +117,7 @@ test('an order settled below the booked rate posts an FX gain', function () {
     $byCode = fn (string $code) => $lines->filter(fn ($l) => $l['account']['account_code'] === $code);
 
     expect((float) $byCode('1110')->sole()['debit'])->toBe(5500.0)
-        ->and((float) $byCode('2100')->sole()['credit'])->toBe(5000.0)
+        ->and((float) $byCode('1500')->sole()['credit'])->toBe(5000.0)
         ->and((float) $byCode('4200')->sole()['credit'])->toBe(500.0)
         ->and($byCode('5300'))->toBeEmpty();
 });
@@ -131,7 +131,7 @@ test('without a booked estimate the purchase posts at the realized rate with no 
 
     expect($lines)->toHaveCount(2)
         ->and((float) $lines->firstWhere(fn ($l) => $l['account']['account_code'] === '1110')['debit'])->toBe(5000.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l['account']['account_code'] === '2100')['credit'])->toBe(5000.0);
+        ->and((float) $lines->firstWhere(fn ($l) => $l['account']['account_code'] === '1500')['credit'])->toBe(5000.0);
 });
 
 test('a supplier_price landed cost line does not double the inventory value', function () {
@@ -170,7 +170,8 @@ test('a landed cost line in a third currency is refused rather than guessed', fu
     expect(fn () => $this->stateService->completeOrder($order->fresh()))
         ->toThrow(InvalidArgumentException::class);
 
-    expect(JournalEntry::count())->toBe(0)
+    // The payment-time advance exists; the refused completion wrote nothing.
+    expect(JournalEntry::where('source_document_type', 'ImportOrder')->count())->toBe(0)
         ->and($order->fresh()->status)->toBe(ImportOrderStatus::Received);
 });
 
@@ -183,7 +184,7 @@ test('a domestic-currency order posts one for one with no FX involvement', funct
 
     expect($lines)->toHaveCount(2)
         ->and((float) $lines->firstWhere(fn ($l) => $l['account']['account_code'] === '1110')['debit'])->toBe(1000.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l['account']['account_code'] === '2100')['credit'])->toBe(1000.0);
+        ->and((float) $lines->firstWhere(fn ($l) => $l['account']['account_code'] === '1500')['credit'])->toBe(1000.0);
 });
 
 test('completion is refused when no executed payment carries an FX rate', function () {
@@ -326,6 +327,65 @@ test('the completion transition is reachable over the API', function () {
         'action' => 'complete',
     ])->assertStatus(200);
 
+    // One advance journal at payment, one completion journal.
     expect($order->fresh()->status)->toBe(ImportOrderStatus::Complete)
-        ->and(JournalEntry::count())->toBe(1);
+        ->and(JournalEntry::count())->toBe(2);
+});
+
+test('executing a payment posts the advance against cash and completion clears it', function () {
+    $order = ($this->orderReadyToComplete)(bookedRate: 5.0, realizedRate: 5.0);
+
+    $advance = JournalEntry::where('source_document_type', 'PaymentRequest')->sole();
+    $lines = $advance->lines()->with('account')->get();
+
+    // 1000 USD at 5.0: money left the bank, sitting on the supplier.
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1500')->debit)->toBe(5000.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1200')->credit)->toBe(5000.0);
+
+    $this->stateService->completeOrder($order->fresh());
+
+    // The completion credit clears the advance to exactly zero.
+    $tb = ($this->api)()->getJson('/api/v1/reports/trial-balance')->assertStatus(200)->json();
+    $advances = collect($tb['rows'])->firstWhere('account_code', '1500');
+
+    expect((float) $advances['balance'])->toBe(0.0)
+        ->and($tb['balanced'])->toBeTrue();
+});
+
+test('a bank hold settled above the computed rate books the spread as FX loss', function () {
+    // 1000 USD, booked at 5.0. The bank actually consumed 5,150 LYD.
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 100,
+        'quantity' => 10,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 6000.00, 'INV-1');
+    $this->stateService->executePayment($order->paymentRequests()->first(), 5.0, 5150.00, 'BNK-1');
+    $this->stateService->confirmShipment($order->fresh());
+    $this->stateService->arriveAtPort($order->fresh());
+    $this->stateService->transportToWarehouse($order->fresh());
+    $this->stateService->receiveGoods($order->fresh(), $this->warehouse->id, 10);
+
+    // The advance carries what the bank actually took.
+    $advance = JournalEntry::where('source_document_type', 'PaymentRequest')->sole();
+    expect((float) $advance->lines()->with('account')->get()
+        ->firstWhere(fn ($l) => $l->account->account_code === '1200')->credit)->toBe(5150.0);
+
+    $this->stateService->completeOrder($order->fresh());
+
+    $completion = collect(($this->journalFor)($order)[0]['lines']);
+
+    // Inventory at booked 5,000; the 150 bank spread is FX loss; 1500 nets 0.
+    expect((float) $completion->firstWhere(fn ($l) => $l['account']['account_code'] === '1110')['debit'])->toBe(5000.0)
+        ->and((float) $completion->firstWhere(fn ($l) => $l['account']['account_code'] === '5300')['debit'])->toBe(150.0)
+        ->and((float) $completion->firstWhere(fn ($l) => $l['account']['account_code'] === '1500')['credit'])->toBe(5150.0);
+
+    $tb = ($this->api)()->getJson('/api/v1/reports/trial-balance')->assertStatus(200)->json();
+    expect((float) collect($tb['rows'])->firstWhere('account_code', '1500')['balance'])->toBe(0.0)
+        ->and($tb['balanced'])->toBeTrue();
 });

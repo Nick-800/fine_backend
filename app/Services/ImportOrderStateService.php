@@ -129,10 +129,75 @@ final class ImportOrderStateService
             }
 
             $order = $paymentRequest->importOrder;
+
+            // Money actually left the company: cash out, advance on the
+            // supplier until the goods complete (the completion journal
+            // clears 1500 with the same settled amount, so it nets exactly).
+            $functionalCurrency = $order->operatingUnit?->company?->default_currency ?? 'LYD';
+            $settled = $this->settledLyd($order, $functionalCurrency);
+
+            if ($settled > 0) {
+                $this->accountingService->postJournal(
+                    "Import payment executed — {$order->supplier?->name}",
+                    [
+                        [
+                            'account_code' => '1500', // Advances to Suppliers
+                            'debit' => $settled,
+                            'operating_unit_id' => $order->operating_unit_id,
+                            'memo' => $order->supplier?->name,
+                        ],
+                        [
+                            'account_code' => '1200', // Cash and Bank
+                            'credit' => $settled,
+                            'operating_unit_id' => $order->operating_unit_id,
+                            'memo' => $paymentRequest->route->value.' route',
+                        ],
+                    ],
+                    'PaymentRequest',
+                    $paymentRequest->id,
+                    $order->operatingUnit?->company_id,
+                );
+            }
+
             $order->update(['status' => ImportOrderStatus::Paid]);
 
             return $paymentRequest->refresh();
         });
+    }
+
+    /**
+     * What actually left the bank in functional currency: the bank's exact
+     * amount when a hold was settled, otherwise the contract value at the
+     * executed rate. Both the payment and the completion journals use this
+     * one number, so the advance always clears to zero.
+     */
+    private function settledLyd(ImportOrder $order, string $functionalCurrency): float
+    {
+        $supplierCostFc = round((float) $order->negotiated_price * (float) $order->quantity, 4);
+
+        if ($order->currency === $functionalCurrency) {
+            return $supplierCostFc;
+        }
+
+        $paid = $order->paymentRequests()
+            ->where('status', PaymentRequestStatus::Paid)
+            ->whereNotNull('fx_rate_used')
+            ->latest('updated_at')
+            ->first();
+
+        if ($paid === null) {
+            throw new InvalidArgumentException(
+                'Order has no executed payment with an FX rate; cannot value the purchase for posting.'
+            );
+        }
+
+        $exactUsed = (float) ($paid->bankHold?->exact_amount_used ?? 0);
+
+        if ($exactUsed > 0) {
+            return round($exactUsed, 4);
+        }
+
+        return round($supplierCostFc * (float) $paid->fx_rate_used, 4);
     }
 
     public function confirmShipment(ImportOrder $order): ImportOrder
@@ -239,11 +304,13 @@ final class ImportOrderStateService
      *   CR  2300 Landed Cost Clearing     (one line per confirmed cost component)
      *
      * Inventory carries the transaction-date (booked) value of the goods plus
-     * every confirmed landed cost; the payable reflects what treasury actually
-     * settled; the difference between the two rates is the FX gain/loss
-     * (phase-02 §2.8, ACC-09). Landed cost lines of type `supplier_price` are
-     * skipped: the order itself is the supplier-price component, and counting
-     * a mirror line again would double the inventory value.
+     * every confirmed landed cost; the credit clears the 1500 advance that
+     * executePayment posted, with exactly the settled amount, so the advance
+     * always nets to zero; the difference between booked and settled — rate
+     * movement and bank spread alike — is the FX gain/loss (phase-02 §2.8,
+     * ACC-09). Landed cost lines of type `supplier_price` are skipped: the
+     * order itself is the supplier-price component, and counting a mirror
+     * line again would double the inventory value.
      */
     private function postCompletionJournal(ImportOrder $order): void
     {
@@ -251,11 +318,11 @@ final class ImportOrderStateService
 
         $supplierCostFc = round((float) $order->negotiated_price * (float) $order->quantity, 4);
         $realizedRate = $this->realizedFxRate($order, $functionalCurrency);
-        $bookedRate = $this->bookedFxRate($order, $functionalCurrency) ?? $realizedRate;
+        $settled = $this->settledLyd($order, $functionalCurrency);
+        $bookedRate = $this->bookedFxRate($order, $functionalCurrency);
 
-        $bookedCost = round($supplierCostFc * $bookedRate, 4);
-        $realizedCost = round($supplierCostFc * $realizedRate, 4);
-        $fxDifference = round($realizedCost - $bookedCost, 4);
+        $bookedCost = $bookedRate !== null ? round($supplierCostFc * $bookedRate, 4) : $settled;
+        $fxDifference = round($settled - $bookedCost, 4);
 
         $landedCostLines = $order->landedCostLines()
             ->where('is_confirmed', true)
@@ -297,13 +364,13 @@ final class ImportOrderStateService
                 'account_code' => '5300', // FX Loss
                 'debit' => $fxDifference,
                 'operating_unit_id' => $order->operating_unit_id,
-                'memo' => "booked {$bookedRate}, realized {$realizedRate}",
+                'memo' => "booked {$bookedCost}, settled {$settled}",
             ];
         }
 
         $lines[] = [
-            'account_code' => '2100', // Accounts Payable
-            'credit' => $realizedCost,
+            'account_code' => '1500', // Advances to Suppliers — cleared
+            'credit' => $settled,
             'operating_unit_id' => $order->operating_unit_id,
             'memo' => $order->supplier?->name,
         ];
@@ -313,7 +380,7 @@ final class ImportOrderStateService
                 'account_code' => '4200', // FX Gain
                 'credit' => -$fxDifference,
                 'operating_unit_id' => $order->operating_unit_id,
-                'memo' => "booked {$bookedRate}, realized {$realizedRate}",
+                'memo' => "booked {$bookedCost}, settled {$settled}",
             ];
         }
 
