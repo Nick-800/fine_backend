@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\v1\LandedCostLineController;
 use App\Http\Controllers\Api\v1\LeaveRequestController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\OverheadExpenseController;
+use App\Http\Controllers\Api\v1\PayableSettlementController;
 use App\Http\Controllers\Api\v1\PaymentRequestController;
 use App\Http\Controllers\Api\v1\PayrollRunController;
 use App\Http\Controllers\Api\v1\PosController;
@@ -163,6 +164,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/import-orders/{id}/goods-receipts', [GoodsReceiptController::class, 'index']);
             Route::get('/fx-rates', [FxRateController::class, 'index']);
             Route::post('/fx-rates', [FxRateController::class, 'store']);
+            Route::get('/payable-settlements', [PayableSettlementController::class, 'index']);
+            Route::get('/payable-settlements/outstanding', [PayableSettlementController::class, 'outstanding']);
+            Route::post('/payable-settlements', [PayableSettlementController::class, 'store']);
             Route::get('/cash-accounts', [CashAccountController::class, 'index']);
             Route::post('/cash-accounts', [CashAccountController::class, 'store']);
 
