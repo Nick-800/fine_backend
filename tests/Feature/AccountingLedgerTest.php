@@ -175,6 +175,77 @@ test('the trial balance stays in balance after a batch closes', function () {
     expect((float) $wip['balance'])->toBe(0.0);
 });
 
+test('foam consumption moves value from raw materials into WIP and the close nets WIP to zero', function () {
+    $chemical = InventoryItem::create([
+        'name' => 'Polyol', 'sku' => 'CHEM-P2', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
+    ]);
+    $blockItem = InventoryItem::create([
+        'name' => 'Foam Block', 'sku' => 'BLOCK-2', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
+    ]);
+    TankStock::create([
+        'chemical_inventory_item_id' => $chemical->id,
+        'operating_unit_id' => $this->unit->id,
+        'quantity_on_hand' => 1000,
+        'weighted_avg_unit_cost' => 3.0,
+    ]);
+
+    $batch = ProductionBatch::create([
+        'operating_unit_id' => $this->unit->id,
+        'operation_number' => 200,
+        'bun_width_m' => 2.0,
+        'status' => 'running',
+    ]);
+
+    // 500 kg @ 3.0 = 1,500 consumed.
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/consumption-report", [
+        'lines' => [['chemical_inventory_item_id' => $chemical->id, 'quantity_consumed' => 500]],
+    ])->assertStatus(201);
+
+    // The consumption itself posted DR 1121 / CR 1110 (source: the report).
+    $consumption = JournalEntry::where('source_document_type', 'ConsumptionReport')->sole();
+    $lines = $consumption->lines()->with('account')->get();
+
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1121')->debit)->toBe(1500.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1110')->credit)->toBe(1500.0);
+
+    // Walk to close and confirm WIP round-trips to exactly zero.
+    foreach (['consumed', 'curing', 'ready_for_grading'] as $status) {
+        ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/transition", ['status' => $status]);
+    }
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [[
+            'kind' => 'block', 'count' => 1, 'length_m' => 2.0, 'height_m' => 1.0, 'pressure' => 30,
+            'inventory_item_id' => $blockItem->id, 'warehouse_id' => $this->warehouse->id,
+        ]],
+    ])->assertStatus(201);
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/transition", ['status' => 'graded']);
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/transition", ['status' => 'closed'])->assertStatus(200);
+
+    $tb = ($this->api)()->getJson('/api/v1/reports/trial-balance')->assertStatus(200)->json();
+    $wip = collect($tb['rows'])->firstWhere('account_code', '1121');
+
+    expect((float) $wip['balance'])->toBe(0.0)
+        ->and($tb['balanced'])->toBeTrue();
+});
+
+test('a manual tank charge reaches the ledger as an opening balance', function () {
+    $chemical = InventoryItem::create([
+        'name' => 'Silicone', 'sku' => 'CHEM-S2', 'item_type' => 'raw_material', 'unit_of_measure' => 'liter',
+    ]);
+
+    ($this->api)()->postJson('/api/v1/tank-stocks/refill', [
+        'chemical_inventory_item_id' => $chemical->id,
+        'refill_quantity' => 100,
+        'refill_unit_cost' => 4.5,
+    ])->assertSuccessful();
+
+    $entry = JournalEntry::where('source_document_type', 'TankStock')->sole();
+    $lines = $entry->lines()->with('account')->get();
+
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1110')->debit)->toBe(450.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '3100')->credit)->toBe(450.0);
+});
+
 test('the chart of accounts lists every account with signed balances', function () {
     $this->accounting->postJournal('Purchase', [
         ['account_code' => '1110', 'debit' => 800.0, 'operating_unit_id' => $this->unit->id],

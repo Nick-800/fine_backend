@@ -12,7 +12,10 @@ use InvalidArgumentException;
 
 class TankStockService
 {
-    public function __construct(private readonly StockLotService $stockLotService) {}
+    public function __construct(
+        private readonly StockLotService $stockLotService,
+        private readonly AccountingService $accountingService,
+    ) {}
 
     /**
      * Pour a source lot into the tank: the balanced version of a refill.
@@ -90,6 +93,12 @@ class TankStockService
      * Kept for opening balances and corrections only. Deliberately distinguished
      * from a real refill by its movement reason so unsourced credits stay
      * auditable rather than looking like received stock.
+     *
+     * Unlike refillFromLot (a 1110→1110 transfer needing no journal), this
+     * path creates value from nothing, so the ledger must receive it too:
+     * DR 1110 / CR 3100, the same treatment as an opening-balance stock
+     * intake. Without it every manual charge widened the gap between the
+     * stock ledger and the books.
      */
     public function refill(
         string $chemicalItemId,
@@ -106,17 +115,45 @@ class TankStockService
             throw new InvalidArgumentException('Refill unit cost cannot be negative.');
         }
 
-        return $this->applyRefill(
-            $chemicalItemId,
-            $operatingUnitId,
-            $refillQty,
-            $refillUnitCost,
-            $referenceId,
-            null,
-            // Unsourced: distinguished from a real refill so a credit with no
-            // stock behind it can be picked out of the ledger.
-            'tank_adjustment',
-        );
+        return DB::transaction(function () use ($chemicalItemId, $operatingUnitId, $refillQty, $refillUnitCost, $referenceId): TankStock {
+            $tank = $this->applyRefill(
+                $chemicalItemId,
+                $operatingUnitId,
+                $refillQty,
+                $refillUnitCost,
+                $referenceId,
+                null,
+                // Unsourced: distinguished from a real refill so a credit with no
+                // stock behind it can be picked out of the ledger.
+                'tank_adjustment',
+            );
+
+            $value = round($refillQty * $refillUnitCost, 4);
+
+            if ($value > 0) {
+                $this->accountingService->postJournal(
+                    "Tank opening balance / correction — {$tank->chemicalItem?->sku}",
+                    [
+                        [
+                            'account_code' => '1110', // Raw Material Inventory
+                            'debit' => $value,
+                            'operating_unit_id' => $operatingUnitId,
+                            'memo' => "{$refillQty} @ {$refillUnitCost}",
+                        ],
+                        [
+                            'account_code' => '3100', // Retained Earnings
+                            'credit' => $value,
+                            'operating_unit_id' => $operatingUnitId,
+                        ],
+                    ],
+                    'TankStock',
+                    $tank->id,
+                    $tank->operatingUnit?->company_id,
+                );
+            }
+
+            return $tank;
+        });
     }
 
     /**

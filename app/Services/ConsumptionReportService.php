@@ -15,12 +15,21 @@ use InvalidArgumentException;
 
 class ConsumptionReportService
 {
+    public function __construct(
+        private readonly AccountingService $accountingService,
+    ) {}
+
     /**
      * Record what a run actually consumed and draw it from the tanks.
      *
      * Everything happens in one transaction: either the whole report lands with
      * tanks decremented and movements written, or nothing does. A half-applied
      * consumption would leave tank levels lying about what is physically there.
+     *
+     * The consumed value also moves on the ledger here — DR 1121 WIP‑Foam /
+     * CR 1110 Raw Materials — mirroring what cutter and furniture do at their
+     * consumption points. Without this leg the batch close (DR 1131 / CR 1121)
+     * left 1121 permanently negative and 1110 never relieved.
      *
      * @param  array<int, array{chemical_inventory_item_id: string, quantity_consumed: float|int}>  $lines
      */
@@ -131,6 +140,28 @@ class ConsumptionReportService
             // apportioned across blocks on close.
             $batch->material_cost = round($materialCost, 4);
             $batch->save();
+
+            if ($batch->material_cost > 0) {
+                $this->accountingService->postJournal(
+                    "Foam operation {$batch->operation_number} chemical consumption",
+                    [
+                        [
+                            'account_code' => '1121', // WIP — Foam Production
+                            'debit' => (float) $batch->material_cost,
+                            'operating_unit_id' => $unitId,
+                            'memo' => count($required).' chemical(s) drawn from tanks',
+                        ],
+                        [
+                            'account_code' => '1110', // Raw Material Inventory
+                            'credit' => (float) $batch->material_cost,
+                            'operating_unit_id' => $unitId,
+                        ],
+                    ],
+                    'ConsumptionReport',
+                    $report->id,
+                    $batch->operatingUnit?->company_id,
+                );
+            }
 
             return $report->fresh(['lines']);
         });

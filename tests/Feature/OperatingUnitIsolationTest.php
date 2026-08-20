@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Models\Client;
 use App\Models\Company;
+use App\Models\Employee;
+use App\Models\Entity;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
 use App\Models\OperatingUnit;
@@ -15,6 +18,7 @@ use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
 use App\Support\CurrentUnitContext;
+use Database\Seeders\ChartOfAccountsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -28,6 +32,7 @@ beforeEach(function () {
     app(CurrentUnitContext::class)->clear();
 
     $this->company = Company::create(['name' => 'Fine Foam Mfg']);
+    $this->seed(ChartOfAccountsSeeder::class);
     $this->blueprint = UnitBlueprint::create([
         'name' => 'Blueprint',
         'workflow_set' => [],
@@ -98,6 +103,28 @@ beforeEach(function () {
         'quantity_delta' => -1,
         'status' => 'pending',
         'requested_by_user_id' => $this->userA->id,
+    ]);
+
+    $entityEmpB = Entity::create(['name' => 'Worker Unit B', 'entity_type' => 'individual', 'is_active' => true]);
+    $this->employeeB = Employee::create([
+        'entity_id' => $entityEmpB->id,
+        'operating_unit_id' => $this->unitB->id,
+        'job_title' => 'Cutter Operator',
+        'labor_role' => 'operator',
+        'pay_type' => 'hourly',
+        'hourly_rate' => 15.00,
+        'hire_date' => '2026-02-01',
+        'status' => 'active',
+    ]);
+
+    $entityClientB = Entity::create(['name' => 'Client Unit B', 'entity_type' => 'organization', 'is_active' => true]);
+    $this->clientB = Client::create([
+        'entity_id' => $entityClientB->id,
+        'operating_unit_id' => $this->unitB->id,
+        'credit_limit' => 30000.00,
+        'current_balance' => 1200.00,
+        'payment_terms_days' => 30,
+        'status' => 'active',
     ]);
 
     app(CurrentUnitContext::class)->clear();
@@ -333,4 +360,59 @@ test('operation numbers stay globally unique across units', function () {
         'bun_width_m' => 2.4,
         'confirm_non_sequential' => true,
     ])->assertStatus(422)->assertJsonValidationErrors('operation_number');
+});
+
+test('a unit-scoped user cannot read another unit employee', function () {
+    ($this->asA)()->getJson("/api/v1/employees/{$this->employeeB->id}")->assertNotFound();
+});
+
+test('a unit-scoped user cannot modify another unit employee', function () {
+    ($this->asA)()->putJson("/api/v1/employees/{$this->employeeB->id}", [
+        'job_title' => 'Senior Cutter Operator',
+        'record_version' => $this->employeeB->record_version,
+    ])->assertNotFound();
+
+    app(CurrentUnitContext::class)->clear();
+    expect($this->employeeB->fresh()->job_title)->toBe('Cutter Operator');
+});
+
+test('a unit-scoped user cannot delete another unit employee', function () {
+    ($this->asA)()->deleteJson("/api/v1/employees/{$this->employeeB->id}")->assertNotFound();
+
+    app(CurrentUnitContext::class)->clear();
+    expect($this->employeeB->fresh()->trashed())->toBeFalse();
+});
+
+test('a unit-scoped user cannot read another unit client', function () {
+    ($this->asA)()->getJson("/api/v1/clients/{$this->clientB->id}")->assertNotFound();
+});
+
+test('a unit-scoped user cannot modify another unit client', function () {
+    ($this->asA)()->putJson("/api/v1/clients/{$this->clientB->id}", [
+        'credit_limit' => 99999.00,
+        'record_version' => $this->clientB->record_version,
+    ])->assertNotFound();
+
+    app(CurrentUnitContext::class)->clear();
+    expect((float) $this->clientB->fresh()->credit_limit)->toBe(30000.0);
+});
+
+test('a unit-scoped user cannot delete another unit client', function () {
+    ($this->asA)()->deleteJson("/api/v1/clients/{$this->clientB->id}")->assertNotFound();
+
+    app(CurrentUnitContext::class)->clear();
+    expect(Client::withoutGlobalScopes()->whereKey($this->clientB->id)->exists())->toBeTrue();
+});
+
+test('employee and client listings exclude other units', function () {
+    ($this->asA)()->getJson('/api/v1/employees')->assertStatus(200)->assertJsonCount(0, 'data');
+    ($this->asA)()->getJson('/api/v1/clients')->assertStatus(200)->assertJsonCount(0, 'data');
+});
+
+test('a company-wide owner can read employees and clients across all units', function () {
+    $this->actingAs($this->owner)->getJson("/api/v1/employees/{$this->employeeB->id}")
+        ->assertStatus(200)->assertJsonPath('data.id', $this->employeeB->id);
+
+    $this->actingAs($this->owner)->getJson("/api/v1/clients/{$this->clientB->id}")
+        ->assertStatus(200)->assertJsonPath('data.id', $this->clientB->id);
 });

@@ -13,6 +13,7 @@ use App\Models\StockLot;
 use App\Models\TankStock;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\AccountingService;
 use Illuminate\Database\Seeder;
 
 /**
@@ -207,6 +208,41 @@ class InventorySeeder extends Seeder
                 'status' => 'pending',
                 'requested_by_user_id' => $requester->id,
             ]);
+        }
+
+        // ---------------------------------------------------------------
+        // Ledger counterpart for everything created above. The lots and tank
+        // charges were written directly (not through intake/refill), so the
+        // opening value has to reach the books the same way an opening-balance
+        // intake would: DR 1110 / CR 3100. Without this the stock ledger and
+        // the GL disagree from the first request, and the foam consumption
+        // posting (which credits 1110) would drive raw materials negative.
+        // ---------------------------------------------------------------
+        $lotValue = (float) StockLot::query()
+            ->selectRaw('COALESCE(SUM(quantity * unit_cost), 0) as v')
+            ->value('v');
+        $tankValue = (float) TankStock::query()
+            ->selectRaw('COALESCE(SUM(quantity_on_hand * weighted_avg_unit_cost), 0) as v')
+            ->value('v');
+        $openingValue = round($lotValue + $tankValue, 4);
+
+        if ($openingValue > 0) {
+            app(AccountingService::class)->postJournal(
+                'Opening inventory balances (seed)',
+                [
+                    [
+                        'account_code' => '1110',
+                        'debit' => $openingValue,
+                        'operating_unit_id' => $foamUnit->id,
+                        'memo' => 'seeded chemical lots + tank charges',
+                    ],
+                    [
+                        'account_code' => '3100',
+                        'credit' => $openingValue,
+                        'operating_unit_id' => $foamUnit->id,
+                    ],
+                ],
+            );
         }
     }
 }
