@@ -205,10 +205,11 @@ class DatabaseSeeder extends Seeder
         $this->call([
             EntitySeeder::class,
             DomainModelsSeeder::class,
+            // Accounts must exist before any module posts a journal against
+            // them — ProcurementTreasurySeeder posts its payments' advances.
+            ChartOfAccountsSeeder::class,
             ProcurementTreasurySeeder::class,
             WorkOrderInventorySeeder::class,
-            // Accounts must exist before any module posts a journal against them.
-            ChartOfAccountsSeeder::class,
             InventorySeeder::class,
             FoamProductionSeeder::class,
         ]);

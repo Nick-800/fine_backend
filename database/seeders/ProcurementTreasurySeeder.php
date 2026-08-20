@@ -18,6 +18,7 @@ use App\Models\OperatingUnit;
 use App\Models\PaymentRequest;
 use App\Models\Supplier;
 use App\Models\Warehouse;
+use App\Services\AccountingService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -65,6 +66,17 @@ final class ProcurementTreasurySeeder extends Seeder
             'balance' => 250000.00,
         ]);
 
+        // GL cash mirrors the cash accounts above (1.5M LYD + 250k USD at
+        // the seeded 5.20 rate). Without this, the payment advances below
+        // would drive 1200 negative on a fresh seed.
+        app(AccountingService::class)->postJournal(
+            'Opening treasury cash (seed)',
+            [
+                ['account_code' => '1200', 'debit' => 2800000.00, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury + USD clearing safe at 5.20'],
+                ['account_code' => '3100', 'credit' => 2800000.00, 'operating_unit_id' => $unit->id],
+            ],
+        );
+
         // 3. Seed Supplier
         $supplier = Supplier::create([
             'id' => (string) Str::uuid(),
@@ -106,6 +118,20 @@ final class ProcurementTreasurySeeder extends Seeder
             'bank_reference' => 'BNK-REF-TRIPOLI-901',
         ]);
 
+        // The payment above is seeded already-Paid, so post what
+        // executePayment would have: the advance at the settled amount
+        // (bank exact-used). Completion later credits 1500 with the same
+        // figure, netting the advance to exactly zero.
+        app(AccountingService::class)->postJournal(
+            "Import payment executed — {$supplier->name} (seed)",
+            [
+                ['account_code' => '1500', 'debit' => 650000.00, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
+                ['account_code' => '1200', 'credit' => 650000.00, 'operating_unit_id' => $unit->id],
+            ],
+            'PaymentRequest',
+            $paymentReq->id,
+        );
+
         LandedCostLine::create([
             'id' => (string) Str::uuid(),
             'import_order_id' => $order1->id,
@@ -140,7 +166,7 @@ final class ProcurementTreasurySeeder extends Seeder
 
         // An order cannot reach Received without an executed payment, and
         // completion refuses to post without one — the trail must exist.
-        PaymentRequest::create([
+        $paymentReq2 = PaymentRequest::create([
             'id' => (string) Str::uuid(),
             'operating_unit_id' => $unit->id,
             'import_order_id' => $order2->id,
@@ -150,6 +176,19 @@ final class ProcurementTreasurySeeder extends Seeder
             'status' => PaymentRequestStatus::Paid,
             'fx_rate_used' => 5.150000,
         ]);
+
+        // Same rule as order 1: the seeded Paid payment posts its advance
+        // (42,500 USD × 5.15 realized = 218,875 LYD), so completing this
+        // order in a demo clears 1500 instead of driving it negative.
+        app(AccountingService::class)->postJournal(
+            "Import payment executed — {$supplier->name} (seed)",
+            [
+                ['account_code' => '1500', 'debit' => 218875.00, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
+                ['account_code' => '1200', 'credit' => 218875.00, 'operating_unit_id' => $unit->id],
+            ],
+            'PaymentRequest',
+            $paymentReq2->id,
+        );
 
         $warehouse = Warehouse::where('operating_unit_id', $unit->id)->first() ?? Warehouse::create([
             'id' => (string) Str::uuid(),
