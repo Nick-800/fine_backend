@@ -16,6 +16,7 @@ use App\Models\SalesOrder;
 use App\Models\StockLot;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Support\InventoryAccounts;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -24,17 +25,12 @@ class SalesOrderService
     public function __construct(private readonly AccountingService $accountingService) {}
 
     /**
-     * Which finished-goods account a sold item's value leaves from.
+     * Which finished-goods account a sold item's value leaves from —
+     * necessarily the same account intake put it into.
      */
     private function inventoryAccountFor(?string $itemType): string
     {
-        return match ($itemType) {
-            'foam_block' => '1131',
-            'cut_template_piece', 'slice' => '1132',
-            'byproduct_fill' => '1133',
-            'furniture_finished_good' => '1134',
-            default => '1110',
-        };
+        return InventoryAccounts::forItemType($itemType);
     }
 
     /**

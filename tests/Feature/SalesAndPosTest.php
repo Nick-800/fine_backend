@@ -244,6 +244,41 @@ test('pos checkout is one atomic step and the drawer report sees it', function (
         ->and((float) $report['by_method']['cash']['total'])->toBe(450.0);
 });
 
+test('a finished_good item leaves stock from the same account intake put it into', function () {
+    // The mapping drift: intake filed `finished_good` under 1134 but the
+    // sale used to credit the 1110 default — value entered one account and
+    // left another. Both sides must agree on 1134.
+    $good = InventoryItem::create([
+        'name' => 'Mattress', 'sku' => 'MATT-1', 'item_type' => 'finished_good', 'unit_of_measure' => 'each',
+    ]);
+
+    ($this->api)()->postJson('/api/v1/stock-lots/intake', [
+        'inventory_item_id' => $good->id,
+        'warehouse_id' => $this->storeWarehouse->id,
+        'lot_number' => 'FG-MATT-1',
+        'quantity' => 2,
+        'unit_cost' => 200,
+        'source' => 'opening_balance',
+    ])->assertStatus(201);
+
+    ($this->api)()->postJson('/api/v1/pos/sales', [
+        'order_number' => 'POS-3001',
+        'payment_method' => 'cash',
+        'items' => [['inventory_item_id' => $good->id, 'quantity' => 1, 'unit_price' => 350]],
+    ])->assertStatus(201);
+
+    $tb = app(AccountingService::class)->trialBalance();
+    $byCode = collect($tb['rows'])->keyBy('account_code');
+
+    // 1134 took 400 in at intake and released 200 at cost on the sale;
+    // 1110 must be untouched by either side (it may have no row at all).
+    expect($tb['balanced'])->toBeTrue()
+        ->and((float) $byCode['1134']['debit'])->toBe(400.0)
+        ->and((float) $byCode['1134']['credit'])->toBe(200.0)
+        ->and((float) ($byCode['1110']['debit'] ?? 0))->toBe(0.0)
+        ->and((float) ($byCode['1110']['credit'] ?? 0))->toBe(0.0);
+});
+
 test('closing the register records the drawer count against system cash', function () {
     ($this->api)()->postJson('/api/v1/pos/sales', [
         'order_number' => 'POS-2001',

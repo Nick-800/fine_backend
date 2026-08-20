@@ -70,7 +70,7 @@ class ChartOfAccountsSeeder extends Seeder
 
             ['5000', 'Expenses', 'expense', null],
             ['5100', 'Cost of Goods Sold', 'expense', '5000'],
-            ['5200', 'Production Variance', 'expense', '5000'],
+            ['5200', 'Inventory & Production Variance', 'expense', '5000'],
             ['5300', 'FX Loss', 'expense', '5000'],
             ['5400', 'Overhead Expense', 'expense', '5000'],
             ['5500', 'Depreciation Expense', 'expense', '5000'],

@@ -8,6 +8,7 @@ use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
 use App\Models\StockLot;
 use App\Models\Warehouse;
+use App\Support\InventoryAccounts;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -109,13 +110,7 @@ class StockLotService
      */
     private function inventoryAccountFor(InventoryItem $item): string
     {
-        return match ($item->item_type) {
-            'foam_block' => '1131',
-            'cut_template_piece', 'slice' => '1132',
-            'byproduct_fill' => '1133',
-            'furniture_finished_good', 'finished_good' => '1134',
-            default => '1110', // raw materials, chemicals, containers, fabric…
-        };
+        return InventoryAccounts::forItemType($item->item_type);
     }
 
     /**

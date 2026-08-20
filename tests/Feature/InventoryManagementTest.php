@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Company;
 use App\Models\InventoryItem;
+use App\Models\JournalEntry;
 use App\Models\OperatingUnit;
 use App\Models\Role;
 use App\Models\StockLot;
@@ -191,6 +192,84 @@ test('manual stock adjustment requires unit manager approval and posts movement'
     // Verify StockLot updated
     $lot->refresh();
     expect((float) $lot->quantity)->toBe(90.0);
+
+    // The write-down reached the ledger: 10 kg × 5.0 expensed to variance.
+    $entry = JournalEntry::where('source_document_type', 'StockAdjustmentRequest')->sole();
+    $lines = $entry->lines()->with('account')->get();
+
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '5200')->debit)->toBe(50.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1110')->credit)->toBe(50.0);
+});
+
+test('an upward audit adjustment recovers value through the variance account', function () {
+    // A bulk item, not a foam block — INV-02 rightly refuses to grow a
+    // serialized lot past quantity 1. Slices carry 1132, so this also
+    // proves the journal follows the item's own inventory account.
+    $item = InventoryItem::create([
+        'name' => 'Standard Slice', 'sku' => 'SLICE-AUDIT', 'item_type' => 'slice', 'unit_of_measure' => 'each',
+    ]);
+
+    $lot = StockLot::create([
+        'inventory_item_id' => $item->id,
+        'warehouse_id' => $this->warehouse->id,
+        'lot_number' => 'LOT-AUDIT-01',
+        'quantity' => 1.0,
+        'unit_cost' => 400.0,
+        'grade' => 'standard',
+        'status' => 'available',
+    ]);
+
+    $requestId = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/stock-adjustment-requests', [
+            'stock_lot_id' => $lot->id,
+            'reason_code' => 'audit_reconciliation',
+            'quantity_delta' => 1.0,
+        ])->assertStatus(201)->json('id');
+
+    $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson("/api/v1/stock-adjustment-requests/{$requestId}/approve")
+        ->assertStatus(200);
+
+    // Found stock enters the slice account, recovered from variance.
+    $entry = JournalEntry::where('source_document_type', 'StockAdjustmentRequest')->sole();
+    $lines = $entry->lines()->with('account')->get();
+
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1132')->debit)->toBe(400.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '5200')->credit)->toBe(400.0);
+});
+
+test('adjusting a zero-cost scrap lot moves quantity but posts nothing', function () {
+    $item = InventoryItem::create([
+        'name' => 'Scrap Fill', 'sku' => 'SCRAP-ADJ', 'item_type' => 'byproduct_fill', 'unit_of_measure' => 'kg',
+    ]);
+
+    $lot = StockLot::create([
+        'inventory_item_id' => $item->id,
+        'warehouse_id' => $this->warehouse->id,
+        'lot_number' => 'LOT-SCRAP-ADJ',
+        'quantity' => 20.0,
+        'unit_cost' => 0.0,
+        'grade' => 'scrap',
+        'status' => 'available',
+    ]);
+
+    $requestId = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/stock-adjustment-requests', [
+            'stock_lot_id' => $lot->id,
+            'reason_code' => 'damage',
+            'quantity_delta' => -5.0,
+        ])->assertStatus(201)->json('id');
+
+    $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson("/api/v1/stock-adjustment-requests/{$requestId}/approve")
+        ->assertStatus(200);
+
+    expect((float) $lot->fresh()->quantity)->toBe(15.0)
+        ->and(JournalEntry::where('source_document_type', 'StockAdjustmentRequest')->exists())->toBeFalse();
 });
 
 test('can retrieve inventory valuation summary and company rollup', function () {

@@ -8,11 +8,16 @@ use App\Models\InventoryMovement;
 use App\Models\StockAdjustmentRequest;
 use App\Models\StockLot;
 use App\Models\User;
+use App\Support\InventoryAccounts;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class StockAdjustmentService
 {
+    public function __construct(
+        private readonly AccountingService $accountingService,
+    ) {}
+
     /**
      * Create a pending stock adjustment request.
      */
@@ -86,6 +91,34 @@ class StockAdjustmentService
                 'reference_document_type' => 'StockAdjustmentRequest',
                 'reference_id' => $request->id,
             ]);
+
+            // The adjustment moved stock value, so the ledger must hear about
+            // it (ACC-02): a write-down expenses to 5200, a write-up (audit
+            // found stock) recovers through the same account. Zero-cost lots
+            // (scrap) move quantity but no value — nothing to post.
+            $value = round(abs((float) $request->quantity_delta) * (float) $stockLot->unit_cost, 4);
+
+            if ($value > 0) {
+                $inventoryAccount = InventoryAccounts::forItemType($stockLot->inventoryItem?->item_type);
+                $unitId = $request->operating_unit_id;
+
+                $lines = $request->quantity_delta < 0
+                    ? [
+                        ['account_code' => '5200', 'debit' => $value, 'operating_unit_id' => $unitId, 'memo' => $request->reason_code],
+                        ['account_code' => $inventoryAccount, 'credit' => $value, 'operating_unit_id' => $unitId],
+                    ]
+                    : [
+                        ['account_code' => $inventoryAccount, 'debit' => $value, 'operating_unit_id' => $unitId],
+                        ['account_code' => '5200', 'credit' => $value, 'operating_unit_id' => $unitId, 'memo' => $request->reason_code],
+                    ];
+
+                $this->accountingService->postJournal(
+                    "Stock adjustment ({$request->reason_code}) — ".($stockLot->inventoryItem?->sku ?? $stockLot->lot_number),
+                    $lines,
+                    'StockAdjustmentRequest',
+                    $request->id,
+                );
+            }
 
             return $request;
         });
