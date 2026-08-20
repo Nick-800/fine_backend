@@ -246,6 +246,8 @@ Route::prefix('v1')->group(function () {
             Route::put('/credit-approval-requests/{id}/reject', [CreditApprovalController::class, 'reject']);
             Route::post('/pos/sales', [PosController::class, 'checkout']);
             Route::get('/pos/daily-report', [PosController::class, 'dailyReport']);
+            Route::get('/pos/daily-close', [PosController::class, 'showDailyClose']);
+            Route::post('/pos/daily-close', [PosController::class, 'dailyClose']);
             Route::get('/pos/sales/{id}', [PosController::class, 'show']);
             Route::get('/internal-restock-requests', [InternalRestockController::class, 'index']);
             Route::post('/internal-restock-requests', [InternalRestockController::class, 'store']);

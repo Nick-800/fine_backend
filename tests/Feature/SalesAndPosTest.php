@@ -244,6 +244,43 @@ test('pos checkout is one atomic step and the drawer report sees it', function (
         ->and((float) $report['by_method']['cash']['total'])->toBe(450.0);
 });
 
+test('closing the register records the drawer count against system cash', function () {
+    ($this->api)()->postJson('/api/v1/pos/sales', [
+        'order_number' => 'POS-2001',
+        'payment_method' => 'cash',
+        'items' => [['inventory_item_id' => $this->sofa->id, 'quantity' => 1, 'unit_price' => 450]],
+    ])->assertStatus(201);
+
+    // Card takings must not inflate the expected drawer cash.
+    ($this->api)()->postJson('/api/v1/pos/sales', [
+        'order_number' => 'POS-2002',
+        'payment_method' => 'card',
+        'items' => [['inventory_item_id' => $this->sofa->id, 'quantity' => 1, 'unit_price' => 300]],
+    ])->assertStatus(201);
+
+    $close = ($this->api)()->postJson('/api/v1/pos/daily-close', ['counted_cash' => 440])
+        ->assertStatus(201)->json();
+
+    expect((float) $close['expected_cash'])->toBe(450.0)
+        ->and((float) $close['counted_cash'])->toBe(440.0)
+        ->and((float) $close['difference'])->toBe(-10.0)
+        ->and($close['sales_count'])->toBe(2)
+        ->and((float) $close['total_sales'])->toBe(750.0);
+
+    // The saved close is readable back for the same day.
+    ($this->api)()->getJson('/api/v1/pos/daily-close')
+        ->assertStatus(200)
+        ->assertJsonPath('data.id', $close['id']);
+});
+
+test('a register day cannot be closed twice', function () {
+    ($this->api)()->postJson('/api/v1/pos/daily-close', ['counted_cash' => 0])->assertStatus(201);
+
+    ($this->api)()->postJson('/api/v1/pos/daily-close', ['counted_cash' => 0])
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'POS_DAY_ALREADY_CLOSED');
+});
+
 test('a sale that stock cannot cover is refused whole', function () {
     $order = ($this->makeOrder)([], 2, 400);
     ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/submit");

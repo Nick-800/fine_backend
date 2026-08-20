@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
+use App\Models\PosDailyClose;
 use App\Models\SalesOrder;
 use App\Services\SalesOrderService;
 use App\Support\CurrentUnitContext;
@@ -84,5 +85,70 @@ class PosController extends Controller
             ]),
             'total_cost' => round((float) $sales->sum('total_cost'), 4),
         ]);
+    }
+
+    /**
+     * The recorded register close for a date, if the drawer was counted.
+     */
+    public function showDailyClose(Request $request): JsonResponse
+    {
+        $date = $request->query('date', now()->toDateString());
+
+        return response()->json([
+            'data' => PosDailyClose::with('closedBy')->whereDate('close_date', $date)->first(),
+        ]);
+    }
+
+    /**
+     * Persist the Z-report drawer count. Expected cash is derived server-side
+     * from the same sales the drawer report shows — the client only supplies
+     * what was physically counted.
+     */
+    public function dailyClose(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'counted_cash' => ['required', 'numeric', 'min:0'],
+            'date' => ['sometimes', 'date_format:Y-m-d'],
+            'notes' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $unitId = $this->unitContext->getUnitId();
+
+        if ($unitId === null) {
+            return response()->json([
+                'message' => 'Select an operating unit before closing the register.',
+                'code' => 'OPERATING_UNIT_REQUIRED',
+            ], 422);
+        }
+
+        $date = $validated['date'] ?? now()->toDateString();
+
+        if (PosDailyClose::whereDate('close_date', $date)->exists()) {
+            return response()->json([
+                'message' => 'This register day is already closed.',
+                'code' => 'POS_DAY_ALREADY_CLOSED',
+            ], 422);
+        }
+
+        $sales = SalesOrder::where('channel', 'pos')
+            ->whereDate('created_at', $date)
+            ->get();
+
+        $expected = round((float) $sales->where('payment_method', 'cash')->sum('total_amount'), 4);
+        $counted = round((float) $validated['counted_cash'], 4);
+
+        $close = PosDailyClose::create([
+            'operating_unit_id' => $unitId,
+            'close_date' => $date,
+            'expected_cash' => $expected,
+            'counted_cash' => $counted,
+            'difference' => round($counted - $expected, 4),
+            'sales_count' => $sales->count(),
+            'total_sales' => round((float) $sales->sum('total_amount'), 4),
+            'notes' => $validated['notes'] ?? null,
+            'closed_by_user_id' => $request->user()->id,
+        ]);
+
+        return response()->json($close->load('closedBy'), 201);
     }
 }
