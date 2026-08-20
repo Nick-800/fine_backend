@@ -1,7 +1,7 @@
 # Multi-Tenant Scoping Polish: Employee & Client Models
 
 - **Date:** 2026-08-16
-- **Status:** Planning / Proposed
+- **Status:** Implemented (2026-08-20 — with the company-wide-role gate below)
 - **Scope:** `App\Models\Employee`, `App\Models\Client`, `EmployeeController`, `ClientController`, and `OperatingUnitIsolationTest`.
 
 ---
@@ -35,10 +35,13 @@ This specification details adding `BelongsToOperatingUnit` to `Employee` and `Cl
 ### 2.2 Controller Scoping Handling (`fine_backend/app/Http/Controllers/Api/v1/`)
 
 #### 2.2.1 `EmployeeController::index()`
-- If `$request->has('operating_unit_id')`, bypass the ambient global scope with `$query->withoutGlobalScopes()->where('operating_unit_id', $request->query('operating_unit_id'))` to allow company-wide administrators to query specific unit staff.
+- If `$request->has('operating_unit_id')` **and the caller holds a company-wide role** (`User::hasCompanyWideRole()`), bypass only the unit scope with `$query->withoutGlobalScope(OperatingUnitScope::class)->where('operating_unit_id', …)` to allow company-wide administrators to query specific unit staff. For unit-scoped callers the parameter is ignored — it must not become a scope bypass. Lifting only the unit scope keeps SoftDeletes intact.
 
 #### 2.2.2 `ClientController::index()`
-- If `$request->has('operating_unit_id')`, bypass the ambient global scope with `$query->withoutGlobalScopes()->where('operating_unit_id', $request->query('operating_unit_id'))` to allow company-wide administrators to query specific unit clients.
+- Same gate as 2.2.1: the drill-down filter is honoured only for company-wide roles; unit callers stay inside their ambient unit scope.
+
+#### 2.2.3 `ResolvesReportScope` (added 2026-08-20)
+- The accounting reports' `operating_unit_id` query override carries the same gate — a unit manager cannot read another unit's ledger by passing the parameter.
 
 ---
 

@@ -11,6 +11,7 @@ use App\Http\Requests\v1\StoreClientRequest;
 use App\Http\Resources\v1\ClientResource;
 use App\Models\Client;
 use App\Models\Entity;
+use App\Models\Scopes\OperatingUnitScope;
 use App\Services\EntityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,8 +27,11 @@ final class ClientController extends Controller
     {
         $query = Client::with(['entity', 'operatingUnit']);
 
-        if ($request->has('operating_unit_id')) {
-            $query->withoutGlobalScopes()->where('operating_unit_id', $request->query('operating_unit_id'));
+        // Unit drill-down is only honoured for company-wide roles; a unit
+        // caller's listing stays inside their ambient unit scope.
+        if ($request->has('operating_unit_id') && $request->user()->hasCompanyWideRole()) {
+            $query->withoutGlobalScope(OperatingUnitScope::class)
+                ->where('operating_unit_id', $request->query('operating_unit_id'));
         }
 
         if ($request->has('status')) {

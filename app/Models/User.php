@@ -55,6 +55,17 @@ class User extends Authenticatable
         return $this->roles->contains('slug', $slug);
     }
 
+    /**
+     * A company-wide role is a user_roles row with no operating unit —
+     * the holder passes unit scoping and may read across units.
+     */
+    public function hasCompanyWideRole(): bool
+    {
+        return $this->roles()
+            ->whereNull('user_roles.operating_unit_id')
+            ->exists();
+    }
+
     public function hasPermission(string $permissionSlug): bool
     {
         if ($this->hasRole('owner')) {

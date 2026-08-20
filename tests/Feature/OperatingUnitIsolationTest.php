@@ -17,6 +17,7 @@ use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
+use App\Services\AccountingService;
 use App\Support\CurrentUnitContext;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -415,4 +416,66 @@ test('a company-wide owner can read employees and clients across all units', fun
 
     $this->actingAs($this->owner)->getJson("/api/v1/clients/{$this->clientB->id}")
         ->assertStatus(200)->assertJsonPath('data.id', $this->clientB->id);
+});
+
+test('the listing unit filter is ignored for unit-scoped callers', function () {
+    // ?operating_unit_id= exists so company-wide admins can drill into one
+    // unit; in unit-scoped hands it must not become a scope bypass.
+    ($this->asA)()->getJson("/api/v1/clients?operating_unit_id={$this->unitB->id}")
+        ->assertStatus(200)->assertJsonCount(0, 'data');
+
+    ($this->asA)()->getJson("/api/v1/employees?operating_unit_id={$this->unitB->id}")
+        ->assertStatus(200)->assertJsonCount(0, 'data');
+});
+
+test('a company-wide owner can drill a listing into one unit', function () {
+    $this->actingAs($this->owner)->getJson("/api/v1/clients?operating_unit_id={$this->unitB->id}")
+        ->assertStatus(200)->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $this->clientB->id);
+
+    $this->actingAs($this->owner)->getJson("/api/v1/employees?operating_unit_id={$this->unitB->id}")
+        ->assertStatus(200)->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $this->employeeB->id);
+
+    // Drilling into unit A finds nothing — B's rows do not tag along.
+    $this->actingAs($this->owner)->getJson("/api/v1/clients?operating_unit_id={$this->unitA->id}")
+        ->assertStatus(200)->assertJsonCount(0, 'data');
+});
+
+test('an owner pinned to a unit by header can still drill into another unit', function () {
+    // The desktop pins a unit even for the owner (AppShell auto-select), so the
+    // drill-down must lift the ambient scope for company-wide callers.
+    $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
+        ->getJson("/api/v1/clients?operating_unit_id={$this->unitB->id}")
+        ->assertStatus(200)->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $this->clientB->id);
+});
+
+test('the unit drill-down does not resurface soft-deleted employees', function () {
+    // Lifting every global scope (the old withoutGlobalScopes) also dropped
+    // SoftDeletes; only the unit scope may be lifted.
+    app(CurrentUnitContext::class)->clear();
+    $this->employeeB->delete();
+
+    $this->actingAs($this->owner)->getJson("/api/v1/employees?operating_unit_id={$this->unitB->id}")
+        ->assertStatus(200)->assertJsonCount(0, 'data');
+});
+
+test('the report unit filter cannot read another unit ledger', function () {
+    app(CurrentUnitContext::class)->clear();
+    app(AccountingService::class)->postJournal('Unit B opening', [
+        ['account_code' => '1110', 'debit' => 750.0, 'operating_unit_id' => $this->unitB->id],
+        ['account_code' => '3100', 'credit' => 750.0, 'operating_unit_id' => $this->unitB->id],
+    ]);
+
+    // A unit-A caller asking for unit B's trial balance gets their own (empty) books.
+    $tb = ($this->asA)()->getJson("/api/v1/reports/trial-balance?operating_unit_id={$this->unitB->id}")
+        ->assertStatus(200)->json();
+    expect((float) $tb['total_debit'])->toBe(0.0);
+
+    // The same filter in company-wide hands reads unit B for real.
+    $tb = $this->actingAs($this->owner)->getJson("/api/v1/reports/trial-balance?operating_unit_id={$this->unitB->id}")
+        ->assertStatus(200)->json();
+    expect((float) $tb['total_debit'])->toBe(750.0);
 });
