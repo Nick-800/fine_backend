@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\EmployeeStatus;
 use App\Enums\PayType;
 use App\Models\Traits\Auditable;
+use App\Models\Traits\BelongsToOperatingUnit;
 use App\Models\Traits\HasOptimisticLocking;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -17,7 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 final class Employee extends Model
 {
-    use Auditable, HasFactory, HasOptimisticLocking, HasUuids, SoftDeletes;
+    use Auditable, BelongsToOperatingUnit, HasFactory, HasOptimisticLocking, HasUuids, SoftDeletes;
 
     protected $fillable = [
         'entity_id',

@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\ClientStatus;
 use App\Models\Traits\Auditable;
+use App\Models\Traits\BelongsToOperatingUnit;
 use App\Models\Traits\HasOptimisticLocking;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 final class Client extends Model
 {
-    use Auditable, HasFactory, HasOptimisticLocking, HasUuids;
+    use Auditable, BelongsToOperatingUnit, HasFactory, HasOptimisticLocking, HasUuids;
 
     protected $fillable = [
         'entity_id',
@@ -32,6 +33,7 @@ final class Client extends Model
         return [
             'status' => ClientStatus::class,
             'credit_limit' => 'decimal:4',
+            'current_balance' => 'decimal:4',
             'payment_terms_days' => 'integer',
             'record_version' => 'integer',
         ];

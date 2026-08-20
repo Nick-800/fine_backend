@@ -36,6 +36,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (OptimisticLockConflictException $e, Request $request) {
             return response()->json([
                 'message' => $e->getMessage(),
+                'code' => 'OPTIMISTIC_LOCK_CONFLICT',
             ], 409);
         });
 

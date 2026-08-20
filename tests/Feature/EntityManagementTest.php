@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\EmployeeStatus;
 use App\Enums\EntityType;
 use App\Enums\PayType;
+use App\Models\Client;
 use App\Models\Company;
 use App\Models\Employee;
 use App\Models\Entity;
@@ -113,19 +114,28 @@ it('can create an employee linked to an entity without a user account', function
         ->postJson('/api/v1/employees', [
             'entity_id' => $entity->id,
             'operating_unit_id' => $this->unit->id,
-            'job_title' => 'Foam Mold Technician',
+            'job_title' => 'Master Tailor',
+            'labor_role' => 'tailor',
             'pay_type' => PayType::Monthly->value,
+            'monthly_salary' => 2500.00,
+            'hourly_rate' => 18.50,
             'hire_date' => '2026-01-15',
             'status' => EmployeeStatus::Active->value,
         ]);
 
     $response->assertStatus(201)
         ->assertJsonPath('data.entity_id', $entity->id)
-        ->assertJsonPath('data.job_title', 'Foam Mold Technician');
+        ->assertJsonPath('data.job_title', 'Master Tailor')
+        ->assertJsonPath('data.labor_role', 'tailor')
+        ->assertJsonPath('data.monthly_salary', 2500)
+        ->assertJsonPath('data.hourly_rate', 18.5);
 
     $employee = Employee::where('entity_id', $entity->id)->first();
     expect($employee)->not->toBeNull();
     expect($employee->employer_entity_id)->toBeNull(); // Internal direct hire
+    expect($employee->labor_role)->toBe('tailor');
+    expect((float) $employee->monthly_salary)->toBe(2500.0);
+    expect((float) $employee->hourly_rate)->toBe(18.5);
 });
 
 it('can create a client linked to an entity without a user account', function (): void {
@@ -147,7 +157,40 @@ it('can create a client linked to an entity without a user account', function ()
 
     $response->assertStatus(201)
         ->assertJsonPath('data.entity_id', $entity->id)
-        ->assertJsonPath('data.credit_limit', '50000.0000');
+        ->assertJsonPath('data.credit_limit', '50000.0000')
+        ->assertJsonPath('data.current_balance', 0);
+});
+
+it('serializes client current_balance accurately in index and show responses', function (): void {
+    $entity = Entity::create([
+        'name' => 'Tripoli Modern Furnishings',
+        'entity_type' => EntityType::Organization,
+        'is_active' => true,
+    ]);
+
+    $client = Client::create([
+        'entity_id' => $entity->id,
+        'operating_unit_id' => $this->unit->id,
+        'credit_limit' => 20000.00,
+        'current_balance' => 4500.50,
+        'payment_terms_days' => 30,
+        'status' => 'active',
+    ]);
+
+    $showResponse = $this->actingAs($this->admin)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->getJson("/api/v1/clients/{$client->id}");
+
+    $showResponse->assertOk()
+        ->assertJsonPath('data.id', $client->id)
+        ->assertJsonPath('data.current_balance', 4500.5);
+
+    $indexResponse = $this->actingAs($this->admin)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->getJson('/api/v1/clients');
+
+    $indexResponse->assertOk()
+        ->assertJsonPath('data.0.current_balance', 4500.5);
 });
 
 it('can provision a user account for an existing entity on demand', function (): void {

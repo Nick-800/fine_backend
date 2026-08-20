@@ -27,7 +27,7 @@ final class ClientController extends Controller
         $query = Client::with(['entity', 'operatingUnit']);
 
         if ($request->has('operating_unit_id')) {
-            $query->where('operating_unit_id', $request->query('operating_unit_id'));
+            $query->withoutGlobalScopes()->where('operating_unit_id', $request->query('operating_unit_id'));
         }
 
         if ($request->has('status')) {

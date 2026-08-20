@@ -16,6 +16,7 @@ final class ClientResource extends JsonResource
             'entity_id' => $this->entity_id,
             'operating_unit_id' => $this->operating_unit_id,
             'credit_limit' => $this->credit_limit,
+            'current_balance' => (float) ($this->current_balance ?? 0),
             'payment_terms_days' => $this->payment_terms_days,
             'account_id' => $this->account_id,
             'status' => $this->status->value ?? $this->status,

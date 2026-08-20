@@ -27,7 +27,7 @@ final class EmployeeController extends Controller
         $query = Employee::with(['entity', 'operatingUnit', 'employerEntity']);
 
         if ($request->has('operating_unit_id')) {
-            $query->where('operating_unit_id', $request->query('operating_unit_id'));
+            $query->withoutGlobalScopes()->where('operating_unit_id', $request->query('operating_unit_id'));
         }
 
         if ($request->has('status')) {
@@ -74,7 +74,10 @@ final class EmployeeController extends Controller
                 'operating_unit_id' => $request->operating_unit_id,
                 'employer_entity_id' => $request->employer_entity_id,
                 'job_title' => $request->job_title,
+                'labor_role' => $request->labor_role,
                 'pay_type' => $request->pay_type,
+                'monthly_salary' => $request->monthly_salary,
+                'hourly_rate' => $request->hourly_rate,
                 'hire_date' => $request->hire_date,
                 'status' => $request->input('status', 'active'),
             ]);
