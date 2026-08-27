@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Traits\BelongsToOperatingUnit;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 final class CashAccount extends Model
 {
-    use HasFactory, HasUuids;
+    use BelongsToOperatingUnit, HasFactory, HasUuids;
 
     protected $fillable = [
         'operating_unit_id',

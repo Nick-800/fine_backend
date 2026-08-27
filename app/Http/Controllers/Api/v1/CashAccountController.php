@@ -7,9 +7,11 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\v1\CashAccountResource;
 use App\Models\CashAccount;
+use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 final class CashAccountController extends Controller
 {
@@ -33,8 +35,17 @@ final class CashAccountController extends Controller
             'balance' => 'sometimes|numeric',
         ]);
 
+        $context = app(CurrentUnitContext::class);
+        $unitId = $request->input('operating_unit_id');
+        if ($context->hasUnit()) {
+            if ($unitId && $unitId !== $context->id()) {
+                throw new AccessDeniedHttpException('Cannot create cash account in another operating unit.');
+            }
+            $unitId = $context->id();
+        }
+
         $account = CashAccount::create([
-            'operating_unit_id' => $request->input('operating_unit_id'),
+            'operating_unit_id' => $unitId,
             'name' => $request->input('name'),
             'currency' => strtoupper($request->input('currency', 'LYD')),
             'balance' => $request->input('balance', 0),

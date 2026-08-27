@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Enums\ImportOrderStatus;
+use App\Models\CashAccount;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Employee;
 use App\Models\Entity;
+use App\Models\ImportOrder;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
 use App\Models\OperatingUnit;
@@ -13,6 +16,7 @@ use App\Models\ProductionBatch;
 use App\Models\Role;
 use App\Models\StockAdjustmentRequest;
 use App\Models\StockLot;
+use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
@@ -126,6 +130,30 @@ beforeEach(function () {
         'current_balance' => 1200.00,
         'payment_terms_days' => 30,
         'status' => 'active',
+    ]);
+
+    app(CurrentUnitContext::class)->clear();
+
+    $this->supplierB = Supplier::create([
+        'operating_unit_id' => $this->unitB->id,
+        'name' => 'Supplier Unit B',
+        'default_currency' => 'USD',
+    ]);
+
+    $this->importOrderB = ImportOrder::create([
+        'operating_unit_id' => $this->unitB->id,
+        'supplier_id' => $this->supplierB->id,
+        'currency' => 'USD',
+        'negotiated_price' => 100,
+        'quantity' => 10,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+
+    $this->cashAccountB = CashAccount::create([
+        'operating_unit_id' => $this->unitB->id,
+        'name' => 'Cash Unit B',
+        'currency' => 'LYD',
+        'balance' => 5000,
     ]);
 
     app(CurrentUnitContext::class)->clear();
@@ -478,4 +506,44 @@ test('the report unit filter cannot read another unit ledger', function () {
     $tb = $this->actingAs($this->owner)->getJson("/api/v1/reports/trial-balance?operating_unit_id={$this->unitB->id}")
         ->assertStatus(200)->json();
     expect((float) $tb['total_debit'])->toBe(750.0);
+});
+
+test('a unit-scoped user cannot read or modify another unit supplier', function () {
+    ($this->asA)()->getJson("/api/v1/suppliers/{$this->supplierB->id}")->assertNotFound();
+    ($this->asA)()->putJson("/api/v1/suppliers/{$this->supplierB->id}", ['name' => 'Hacked'])->assertNotFound();
+});
+
+test('a unit-scoped user cannot read another unit import order', function () {
+    ($this->asA)()->getJson("/api/v1/import-orders/{$this->importOrderB->id}")->assertNotFound();
+});
+
+test('a unit-scoped user cannot read another unit cash account', function () {
+    $res = ($this->asA)()->getJson('/api/v1/cash-accounts');
+    $res->assertOk();
+    expect(collect($res->json('data'))->pluck('id'))->not->toContain($this->cashAccountB->id);
+});
+
+test('a unit-scoped user cannot create cash account in another unit', function () {
+    ($this->asA)()->postJson('/api/v1/cash-accounts', [
+        'operating_unit_id' => $this->unitB->id,
+        'name' => 'Stolen Unit B Account',
+        'currency' => 'LYD',
+    ])->assertStatus(403);
+});
+
+test('stock lot quantity cannot be directly modified via update (INV-06 invariant)', function () {
+    $lotA = StockLot::create([
+        'inventory_item_id' => $this->item->id,
+        'warehouse_id' => $this->warehouseA->id,
+        'lot_number' => 'LOT-A-INV06',
+        'quantity' => 10,
+        'unit_cost' => 5,
+        'grade' => 'standard',
+        'status' => 'available',
+    ]);
+
+    ($this->asA)()->putJson("/api/v1/stock-lots/{$lotA->id}", [
+        'quantity' => 999,
+        'record_version' => $lotA->record_version,
+    ])->assertStatus(422)->assertJsonValidationErrors('quantity');
 });
