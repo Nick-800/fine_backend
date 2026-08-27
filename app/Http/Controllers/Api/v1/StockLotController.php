@@ -101,17 +101,20 @@ class StockLotController extends Controller
 
         $validated = $request->validate([
             'warehouse_id' => ['sometimes', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
-            'quantity' => ['sometimes', 'numeric', 'min:0'],
+            'quantity' => ['prohibited'],
+            'unit_cost' => ['prohibited'],
             'container_quantity' => ['nullable', 'numeric', 'min:0'],
             'length_m' => ['nullable', 'numeric', 'min:0'],
             'width_m' => ['nullable', 'numeric', 'min:0'],
             'height_m' => ['nullable', 'numeric', 'min:0'],
             'weight_kg' => ['nullable', 'numeric', 'min:0'],
-            'unit_cost' => ['sometimes', 'numeric', 'min:0'],
             'grade' => ['sometimes', 'string', 'in:standard,acceptable_variant,defective_usable,reject'],
             'status' => ['sometimes', 'string', 'in:available,reserved,consumed,quarantined'],
             'attribute_values' => ['nullable', 'array'],
             'record_version' => ['required', 'integer'],
+        ], [
+            'quantity.prohibited' => 'Stock quantity cannot be modified directly via update; use inventory movements or stock adjustments.',
+            'unit_cost.prohibited' => 'Stock unit cost cannot be modified directly via update.',
         ]);
 
         $stockLot->update($validated);
