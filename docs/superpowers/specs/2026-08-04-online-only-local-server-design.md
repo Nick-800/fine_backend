@@ -1,5 +1,7 @@
 # Online-Only Local Server Architecture Design Spec
 
+**Status**: Implemented
+
 ## Overview
 This design spec revises the ERP system architecture from an offline-first hybrid sync model to a **Direct Online-Only Local Server Model**. The backend runs centrally on a local server on the LAN (Local Area Network). Electron clients interact with the server directly over REST API endpoints using Laravel Sanctum Bearer tokens.
 

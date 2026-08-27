@@ -768,70 +768,121 @@ erDiagram
 
 ---
 
-## 13. Complete Entity Inventory Table
+## 13. Complete Entity Inventory Table (Authoritative 75 Tables)
 
-| # | Entity | Module | Key Purpose |
-|---|--------|--------|-------------|
-| 1 | `companies` | Foundation | Company-wide settings (costing policy, transfer pricing) |
-| 2 | `operating_units` | Foundation | Generic unit abstraction for dynamic provisioning |
-| 3 | `unit_blueprints` | Foundation | Reusable templates for spinning up new units |
-| 4 | `warehouses` | Inventory | Physical stock locations per unit |
-| 5 | `users` | Auth | System login accounts |
-| 6 | `roles` | Auth | Role definitions |
-| 7 | `user_roles` | Auth | Many-to-many user-role with unit scoping |
-| 8 | `permissions` | Auth | Granular permission definitions |
-| 9 | `role_permissions` | Auth | Role-permission bridge |
-| 10 | `audit_logs` | Audit | Full change tracking |
-| 11 | `suppliers` | Procurement | Foreign vendors |
-| 12 | `import_orders` | Procurement | Foreign purchase orders with state machine |
-| 13 | `payment_requests` | Treasury / Procurement | Treasury payment execution |
-| 14 | `bank_holds` | Treasury | Bank hold/release buffer tracking |
-| 15 | `landed_cost_lines` | Procurement | Per-component landed cost |
-| 16 | `goods_receipts` | Procurement / Inventory | Physical receipt confirmation |
-| 17 | `fx_rates` | Treasury | Exchange rate snapshots |
-| 18 | `cash_accounts` | Treasury | Multi-currency treasury accounts |
-| 19 | `inventory_items` | Inventory | Product/SKU master data |
-| 20 | `stock_lots` | Inventory | Serialized or weighted-avg inventory units |
-| 21 | `stock_movements` | Inventory | All inventory transactions |
-| 22 | `production_batches` | Foam Mfg | One foam machine run |
-| 23 | `consumption_reports` | Foam Mfg | Machine-reported chemical draw |
-| 24 | `tank_stocks` | Foam Mfg | Weighted-average chemical tank tracking |
-| 25 | `consumption_lines` | Foam Mfg | Per-chemical consumption per batch |
-| 26 | `foam_blocks` | Foam Mfg | Individually graded block outputs |
-| 27 | `cutter_work_orders` | Cutter Mfg | Cutting production orders |
-| 28 | `work_order_lines` | Cutter Mfg | Per-line shape/template requirements |
-| 29 | `foam_block_consumptions` | Cutter Mfg | Specific block-to-line consumption |
-| 30 | `byproduct_yields` | Cutter Mfg | Automatic byproduct generation |
-| 31 | `slices` | Cutter Mfg / Inventory | Slice item definitions |
-| 32 | `products` | Furniture Mfg | Finished goods catalog |
-| 33 | `boms` | Furniture Mfg | Bill of Materials versions |
-| 34 | `bom_component_lines` | Furniture Mfg | Material requirements per BOM |
-| 35 | `labor_requirements` | Furniture Mfg | Labor needs per BOM |
-| 36 | `production_orders` | Furniture Mfg | Build orders |
-| 37 | `labor_logs` | Furniture Mfg / HR | Actual labor time logged |
-| 38 | `clients` | Sales | External customers with credit limits |
-| 39 | `sales_orders` | Sales | Unified order model (external + internal) |
-| 40 | `sales_order_lines` | Sales | Order line items |
-| 41 | `credit_approval_requests` | Sales | Over-limit escalation |
-| 42 | `pos_sales` | POS | Retail counter sales |
-| 43 | `pos_sale_lines` | POS | POS line items |
-| 44 | `internal_restock_requests` | POS / Inventory | Store-to-unit restock workflow |
-| 45 | `chart_of_accounts` | Accounting | CoA header |
-| 46 | `accounts` | Accounting | Ledger accounts |
-| 47 | `journal_entries` | Accounting | Double-entry headers |
-| 48 | `journal_lines` | Accounting | Debits & credits |
-| 49 | `subledgers` | Accounting | Per-unit period rollups |
-| 50 | `overhead_expenses` | Accounting | Non-operational costs |
-| 51 | `overhead_allocation_rules` | Accounting | Distribution rules |
-| 52 | `overhead_allocations` | Accounting | Allocated postings |
-| 53 | `fixed_assets` | Accounting | Capitalized assets |
-| 54 | `depreciation_entries` | Accounting | Period depreciation |
-| 55 | `employees` | HR | Employee master records |
-| 56 | `attendances` | HR | Daily presence |
-| 57 | `labor_role_rates` | HR | Versioned pay rates |
-| 58 | `payroll_runs` | HR | Payroll periods |
-| 59 | `payslips` | HR | Individual payroll results |
-| 60 | `leave_requests` | HR | Time-off requests |
+The authoritative schema consists of **75 tables** across all domain modules and framework infrastructure (code-wins source of truth). Every table corresponds to an explicit database migration in `fine_backend/database/migrations/`.
+
+| # | Table / Entity | Module | Classification | Key Purpose |
+|---|----------------|--------|----------------|-------------|
+| 1 | `companies` | Foundation | Core Domain | Company-wide multi-tenant configuration and financial settings |
+| 2 | `operating_units` | Foundation | Core Domain | Operating unit abstraction (factories, showrooms, warehouses, admin) |
+| 3 | `unit_blueprints` | Foundation | Core Domain | Reusable configuration templates for spinning up new units |
+| 4 | `entities` | Foundation / CRM | Core Domain | Master identity records for legal entities, clients, employees, contractors |
+| 5 | `entity_roles` | Foundation / CRM | Core Domain | Polymorphic roles assigned to entities (client, employee, vendor, employer) |
+| 6 | `entity_contacts` | Foundation / CRM | Core Domain | Contact information, addresses, phone, and email records for entities |
+| 7 | `users` | Auth & Security | Core Domain | User authentication accounts with password hash and credentials |
+| 8 | `roles` | Auth & Security | Core Domain | Role-based access control role definitions |
+| 9 | `user_roles` | Auth & Security | Core Domain | User-role assignment scoped by operating unit |
+| 10 | `permissions` | Auth & Security | Core Domain | Fine-grained capability definitions |
+| 11 | `role_permissions` | Auth & Security | Core Domain | M:N association of permissions to roles |
+| 12 | `personal_access_tokens` | Auth & Security | Framework (Sanctum) | Bearer API authentication tokens |
+| 13 | `password_reset_tokens` | Auth & Security | Framework (Laravel) | Password reset credentials |
+| 14 | `sessions` | Auth & Security | Framework (Laravel) | HTTP session storage |
+| 15 | `audit_logs` | Audit | Core Domain | Immutable audit trail for critical system actions |
+| 16 | `suppliers` | Procurement | Core Domain | Foreign and local raw material vendors |
+| 17 | `import_orders` | Procurement | Core Domain | International procurement orders governed by a 10-stage lifecycle |
+| 18 | `landed_cost_lines` | Procurement | Core Domain | Landed cost lines (freight, customs, clearance, transit) capitalized to inventory |
+| 19 | `goods_receipts` | Procurement / Inventory | Core Domain | Physical warehouse receipt confirmation |
+| 20 | `payment_requests` | Treasury / Procurement | Core Domain | Commercial invoice payment requests with FX rates |
+| 21 | `bank_holds` | Treasury | Core Domain | Central bank letter of credit buffer holds and release tracking |
+| 22 | `payable_settlements` | Treasury / Accounting | Core Domain | Settlement register for liabilities (AP 2100, Payroll 2210, Landed Cost 2300) |
+| 23 | `cash_accounts` | Treasury | Core Domain | Multi-currency cash, safe, and bank accounts |
+| 24 | `fx_rates` | Treasury | Core Domain | Official and parallel foreign exchange rate history |
+| 25 | `warehouses` | Inventory | Core Domain | Storage facilities and bins per operating unit |
+| 26 | `inventory_items` | Inventory | Core Domain | Master item catalog (raw chemicals, foam blocks, cut foam, furniture, retail) |
+| 27 | `item_categories` | Inventory | Core Domain | Hierarchical item taxonomy and classification |
+| 28 | `inventory_attribute_definitions` | Inventory | Core Domain | Custom attribute definitions for flexible item and lot metadata |
+| 29 | `inventory_item_attribute_definitions` | Inventory | Core Domain | Item-to-attribute mapping schema |
+| 30 | `stock_lots` | Inventory | Core Domain | Tracked inventory lots (serialized blocks, rolls, bundles, tanks) |
+| 31 | `inventory_movements` | Inventory | Core Domain | Immutable ledger of all inventory transactions (INV-06) |
+| 32 | `stock_adjustment_requests` | Inventory | Core Domain | Approval-gated physical stock reconciliation requests |
+| 33 | `internal_restock_requests` | Inventory / POS | Core Domain | Multi-unit stock replenishment headers |
+| 34 | `internal_restock_request_lines` | Inventory / POS | Core Domain | Stock replenishment line details |
+| 35 | `production_batches` | Foam Mfg | Core Domain | Continuous foam pouring runs with operation identity |
+| 36 | `tank_stocks` | Foam Mfg | Core Domain | Chemical bulk storage tank levels and weighted-average costs |
+| 37 | `consumption_reports` | Foam Mfg | Core Domain | Chemical consumption recording for foam runs |
+| 38 | `consumption_lines` | Foam Mfg | Core Domain | Detailed chemical weight and cost consumption lines |
+| 39 | `cutter_work_orders` | Cutter Mfg | Core Domain | Block-cutting production orders |
+| 40 | `cutter_work_order_lines` | Cutter Mfg | Core Domain | Shape and piece cutting line specifications |
+| 41 | `foam_block_consumptions` | Cutter Mfg | Core Domain | Traceability linking parent foam block to cutting jobs |
+| 42 | `byproduct_yields` | Cutter Mfg | Core Domain | Secondary yield tracking (crumb, scrap, residual pieces) |
+| 43 | `products` | Furniture Mfg | Core Domain | Finished goods catalog for manufactured furniture |
+| 44 | `boms` | Furniture Mfg | Core Domain | Versioned Bills of Materials |
+| 45 | `bom_component_lines` | Furniture Mfg | Core Domain | Required raw material components per BOM |
+| 46 | `labor_requirements` | Furniture Mfg | Core Domain | Standard labor role times and sequence per BOM |
+| 47 | `production_orders` | Furniture Mfg | Core Domain | Furniture manufacturing work orders |
+| 48 | `labor_logs` | Furniture Mfg / HR | Core Domain | Actual labor hours logged by workers against production orders |
+| 49 | `clients` | Sales & POS | Core Domain | Customers with credit limits, payment terms, and balances |
+| 50 | `sales_orders` | Sales & POS | Core Domain | Unified orders (wholesale, counter POS, internal transfer) |
+| 51 | `sales_order_lines` | Sales & POS | Core Domain | Sales order line items |
+| 52 | `credit_approval_requests` | Sales & POS | Core Domain | Credit limit override escalations to company management |
+| 53 | `pos_daily_closes` | Sales & POS | Core Domain | POS daily register close and Z-report financial sessions |
+| 54 | `chart_of_accounts` | Accounting | Core Domain | Chart of accounts header definition |
+| 55 | `accounts` | Accounting | Core Domain | General ledger accounts (Assets, Liabilities, Equity, Revenue, COGS, Expenses) |
+| 56 | `journal_entries` | Accounting | Core Domain | Double-entry journal transaction headers |
+| 57 | `journal_lines` | Accounting | Core Domain | Balanced debit and credit ledger lines with operating unit scoping |
+| 58 | `overhead_expenses` | Accounting | Core Domain | Factory and corporate overhead cost pools |
+| 59 | `overhead_allocation_rules` | Accounting | Core Domain | Allocation basis rules across operating units |
+| 60 | `overhead_allocations` | Accounting | Core Domain | Executed overhead allocation runs |
+| 61 | `fixed_assets` | Accounting | Core Domain | Capitalized tangible assets and equipment |
+| 62 | `depreciation_entries` | Accounting | Core Domain | Monthly straight-line asset depreciation records |
+| 63 | `employees` | HR & Payroll | Core Domain | Workforce master records and wage assignments |
+| 64 | `external_employers` | HR & Payroll | Core Domain | Staffing agencies and contracted labor providers |
+| 65 | `attendances` | HR & Payroll | Core Domain | Daily presence and hours worked |
+| 66 | `labor_role_rates` | HR & Payroll | Core Domain | Effective dated labor rates for costing and payroll |
+| 67 | `payroll_runs` | HR & Payroll | Core Domain | Monthly payroll cycle headers |
+| 68 | `payslips` | HR & Payroll | Core Domain | Detailed employee payslips with earnings and deductions |
+| 69 | `leave_requests` | HR & Payroll | Core Domain | Employee time-off requests and approvals |
+| 70 | `cache` | System | Framework (Laravel) | Key-value application cache storage |
+| 71 | `cache_locks` | System | Framework (Laravel) | Distributed atomic locks |
+| 72 | `jobs` | System | Framework (Laravel) | Asynchronous background job queue |
+| 73 | `job_batches` | System | Framework (Laravel) | Batched background job tracking |
+| 74 | `failed_jobs` | System | Framework (Laravel) | Dead-letter queue for failed asynchronous jobs |
+| 75 | `work_orders` | Legacy / Offline | Superseded Artifact | Table from superseded 2026-08-01 offline sync design (retained) |
+
+---
+
+### 13.1 Divergences & Deliberate Architectural Decisions
+
+A rigorous audit of the code base against the original design specifications reveals 6 deliberate naming or structural consolidations, and 1 derived structure:
+
+1. **`stock_movements` → `inventory_movements`**:
+   - *Code reality*: Implemented as `inventory_movements` (`2026_08_01_082530_create_inventory_movements_table.php`).
+   - *Design rationale*: Aligns with the core inventory model `InventoryMovement` and enforces the INV-06 append-only transaction ledger invariant across all warehouses and production flows.
+
+2. **`work_order_lines` → `cutter_work_order_lines`**:
+   - *Code reality*: Implemented as `cutter_work_order_lines` (`2026_08_12_140000_create_cutter_tables.php`).
+   - *Design rationale*: Disambiguates cutter line specifications from furniture assembly orders and legacy work order tables.
+
+3. **`foam_blocks` → Consolidated into `stock_lots`**:
+   - *Code reality*: Handled as serialized `stock_lots` with `production_batch_id` and foam-block identity columns (`2026_08_10_150001_add_foam_block_identity_to_stock_lots_table.php`).
+   - *Design rationale*: Eliminates redundant inventory tracking; blocks are first-class stock lots supporting warehouse moves, cutting consumption, or direct sales (HANDOFF §3 "Foam block identity"; spec `2026-08-10-foam-block-identity-and-batches-design.md`).
+
+4. **`slices` → Consolidated into `inventory_items` & `stock_lots`**:
+   - *Code reality*: Implemented via `inventory_items` (`item_type = 'slice'`) and standard lots.
+   - *Design rationale*: Standardizes pricing, BOM consumption, and stock valuation through the unified item model (Phase 05 §4.2; FUR-02).
+
+5. **`pos_sales` & `pos_sale_lines` → Unified with `sales_orders` & `sales_order_lines`**:
+   - *Code reality*: POS transactions create standard `sales_orders` with `channel = 'pos'` (`2026_08_12_180000_create_sales_tables.php`). Daily financial closes and Z-reports persist in `pos_daily_closes` (`2026_08_20_130000_create_pos_daily_closes_table.php`).
+   - *Design rationale*: Avoids split business logic between retail and wholesale channels while maintaining full auditing and register reconciliation (Phase 07 §4.2; SALE-04; K10).
+
+6. **`subledgers` → Derivable from `journal_lines`**:
+   - *Code reality*: No separate static `subledgers` table exists.
+   - *Design rationale*: Every journal line carries `operating_unit_id`. Operating-unit subledgers and trial balances are derived dynamically from line postings on demand, eliminating out-of-sync aggregation caches (HANDOFF §3; ACC-05; migration `2026_08_12_100000` L44–46).
+
+7. **`work_orders` → Retained Superseded Artifact**:
+   - *Code reality*: Table created in migration `2026_08_01_082522` under the initial offline-sync prototype.
+   - *Design rationale*: Superseded by the Direct Online-Only Local Server Model (`2026-08-04-online-only-local-server-design.md`). Retained in the database to avoid destructive migration rewrites.
 
 ---
 
