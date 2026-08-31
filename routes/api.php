@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\v1\AccountController;
+use App\Http\Controllers\Api\v1\Admin\ProvisionUserController;
 use App\Http\Controllers\Api\v1\AttendanceController;
 use App\Http\Controllers\Api\v1\AuditLogController;
 use App\Http\Controllers\Api\v1\AuthController;
@@ -15,7 +16,7 @@ use App\Http\Controllers\Api\v1\CreditApprovalController;
 use App\Http\Controllers\Api\v1\CutterWorkOrderController;
 use App\Http\Controllers\Api\v1\DashboardController;
 use App\Http\Controllers\Api\v1\EmployeeController;
-use App\Http\Controllers\Api\v1\EntityController;
+use App\Http\Controllers\Api\v1\EntityLookupController;
 use App\Http\Controllers\Api\v1\ExternalEmployerController;
 use App\Http\Controllers\Api\v1\FinancialReportController;
 use App\Http\Controllers\Api\v1\FixedAssetController;
@@ -101,17 +102,16 @@ Route::prefix('v1')->group(function () {
             Route::get('/inventory/ledger/{warehouseId}', [InventoryMovementController::class, 'ledger']);
 
             // Clients CRUD
-            Route::post('/clients/{id}/split-entity', [ClientController::class, 'splitEntity']);
-            Route::post('/clients/{id}/relink-entity', [ClientController::class, 'relinkEntity']);
             Route::apiResource('clients', ClientController::class);
 
-            // Entities CRUD
-            Route::post('/entities/{id}/provision-user', [EntityController::class, 'provisionUser']);
-            Route::apiResource('entities', EntityController::class);
+            // Entity lookups (used by the domain "select existing entity" picker).
+            // CRUD is hidden from the UI; admin-only provision-user lives under /admin.
+            Route::get('/entities', [EntityLookupController::class, 'index']);
+
+            // Admin-only entity operations (gated inside the controller).
+            Route::post('/admin/entities/{id}/provision-user', [ProvisionUserController::class]);
 
             // Employees CRUD
-            Route::post('/employees/{id}/split-entity', [EmployeeController::class, 'splitEntity']);
-            Route::post('/employees/{id}/relink-entity', [EmployeeController::class, 'relinkEntity']);
             Route::get('/employees/{id}/attendance', [EmployeeController::class, 'attendance']);
             Route::get('/employees/{id}/labor-logs', [EmployeeController::class, 'laborLogs']);
             Route::get('/employees/{id}/payslips', [EmployeeController::class, 'payslips']);
@@ -140,8 +140,6 @@ Route::prefix('v1')->group(function () {
             Route::put('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']);
 
             // External Employers CRUD
-            Route::post('/external-employers/{id}/split-entity', [ExternalEmployerController::class, 'splitEntity']);
-            Route::post('/external-employers/{id}/relink-entity', [ExternalEmployerController::class, 'relinkEntity']);
             Route::apiResource('external-employers', ExternalEmployerController::class);
 
             // Phase 02: Procurement System

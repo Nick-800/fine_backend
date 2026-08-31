@@ -182,47 +182,4 @@ final class EmployeeController extends Controller
             'message' => 'Employee deleted successfully.',
         ]);
     }
-
-    /**
-     * Split this employee into a separate standalone Entity.
-     */
-    public function splitEntity(Request $request, string $id, EntityService $entityService): JsonResponse
-    {
-        $employee = Employee::with('entity')->findOrFail($id);
-
-        $request->validate([
-            'new_name' => 'nullable|string|max:255',
-        ]);
-
-        $entityService->splitEntity(
-            $employee,
-            EntityRoleType::Employee,
-            $request->input('new_name')
-        );
-
-        return (new EmployeeResource($employee->load(['entity', 'operatingUnit', 'employerEntity'])))
-            ->response();
-    }
-
-    /**
-     * Re-link this employee to a different Entity.
-     */
-    public function relinkEntity(Request $request, string $id, EntityService $entityService): JsonResponse
-    {
-        $employee = Employee::findOrFail($id);
-
-        $request->validate([
-            'target_entity_id' => 'required|uuid|exists:entities,id',
-        ]);
-
-        $entityService->relinkEntity(
-            $employee,
-            $request->target_entity_id,
-            EntityRoleType::Employee,
-            $employee->operating_unit_id
-        );
-
-        return (new EmployeeResource($employee->load(['entity', 'operatingUnit', 'employerEntity'])))
-            ->response();
-    }
 }

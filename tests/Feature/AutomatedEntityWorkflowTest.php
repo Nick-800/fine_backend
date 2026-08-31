@@ -8,7 +8,6 @@ use App\Enums\PayType;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Employee;
-use App\Models\Entity;
 use App\Models\OperatingUnit;
 use App\Models\Role;
 use App\Models\UnitBlueprint;
@@ -107,57 +106,4 @@ it('automatically creates an entity when storing a client without entity_id', fu
     expect($client->entity)->not->toBeNull();
     expect($client->entity->name)->toBe('Sahara Trading Co.');
     expect($client->entity->entity_type)->toBe(EntityType::Organization);
-});
-
-it('can split an employee entity via API', function (): void {
-    $entity = Entity::create([
-        'name' => 'Shared Entity Person',
-        'entity_type' => EntityType::Individual,
-        'is_active' => true,
-    ]);
-
-    $employee = Employee::create([
-        'entity_id' => $entity->id,
-        'operating_unit_id' => $this->unit->id,
-        'job_title' => 'Architect',
-        'pay_type' => PayType::Monthly->value,
-        'hire_date' => '2026-01-01',
-        'status' => EmployeeStatus::Active->value,
-    ]);
-
-    $response = $this->actingAs($this->admin)
-        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
-        ->postJson("/api/v1/employees/{$employee->id}/split-entity", [
-            'new_name' => 'Separated Employee Person',
-        ]);
-
-    $response->assertStatus(200);
-
-    $employee->refresh();
-    expect($employee->entity_id)->not->toBe($entity->id);
-    expect($employee->entity->name)->toBe('Separated Employee Person');
-});
-
-it('can relink a client to another existing entity via API', function (): void {
-    $entityA = Entity::create(['name' => 'Entity A', 'entity_type' => EntityType::Organization, 'is_active' => true]);
-    $entityB = Entity::create(['name' => 'Entity B', 'entity_type' => EntityType::Organization, 'is_active' => true]);
-
-    $client = Client::create([
-        'entity_id' => $entityA->id,
-        'operating_unit_id' => $this->unit->id,
-        'credit_limit' => 1000,
-        'payment_terms_days' => 15,
-        'status' => 'active',
-    ]);
-
-    $response = $this->actingAs($this->admin)
-        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
-        ->postJson("/api/v1/clients/{$client->id}/relink-entity", [
-            'target_entity_id' => $entityB->id,
-        ]);
-
-    $response->assertStatus(200);
-
-    $client->refresh();
-    expect($client->entity_id)->toBe($entityB->id);
 });

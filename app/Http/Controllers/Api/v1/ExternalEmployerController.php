@@ -101,27 +101,6 @@ final class ExternalEmployerController extends Controller
     }
 
     /**
-     * Split this external employer into a separate standalone Entity.
-     */
-    public function splitEntity(Request $request, string $id, EntityService $entityService): JsonResponse
-    {
-        $externalEmployer = ExternalEmployer::with('entity')->findOrFail($id);
-
-        $request->validate([
-            'new_name' => 'nullable|string|max:255',
-        ]);
-
-        $entityService->splitEntity(
-            $externalEmployer,
-            EntityRoleType::ExternalEmployer,
-            $request->input('new_name')
-        );
-
-        return (new ExternalEmployerResource($externalEmployer->load('entity')))
-            ->response();
-    }
-
-    /**
      * Soft-delete the external employer — the resource route always offered
      * this, but the method never existed and the call 500ed.
      */
@@ -133,26 +112,5 @@ final class ExternalEmployerController extends Controller
         return response()->json([
             'message' => 'External employer deleted successfully.',
         ]);
-    }
-
-    /**
-     * Re-link this external employer to a different Entity.
-     */
-    public function relinkEntity(Request $request, string $id, EntityService $entityService): JsonResponse
-    {
-        $externalEmployer = ExternalEmployer::findOrFail($id);
-
-        $request->validate([
-            'target_entity_id' => 'required|uuid|exists:entities,id',
-        ]);
-
-        $entityService->relinkEntity(
-            $externalEmployer,
-            $request->target_entity_id,
-            EntityRoleType::ExternalEmployer
-        );
-
-        return (new ExternalEmployerResource($externalEmployer->load('entity')))
-            ->response();
     }
 }

@@ -134,47 +134,4 @@ final class ClientController extends Controller
             'message' => 'Client deleted successfully.',
         ]);
     }
-
-    /**
-     * Split this client into a separate standalone Entity.
-     */
-    public function splitEntity(Request $request, string $id, EntityService $entityService): JsonResponse
-    {
-        $client = Client::with('entity')->findOrFail($id);
-
-        $request->validate([
-            'new_name' => 'nullable|string|max:255',
-        ]);
-
-        $entityService->splitEntity(
-            $client,
-            EntityRoleType::Client,
-            $request->input('new_name')
-        );
-
-        return (new ClientResource($client->load(['entity', 'operatingUnit'])))
-            ->response();
-    }
-
-    /**
-     * Re-link this client to a different Entity.
-     */
-    public function relinkEntity(Request $request, string $id, EntityService $entityService): JsonResponse
-    {
-        $client = Client::findOrFail($id);
-
-        $request->validate([
-            'target_entity_id' => 'required|uuid|exists:entities,id',
-        ]);
-
-        $entityService->relinkEntity(
-            $client,
-            $request->target_entity_id,
-            EntityRoleType::Client,
-            $client->operating_unit_id
-        );
-
-        return (new ClientResource($client->load(['entity', 'operatingUnit'])))
-            ->response();
-    }
 }
