@@ -104,15 +104,17 @@ final class ImportOrderStateService
         PaymentRequest $paymentRequest,
         float $fxRateUsed,
         ?float $exactAmountUsedLyd = null,
-        ?string $bankReference = null
+        ?string $bankReference = null,
+        ?string $extraAllocationNote = null
     ): PaymentRequest {
-        return DB::transaction(function () use ($paymentRequest, $fxRateUsed, $exactAmountUsedLyd, $bankReference) {
+        return DB::transaction(function () use ($paymentRequest, $fxRateUsed, $exactAmountUsedLyd, $bankReference, $extraAllocationNote) {
             if ($paymentRequest->status !== PaymentRequestStatus::Pending) {
                 throw new InvalidStateTransitionException('Payment request is not pending.');
             }
 
             $paymentRequest->update([
                 'fx_rate_used' => $fxRateUsed,
+                'extra_allocation_note' => $extraAllocationNote,
                 'status' => PaymentRequestStatus::Paid,
             ]);
 

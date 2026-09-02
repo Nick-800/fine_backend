@@ -24,6 +24,7 @@ final class PaymentRequest extends Model
         'amount_requested',
         'status',
         'fx_rate_used',
+        'extra_allocation_note',
     ];
 
     protected $casts = [

@@ -20,6 +20,7 @@ final class LandedCostLine extends Model
         'amount',
         'currency',
         'is_confirmed',
+        'note',
     ];
 
     protected $casts = [

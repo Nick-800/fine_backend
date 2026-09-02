@@ -11,6 +11,7 @@ use App\Models\LandedCostLine;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\ValidationException;
 
 final class LandedCostLineController extends Controller
 {
@@ -25,18 +26,30 @@ final class LandedCostLineController extends Controller
     {
         $order = ImportOrder::findOrFail($orderId);
 
-        $request->validate([
+        $data = $request->validate([
             'type' => 'required|string|in:supplier_price,fx_spread,customs,freight,local_transport,other',
             'amount' => 'required|numeric|min:0',
             'currency' => 'sometimes|string|size:3',
             'is_confirmed' => 'sometimes|boolean',
+            'note' => 'nullable|string|max:500',
         ]);
 
+        if (
+            $data['type'] === 'fx_spread'
+            && (float) $data['amount'] != 0
+            && blank($data['note'] ?? null)
+        ) {
+            throw ValidationException::withMessages([
+                'note' => 'سبب فرق سعر الصرف مطلوب عند تسجيل قيمة غير صفرية.',
+            ]);
+        }
+
         $line = $order->landedCostLines()->create([
-            'type' => $request->input('type'),
-            'amount' => $request->input('amount'),
-            'currency' => $request->input('currency', 'LYD'),
+            'type' => $data['type'],
+            'amount' => $data['amount'],
+            'currency' => $data['currency'] ?? 'LYD',
             'is_confirmed' => $request->boolean('is_confirmed', false),
+            'note' => $data['note'] ?? null,
         ]);
 
         return (new LandedCostLineResource($line))

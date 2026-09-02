@@ -18,6 +18,7 @@ final class LandedCostLineResource extends JsonResource
             'amount' => (float) $this->amount,
             'currency' => $this->currency,
             'is_confirmed' => (bool) $this->is_confirmed,
+            'note' => $this->note,
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

@@ -11,6 +11,7 @@ use App\Services\ImportOrderStateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 final class PaymentRequestController extends Controller
@@ -21,7 +22,7 @@ final class PaymentRequestController extends Controller
 
     /**
      * The company-wide treasury queue: every payment request, filterable by
-     * status and unit — what the treasury screen lists.
+     * status, route, and unit — what the treasury screen lists.
      */
     public function all(Request $request): AnonymousResourceCollection
     {
@@ -33,6 +34,18 @@ final class PaymentRequestController extends Controller
 
         if ($request->has('status')) {
             $query->where('status', $request->query('status'));
+        }
+
+        if ($request->has('route')) {
+            $query->where('route', $request->query('route'));
+        }
+
+        if ($request->filled('from')) {
+            $query->whereDate('created_at', '>=', $request->query('from'));
+        }
+
+        if ($request->filled('to')) {
+            $query->whereDate('created_at', '<=', $request->query('to'));
         }
 
         return PaymentRequestResource::collection($query->latest()->get());
@@ -61,7 +74,7 @@ final class PaymentRequestController extends Controller
      */
     public function execute(Request $request, string $id): JsonResponse
     {
-        $paymentRequest = PaymentRequest::with('bankHold')->findOrFail($id);
+        $paymentRequest = PaymentRequest::with(['bankHold', 'importOrder'])->findOrFail($id);
 
         return $this->runExecution($request, $paymentRequest);
     }
@@ -71,7 +84,7 @@ final class PaymentRequestController extends Controller
      */
     public function process(Request $request, string $orderId, string $requestId): JsonResponse
     {
-        $paymentRequest = PaymentRequest::with('bankHold')
+        $paymentRequest = PaymentRequest::with(['bankHold', 'importOrder'])
             ->where('import_order_id', $orderId)
             ->findOrFail($requestId);
 
@@ -84,14 +97,27 @@ final class PaymentRequestController extends Controller
             'fx_rate_used' => 'required|numeric|min:0.000001',
             'exact_amount_used_lyd' => 'nullable|numeric|min:0',
             'bank_reference' => 'nullable|string',
+            'extra_allocation_note' => 'nullable|string|max:500',
         ]);
+
+        $bookedRate = (float) ($paymentRequest->importOrder?->booked_fx_rate ?? 0);
+        $fxRateUsed = (float) $request->input('fx_rate_used');
+        $amountRequested = (float) $paymentRequest->amount_requested;
+        $extraAllocationLyd = ($fxRateUsed - $bookedRate) * $amountRequested;
+
+        if (abs($extraAllocationLyd) > 0 && blank($request->input('extra_allocation_note'))) {
+            throw ValidationException::withMessages([
+                'extra_allocation_note' => 'سبب التكلفة الإضافية مطلوب عند وجود فرق في سعر الصرف.',
+            ]);
+        }
 
         try {
             $updated = $this->stateService->executePayment(
                 $paymentRequest,
-                (float) $request->input('fx_rate_used'),
+                $fxRateUsed,
                 $request->filled('exact_amount_used_lyd') ? (float) $request->input('exact_amount_used_lyd') : null,
-                $request->input('bank_reference')
+                $request->input('bank_reference'),
+                $request->input('extra_allocation_note')
             );
         } catch (InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage(), 'code' => 'INVALID_PAYMENT_OPERATION'], 422);
