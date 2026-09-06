@@ -145,12 +145,60 @@ class DatabaseSeeder extends Seeder
             'operating_unit_id' => null, // Company-wide
         ]);
 
-        // 5. Create Managers for operating units
-        $managers = [
+        // 5. Create Accounting and HR roles & global permissions
+        $accountingRole = Role::firstOrCreate([
+            'slug' => 'accounting-manager',
+        ], [
+            'id' => (string) Str::uuid(),
+            'name' => 'Accounting Manager',
+            'description' => 'Financial and accounting management.',
+        ]);
+
+        $hrRole = Role::firstOrCreate([
+            'slug' => 'hr-manager',
+        ], [
+            'id' => (string) Str::uuid(),
+            'name' => 'HR Manager',
+            'description' => 'Human resources and payroll management.',
+        ]);
+
+        // Ensure treasury-officer has settle-payables
+        $treasuryRole = Role::where('slug', 'treasury-officer')->first();
+        if ($treasuryRole) {
+            $settlePerm = Permission::firstOrCreate(
+                ['slug' => 'settle-payables'],
+                ['name' => 'Settle Payables', 'module' => 'treasury', 'action' => 'settle']
+            );
+            $treasuryRole->permissions()->syncWithoutDetaching([$settlePerm->id]);
+            $accountingRole->permissions()->syncWithoutDetaching([$settlePerm->id]);
+        }
+
+        // 6. Create Demo Users for all roles
+        $usersToSeed = [
+            // Company-wide staff
+            [
+                'name' => 'Accounting Manager',
+                'email' => 'accounting@erp.com',
+                'role_slug' => 'accounting-manager',
+                'unit_id' => null,
+            ],
+            [
+                'name' => 'HR Manager',
+                'email' => 'hr@erp.com',
+                'role_slug' => 'hr-manager',
+                'unit_id' => null,
+            ],
+            // Unit managers
             [
                 'name' => 'Procurement Manager',
                 'email' => 'procurement@erp.com',
                 'role_slug' => 'procurement-manager',
+                'unit_id' => $procurementUnit->id,
+            ],
+            [
+                'name' => 'Treasury Officer',
+                'email' => 'treasury@erp.com',
+                'role_slug' => 'treasury-officer',
                 'unit_id' => $procurementUnit->id,
             ],
             [
@@ -160,9 +208,21 @@ class DatabaseSeeder extends Seeder
                 'unit_id' => $foamUnit->id,
             ],
             [
+                'name' => 'Foam Operator',
+                'email' => 'foam-op@erp.com',
+                'role_slug' => 'foam-operator',
+                'unit_id' => $foamUnit->id,
+            ],
+            [
                 'name' => 'Cutter Manager',
                 'email' => 'cutter@erp.com',
                 'role_slug' => 'cutter-manager',
+                'unit_id' => $cutterUnit->id,
+            ],
+            [
+                'name' => 'Cutter Operator',
+                'email' => 'cutter-op@erp.com',
+                'role_slug' => 'cutter-operator',
                 'unit_id' => $cutterUnit->id,
             ],
             [
@@ -172,31 +232,44 @@ class DatabaseSeeder extends Seeder
                 'unit_id' => $furnitureUnit->id,
             ],
             [
+                'name' => 'Furniture Assembler',
+                'email' => 'assembler@erp.com',
+                'role_slug' => 'assembler',
+                'unit_id' => $furnitureUnit->id,
+            ],
+            [
                 'name' => 'Showroom Manager',
                 'email' => 'showroom@erp.com',
                 'role_slug' => 'store-manager',
                 'unit_id' => $showroomUnit->id,
             ],
+            [
+                'name' => 'POS Cashier',
+                'email' => 'cashier@erp.com',
+                'role_slug' => 'pos-cashier',
+                'unit_id' => $showroomUnit->id,
+            ],
         ];
 
-        foreach ($managers as $m) {
+        foreach ($usersToSeed as $m) {
             $user = User::create([
                 'id' => (string) Str::uuid(),
                 'name' => $m['name'],
                 'email' => $m['email'],
                 'password' => Hash::make('password'),
                 'is_active' => true,
-                'must_change_password' => true,
+                'must_change_password' => false,
             ]);
 
             $role = Role::where('slug', $m['role_slug'])->first();
-
-            UserRole::create([
-                'id' => (string) Str::uuid(),
-                'user_id' => $user->id,
-                'role_id' => $role->id,
-                'operating_unit_id' => $m['unit_id'], // Scoped to unit
-            ]);
+            if ($role) {
+                UserRole::create([
+                    'id' => (string) Str::uuid(),
+                    'user_id' => $user->id,
+                    'role_id' => $role->id,
+                    'operating_unit_id' => $m['unit_id'],
+                ]);
+            }
         }
 
         // 6. Execute Domain Seeders

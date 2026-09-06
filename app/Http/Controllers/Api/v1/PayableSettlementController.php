@@ -49,9 +49,9 @@ final class PayableSettlementController extends Controller
 
         // Same accountability bar as manual journal entries: money leaves
         // the company here.
-        if (! $user->hasRole('owner') && ! $user->hasRole('accounting-manager')) {
+        if (! $user->hasRole('owner') && ! $user->hasRole('accounting-manager') && ! $user->hasRole('treasury-officer')) {
             return response()->json([
-                'message' => 'Only an accounting manager or the owner can settle payables.',
+                'message' => 'Only an accounting manager, treasury officer, or the owner can settle payables.',
                 'code' => 'SETTLEMENT_FORBIDDEN',
             ], 403);
         }

@@ -37,7 +37,7 @@ final class AuthController extends Controller
             ], 403);
         }
 
-        $user->load('roles');
+        $user->load(['roles.permissions']);
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -69,7 +69,7 @@ final class AuthController extends Controller
      */
     public function me(Request $request): UserResource
     {
-        $user = $request->user()->load('roles');
+        $user = $request->user()->load(['roles.permissions']);
 
         return new UserResource($user);
     }

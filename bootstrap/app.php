@@ -26,6 +26,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'scope.unit' => ScopeOperatingUnit::class,
             'ensure.password.updated' => EnsurePasswordIsUpdated::class,
+            'require.role' => \App\Http\Middleware\RequireRole::class,
+            'require.permission' => \App\Http\Middleware\RequirePermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -21,6 +21,10 @@ final class UserResource extends JsonResource
             'is_active' => $this->is_active,
             'must_change_password' => $this->must_change_password,
             'record_version' => $this->record_version,
+            'role_slugs' => $this->roles ? $this->roles->pluck('slug')->values() : [],
+            'permissions' => $this->hasRole('owner')
+                ? ['*']
+                : ($this->roles ? $this->roles->flatMap->permissions->pluck('slug')->unique()->values() : []),
             'roles' => RoleResource::collection($this->whenLoaded('roles')),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
