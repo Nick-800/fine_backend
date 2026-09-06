@@ -42,6 +42,29 @@ class StockLotController extends Controller
     }
 
     /**
+     * Available foam blocks for a specific inventory item, scoped to the
+     * caller's operating unit. Drives the POS / showroom block picker.
+     */
+    public function availableFoamBlocks(Request $request): JsonResponse
+    {
+        $request->validate([
+            'inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
+            'grade' => ['nullable', 'string', 'in:standard,acceptable_variant,defective_usable,reject'],
+            'min_volume_m3' => ['nullable', 'numeric', 'min:0'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        $blocks = $this->stockLotService->getAvailableFoamBlocks(
+            (string) $request->query('inventory_item_id'),
+            $request->query('grade'),
+            $request->has('min_volume_m3') ? (float) $request->query('min_volume_m3') : null,
+            $request->integer('per_page', 25),
+        );
+
+        return response()->json($blocks);
+    }
+
+    /**
      * Goods intake — the manual path by which quantities enter stock.
      * Unlike the bare store(), this records the INV-06 movement and posts
      * the value to the ledger according to its source.

@@ -9,8 +9,10 @@ use App\Models\CutterWorkOrder;
 use App\Models\ImportOrder;
 use App\Models\InternalRestockRequest;
 use App\Models\JournalLine;
+use App\Models\LandedCostLine;
 use App\Models\LeaveRequest;
 use App\Models\OperatingUnit;
+use App\Models\OverheadAllocation;
 use App\Models\PayrollRun;
 use App\Models\ProductionBatch;
 use App\Models\ProductionOrder;
@@ -187,12 +189,46 @@ final class DashboardService
                 'leave_type' => $r->leave_type->value,
             ]);
 
+        $overheadAllocations = OverheadAllocation::withoutGlobalScopes()
+            ->with('overheadExpense')
+            ->whereIn('status', ['pending', 'approved'])
+            ->latest()
+            ->get()
+            ->map(fn (OverheadAllocation $a) => [
+                'id' => $a->id,
+                'overhead_expense_id' => $a->overhead_expense_id,
+                'operating_unit_id' => $a->operating_unit_id,
+                'status' => $a->status->value,
+                'amount' => (float) $a->amount,
+                'category' => $a->overheadExpense?->category,
+            ]);
+
+        $landedCostLines = LandedCostLine::query()
+            ->select('landed_cost_lines.*')
+            ->join('import_orders', 'import_orders.id', '=', 'landed_cost_lines.import_order_id')
+            ->whereIn('landed_cost_lines.status', ['pending', 'approved'])
+            ->with('importOrder')
+            ->latest('landed_cost_lines.created_at')
+            ->get()
+            ->map(fn (LandedCostLine $l) => [
+                'id' => $l->id,
+                'import_order_id' => $l->import_order_id,
+                'operating_unit_id' => $l->importOrder?->operating_unit_id,
+                'status' => $l->status->value,
+                'amount' => (float) $l->amount,
+                'currency' => $l->currency,
+                'type' => $l->type->value,
+            ]);
+
         return [
             'credit_approvals' => $credit,
             'restock_requests' => $restock,
             'payroll_runs' => $payroll,
             'leave_requests' => $leave,
-            'total' => $credit->count() + $restock->count() + $payroll->count() + $leave->count(),
+            'overhead_allocations' => $overheadAllocations,
+            'landed_cost_lines' => $landedCostLines,
+            'total' => $credit->count() + $restock->count() + $payroll->count() + $leave->count()
+                + $overheadAllocations->count() + $landedCostLines->count(),
         ];
     }
 
@@ -206,6 +242,11 @@ final class DashboardService
             'restock' => InternalRestockRequest::withoutGlobalScopes()->where('status', 'pending_approval')->count(),
             'payroll' => PayrollRun::where('status', 'pending_approval')->count(),
             'leave' => LeaveRequest::withoutGlobalScopes()->where('status', 'pending')->count(),
+            'overhead_allocations' => OverheadAllocation::withoutGlobalScopes()
+                ->whereIn('status', ['pending', 'approved'])->count(),
+            'landed_cost_lines' => LandedCostLine::query()
+                ->join('import_orders', 'import_orders.id', '=', 'landed_cost_lines.import_order_id')
+                ->whereIn('landed_cost_lines.status', ['pending', 'approved'])->count(),
         ];
     }
 

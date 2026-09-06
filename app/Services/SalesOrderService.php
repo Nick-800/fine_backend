@@ -218,7 +218,7 @@ class SalesOrderService
      * SALE-09: the POS sale is one atomic step — goods out, cash in, done.
      * Nothing intermediate exists for the counter queue to wait on.
      *
-     * @param  array<int, array{inventory_item_id: string, quantity: float|int, unit_price: float|int}>  $items
+     * @param  array<int, array{inventory_item_id: string, quantity: float|int, unit_price: float|int, stock_lot_id?: string|null}>  $items
      */
     public function posCheckout(
         string $operatingUnitId,
@@ -244,6 +244,7 @@ class SalesOrderService
             foreach ($items as $item) {
                 $order->lines()->create([
                     'inventory_item_id' => $item['inventory_item_id'],
+                    'stock_lot_id' => $item['stock_lot_id'] ?? null,
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
                 ]);
@@ -383,14 +384,26 @@ class SalesOrderService
         $costByAccount = [];
 
         foreach ($order->lines()->with('inventoryItem')->get() as $line) {
-            [$cost] = $this->drawFromUnit(
-                $line->inventory_item_id,
-                (float) $line->quantity,
-                $order->operating_unit_id,
-                'SalesOrder',
-                $order->id,
-                'sale_issue',
-            );
+            if ($line->stock_lot_id !== null) {
+                [$cost] = $this->drawSpecificLot(
+                    $line->stock_lot_id,
+                    $line->inventory_item_id,
+                    (float) $line->quantity,
+                    $order->operating_unit_id,
+                    'SalesOrder',
+                    $order->id,
+                    'sale_issue_specific_lot',
+                );
+            } else {
+                [$cost] = $this->drawFromUnit(
+                    $line->inventory_item_id,
+                    (float) $line->quantity,
+                    $order->operating_unit_id,
+                    'SalesOrder',
+                    $order->id,
+                    'sale_issue',
+                );
+            }
 
             $totalCost += $cost;
             $line->unit_cost_actual = $line->quantity > 0 ? round($cost / (float) $line->quantity, 4) : 0;
@@ -434,6 +447,79 @@ class SalesOrderService
         }
 
         return [round($totalCost, 4), $costByAccount];
+    }
+
+    /**
+     * Draw a specific lot for a sale. Mirrors the cut-block validation
+     * (CutterWorkOrderService::selectBlock) — caller must point at a real,
+     * available lot in the selling unit that actually carries the line's
+     * inventory item.
+     *
+     * @return array{0: float, 1: StockLot}
+     */
+    private function drawSpecificLot(
+        string $lotId,
+        string $itemId,
+        float $quantity,
+        string $unitId,
+        string $referenceType,
+        string $referenceId,
+        string $reason,
+    ): array {
+        $lot = StockLot::withoutGlobalScopes()
+            ->whereHas('warehouse', fn ($q) => $q->withoutGlobalScopes()->where('operating_unit_id', $unitId))
+            ->whereKey($lotId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($lot === null) {
+            throw new InvalidArgumentException(
+                "Selected stock lot is not in this operating unit's stock."
+            );
+        }
+
+        if ($lot->inventory_item_id !== $itemId) {
+            throw new InvalidArgumentException(
+                'Selected stock lot does not carry the inventory item on this line.'
+            );
+        }
+
+        if ($lot->status !== 'available') {
+            throw new InvalidArgumentException(
+                "Selected stock lot {$lot->lot_number} is not available ({$lot->status})."
+            );
+        }
+
+        if ((float) $lot->quantity < $quantity) {
+            throw new InsufficientComponentStockException(
+                "Selected stock lot {$lot->lot_number} cannot cover {$quantity}; it has {$lot->quantity}."
+            );
+        }
+
+        $cost = round($quantity * (float) $lot->unit_cost, 4);
+        $lot->quantity = round((float) $lot->quantity - $quantity, 4);
+
+        if ((float) $lot->quantity <= 0) {
+            $lot->quantity = 0;
+            $lot->status = 'consumed';
+        }
+
+        $lot->save();
+
+        InventoryMovement::create([
+            'operating_unit_id' => $unitId,
+            'stock_lot_id' => $lot->id,
+            'from_warehouse_id' => $lot->warehouse_id,
+            'sku' => $lot->inventoryItem?->sku ?? 'ITEM',
+            'movement_type' => 'sale',
+            'quantity_delta' => -$quantity,
+            'unit_cost' => (float) $lot->unit_cost,
+            'reason' => $reason,
+            'reference_document_type' => $referenceType,
+            'reference_id' => $referenceId,
+        ]);
+
+        return [$cost, $lot];
     }
 
     /**

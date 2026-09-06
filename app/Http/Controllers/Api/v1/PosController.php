@@ -12,6 +12,7 @@ use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use InvalidArgumentException;
 
 class PosController extends Controller
 {
@@ -31,6 +32,7 @@ class PosController extends Controller
             'client_id' => ['nullable', 'uuid', 'exists:clients,id'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
+            'items.*.stock_lot_id' => ['sometimes', 'nullable', 'uuid', 'exists:stock_lots,id'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
         ]);
@@ -44,13 +46,20 @@ class PosController extends Controller
             ], 422);
         }
 
-        $order = $this->salesOrderService->posCheckout(
-            $unitId,
-            $validated['items'],
-            $validated['payment_method'],
-            $validated['order_number'],
-            $validated['client_id'] ?? null,
-        );
+        try {
+            $order = $this->salesOrderService->posCheckout(
+                $unitId,
+                $validated['items'],
+                $validated['payment_method'],
+                $validated['order_number'],
+                $validated['client_id'] ?? null,
+            );
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'POS_LOT_REJECTED',
+            ], 422);
+        }
 
         return response()->json($order, 201);
     }
@@ -58,7 +67,7 @@ class PosController extends Controller
     public function show(string $id): JsonResponse
     {
         return response()->json(
-            SalesOrder::with(['lines.inventoryItem'])
+            SalesOrder::with(['lines.inventoryItem', 'lines.stockLot'])
                 ->where('channel', 'pos')
                 ->findOrFail($id)
         );

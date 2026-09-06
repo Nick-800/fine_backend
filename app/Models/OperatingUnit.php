@@ -22,6 +22,7 @@ final class OperatingUnit extends Model
         'unit_type',
         'currency',
         'status',
+        'manager_user_id',
     ];
 
     public function company(): BelongsTo
@@ -32,6 +33,11 @@ final class OperatingUnit extends Model
     public function blueprint(): BelongsTo
     {
         return $this->belongsTo(UnitBlueprint::class, 'blueprint_id');
+    }
+
+    public function manager(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'manager_user_id');
     }
 
     public function warehouses(): HasMany

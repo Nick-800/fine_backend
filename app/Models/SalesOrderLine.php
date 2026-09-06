@@ -16,6 +16,7 @@ final class SalesOrderLine extends Model
     protected $fillable = [
         'sales_order_id',
         'inventory_item_id',
+        'stock_lot_id',
         'quantity',
         'unit_price',
         'unit_cost_actual',
@@ -35,6 +36,11 @@ final class SalesOrderLine extends Model
     public function inventoryItem(): BelongsTo
     {
         return $this->belongsTo(InventoryItem::class);
+    }
+
+    public function stockLot(): BelongsTo
+    {
+        return $this->belongsTo(StockLot::class);
     }
 
     public function lineTotal(): float

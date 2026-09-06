@@ -22,6 +22,11 @@ final class OperatingUnitResource extends JsonResource
             'unit_type' => $this->unit_type,
             'currency' => $this->currency,
             'status' => $this->status,
+            'manager_user_id' => $this->manager_user_id,
+            'manager' => $this->whenLoaded('manager', fn () => $this->manager ? [
+                'id' => $this->manager->id,
+                'name' => $this->manager->name,
+            ] : null),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

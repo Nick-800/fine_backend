@@ -317,6 +317,34 @@ class StockLotService
     }
 
     /**
+     * Available foam blocks for POS / showroom pick-and-pack. Filters by
+     * inventory_item_id, grade, and minimum volume; excludes blocks already
+     * earmarked for cutting.
+     */
+    public function getAvailableFoamBlocks(
+        string $inventoryItemId,
+        ?string $grade = null,
+        ?float $minVolumeM3 = null,
+        int $perPage = 25,
+    ): LengthAwarePaginator {
+        $query = StockLot::with(['inventoryItem', 'warehouse'])
+            ->where('status', 'available')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->whereDoesntHave('cutterConsumption')
+            ->orderBy('volume_m3', 'asc');
+
+        if ($grade !== null && $grade !== '') {
+            $query->where('grade', $grade);
+        }
+
+        if ($minVolumeM3 !== null && $minVolumeM3 > 0) {
+            $query->where('volume_m3', '>=', $minVolumeM3);
+        }
+
+        return $query->paginate($perPage);
+    }
+
+    /**
      * Process cutter operator completion decision for a consumed foam block lot.
      * Option C: Restock remnant block with manually specified dimensions (L x W x H) OR convert to byproduct fill.
      */

@@ -82,10 +82,11 @@ final class OperatingUnitController extends Controller
         $request->validate([
             'name' => 'sometimes|required|string|max:255',
             'status' => 'sometimes|required|string|in:provisioning,active,inactive',
+            'manager_user_id' => 'sometimes|nullable|uuid|exists:users,id',
         ]);
 
         $unit = OperatingUnit::findOrFail($id);
-        $unit->update($request->only('name', 'status'));
+        $unit->update($request->only('name', 'status', 'manager_user_id'));
 
         return new OperatingUnitResource($unit);
     }
