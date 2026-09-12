@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\v1\OverheadExpenseController;
 use App\Http\Controllers\Api\v1\PayableSettlementController;
 use App\Http\Controllers\Api\v1\PaymentRequestController;
 use App\Http\Controllers\Api\v1\PayrollRunController;
+use App\Http\Controllers\Api\v1\PermissionController;
 use App\Http\Controllers\Api\v1\PosController;
 use App\Http\Controllers\Api\v1\ProductController;
 use App\Http\Controllers\Api\v1\ProductionBatchController;
@@ -80,6 +81,10 @@ Route::prefix('v1')->group(function () {
                 Route::post('/unit-blueprints', [UnitBlueprintController::class, 'store']);
                 Route::get('/roles', [RoleController::class, 'index']);
                 Route::post('/roles', [RoleController::class, 'store']);
+                Route::get('/roles/{id}', [RoleController::class, 'show']);
+                Route::put('/roles/{id}', [RoleController::class, 'update']);
+                Route::delete('/roles/{id}', [RoleController::class, 'destroy']);
+                Route::get('/permissions', [PermissionController::class, 'index']);
                 Route::apiResource('users', UserController::class);
                 Route::get('/users/{id}/roles', [UserController::class, 'roles']);
                 Route::post('/users/{id}/roles/assign', [UserController::class, 'assignRole']);

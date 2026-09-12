@@ -19,6 +19,9 @@ final class RoleResource extends JsonResource
             'name' => $this->name,
             'slug' => $this->slug,
             'description' => $this->description,
+            'permission_ids' => $this->whenLoaded('permissions')
+                ? $this->permissions->pluck('id')->values()
+                : null,
             'pivot' => $this->when($this->pivot !== null, function () {
                 return [
                     'operating_unit_id' => $this->pivot->operating_unit_id,

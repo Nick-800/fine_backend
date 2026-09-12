@@ -22,6 +22,16 @@ final class RoleController extends Controller
     }
 
     /**
+     * Display the specified role with its current permissions.
+     */
+    public function show(string $id): RoleResource
+    {
+        $role = Role::with('permissions')->findOrFail($id);
+
+        return new RoleResource($role);
+    }
+
+    /**
      * Create a new role.
      */
     public function store(Request $request): JsonResponse
@@ -30,12 +40,73 @@ final class RoleController extends Controller
             'name' => 'required|string|max:255',
             'slug' => 'required|string|unique:roles,slug|max:255',
             'description' => 'nullable|string',
+            'permission_ids' => 'sometimes|array',
+            'permission_ids.*' => 'uuid|exists:permissions,id',
         ]);
 
         $role = Role::create($request->only('name', 'slug', 'description'));
 
-        return (new RoleResource($role))
+        if ($request->has('permission_ids')) {
+            $role->permissions()->sync($request->input('permission_ids', []));
+        }
+
+        return (new RoleResource($role->load('permissions')))
             ->response()
             ->setStatusCode(201);
+    }
+
+    /**
+     * Update the specified role.
+     *
+     * Slug is intentionally not updatable — it's a system identifier.
+     * Permission sync is part of the same call (single round-trip).
+     */
+    public function update(Request $request, string $id): RoleResource
+    {
+        $role = Role::findOrFail($id);
+
+        $request->validate([
+            'name' => 'sometimes|required|string|max:255',
+            'description' => 'sometimes|nullable|string',
+            'permission_ids' => 'sometimes|array',
+            'permission_ids.*' => 'uuid|exists:permissions,id',
+        ]);
+
+        $role->update($request->only('name', 'description'));
+
+        if ($request->has('permission_ids')) {
+            // Owner / Admin are wildcard roles — keep their full permission set
+            // regardless of what the client sends, to avoid accidentally
+            // stripping the `*` access they back.
+            if (! in_array($role->slug, ['owner', 'admin'], true)) {
+                $role->permissions()->sync($request->input('permission_ids', []));
+            }
+        }
+
+        return new RoleResource($role->load('permissions'));
+    }
+
+    /**
+     * Remove the specified role.
+     *
+     * Refuses to delete the roles backing the require.role:owner middleware
+     * (owner / admin) since doing so would lock the system out.
+     * user_roles.role_id cascades on delete, so assignments drop silently.
+     */
+    public function destroy(string $id): JsonResponse
+    {
+        $role = Role::findOrFail($id);
+
+        if (in_array($role->slug, ['owner', 'admin'], true)) {
+            return response()->json([
+                'message' => 'The owner and admin roles are protected and cannot be deleted.',
+            ], 422);
+        }
+
+        $role->delete();
+
+        return response()->json([
+            'message' => 'Role deleted successfully.',
+        ]);
     }
 }
