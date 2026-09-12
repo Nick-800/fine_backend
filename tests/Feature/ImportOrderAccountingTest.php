@@ -75,6 +75,7 @@ beforeEach(function () {
         $this->stateService->confirmShipment($order->fresh());
         $this->stateService->arriveAtPort($order->fresh());
         $this->stateService->transportToWarehouse($order->fresh());
+        $this->stateService->arriveAtWarehouse($order->fresh(), $this->warehouse->id);
         $this->stateService->receiveGoods($order->fresh(), $this->warehouse->id, $qty);
 
         return $order->fresh();
@@ -371,6 +372,7 @@ test('a bank hold settled above the computed rate books the spread as FX loss', 
     $this->stateService->confirmShipment($order->fresh());
     $this->stateService->arriveAtPort($order->fresh());
     $this->stateService->transportToWarehouse($order->fresh());
+    $this->stateService->arriveAtWarehouse($order->fresh(), $this->warehouse->id);
     $this->stateService->receiveGoods($order->fresh(), $this->warehouse->id, 10);
 
     // The advance carries what the bank actually took.

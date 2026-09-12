@@ -111,7 +111,11 @@ test('full import order state machine lifecycle transition', function () {
 
     // 7. Transport to Warehouse
     $this->stateService->transportToWarehouse($order->fresh());
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::AwaitingReceipt);
+    expect($order->fresh()->status)->toBe(ImportOrderStatus::InTransitToWarehouse);
+
+    // 7b. Arrive at Warehouse
+    $this->stateService->arriveAtWarehouse($order->fresh(), $this->warehouse->id);
+    expect($order->fresh()->status)->toBe(ImportOrderStatus::AtWarehouse);
 
     // 8. Receive Goods
     $receipt = $this->stateService->receiveGoods($order->fresh(), $this->warehouse->id, 100, 'All 100 units in excellent condition');
@@ -148,6 +152,7 @@ test('cannot complete import order if unconfirmed landed cost lines exist', func
     $this->stateService->confirmShipment($order->fresh());
     $this->stateService->arriveAtPort($order->fresh());
     $this->stateService->transportToWarehouse($order->fresh());
+    $this->stateService->arriveAtWarehouse($order->fresh(), $this->warehouse->id);
     $this->stateService->receiveGoods($order->fresh(), $this->warehouse->id, 10);
 
     // Add unconfirmed landed cost line

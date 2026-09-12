@@ -235,7 +235,28 @@ final class ImportOrderStateService
                 throw new InvalidStateTransitionException('Order must be at_port before transporting to warehouse.');
             }
 
-            $order->update(['status' => ImportOrderStatus::AwaitingReceipt]);
+            $order->update(['status' => ImportOrderStatus::InTransitToWarehouse]);
+
+            return $order->refresh();
+        });
+    }
+
+    /**
+     * The truck has arrived at the destination warehouse but the goods have
+     * not yet been counted / inspected. Records which warehouse they're at
+     * so the operator doesn't have to re-pick on the receive step.
+     */
+    public function arriveAtWarehouse(ImportOrder $order, string $warehouseId): ImportOrder
+    {
+        return DB::transaction(function () use ($order, $warehouseId) {
+            if ($order->status !== ImportOrderStatus::InTransitToWarehouse) {
+                throw new InvalidStateTransitionException('Order must be in_transit_to_warehouse before arriving at the warehouse.');
+            }
+
+            $order->update([
+                'status' => ImportOrderStatus::AtWarehouse,
+                'arrived_warehouse_id' => $warehouseId,
+            ]);
 
             return $order->refresh();
         });
@@ -248,8 +269,14 @@ final class ImportOrderStateService
         ?string $notes = null
     ): GoodsReceipt {
         return DB::transaction(function () use ($order, $warehouseId, $receivedQty, $notes) {
-            if ($order->status !== ImportOrderStatus::AwaitingReceipt) {
-                throw new InvalidStateTransitionException('Order must be awaiting_receipt before receiving goods.');
+            // Accept the modern at_warehouse state, plus the legacy
+            // awaiting_receipt state for orders that predate the
+            // arrived_at_warehouse split.
+            if (! in_array($order->status, [
+                ImportOrderStatus::AtWarehouse,
+                ImportOrderStatus::AwaitingReceipt,
+            ], true)) {
+                throw new InvalidStateTransitionException('Order must be at_warehouse (or awaiting_receipt) before receiving goods.');
             }
 
             if ($receivedQty > (float) $order->quantity) {

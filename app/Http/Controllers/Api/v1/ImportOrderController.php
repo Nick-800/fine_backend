@@ -187,13 +187,23 @@ final class ImportOrderController extends Controller
     {
         $order = ImportOrder::findOrFail($id);
 
+        // receive_goods: if no explicit warehouse is sent but we already
+        // recorded one on arrival, default to it so the operator doesn't
+        // have to re-pick the same warehouse.
+        if ($request->input('action') === 'receive_goods'
+            && ! $request->filled('warehouse_id')
+            && $order->arrived_warehouse_id
+        ) {
+            $request->merge(['warehouse_id' => $order->arrived_warehouse_id]);
+        }
+
         $request->validate([
-            'action' => 'required|string|in:pending_payment,select_route,shipment,arrive_port,transport_warehouse,receive_goods,complete',
+            'action' => 'required|string|in:pending_payment,select_route,shipment,arrive_port,arrived_at_warehouse,transport_warehouse,receive_goods,complete',
             'route' => 'required_if:action,select_route|string|in:bank,market',
             'amount_requested' => 'required_if:action,select_route|numeric|min:0.0001',
             'held_amount_lyd' => 'required_if:route,bank|nullable|numeric|min:0.0001',
             'invoice_ref' => 'nullable|string',
-            'warehouse_id' => ['required_if:action,receive_goods', 'nullable', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
+            'warehouse_id' => ['required_if:action,arrived_at_warehouse,receive_goods', 'nullable', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
             'received_qty' => 'required_if:action,receive_goods|nullable|numeric|min:0.0001',
             'condition_notes' => 'nullable|string',
         ]);
@@ -212,6 +222,10 @@ final class ImportOrderController extends Controller
                 ),
                 'shipment' => $this->stateService->confirmShipment($order),
                 'arrive_port' => $this->stateService->arriveAtPort($order),
+                'arrived_at_warehouse' => $this->stateService->arriveAtWarehouse(
+                    $order,
+                    $request->input('warehouse_id')
+                ),
                 'transport_warehouse' => $this->stateService->transportToWarehouse($order),
                 'receive_goods' => $this->stateService->receiveGoods(
                     $order,
@@ -240,6 +254,7 @@ final class ImportOrderController extends Controller
                 'landedCostLines',
                 'goodsReceipt',
                 'items.inventoryItem',
+                'arrivedWarehouse',
             ])),
         ]);
     }

@@ -25,6 +25,7 @@ final class ImportOrder extends Model
         'negotiated_price',
         'quantity',
         'booked_fx_rate',
+        'arrived_warehouse_id',
         'status',
         'record_version',
     ];
@@ -65,5 +66,10 @@ final class ImportOrder extends Model
     public function items(): HasMany
     {
         return $this->hasMany(ImportOrderItem::class);
+    }
+
+    public function arrivedWarehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class, 'arrived_warehouse_id');
     }
 }

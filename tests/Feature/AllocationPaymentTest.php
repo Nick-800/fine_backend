@@ -90,6 +90,7 @@ beforeEach(function () {
         $state->confirmShipment($order->fresh());
         $state->arriveAtPort($order->fresh());
         $state->transportToWarehouse($order->fresh());
+        $state->arriveAtWarehouse($order->fresh(), $warehouse->id);
         $state->receiveGoods($order->fresh(), $warehouse->id, 10);
 
         return $order->fresh();
