@@ -10,6 +10,8 @@ use App\Http\Requests\v1\StoreImportOrderRequest;
 use App\Http\Resources\v1\ImportOrderResource;
 use App\Models\FxRate;
 use App\Models\ImportOrder;
+use App\Models\ImportOrderItem;
+use App\Models\InventoryItem;
 use App\Models\OperatingUnit;
 use App\Models\Warehouse;
 use App\Rules\ExistsInCurrentUnit;
@@ -17,17 +19,36 @@ use App\Services\ImportOrderStateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class ImportOrderController extends Controller
 {
+    /**
+     * Procurement-sensible item types — items used to source a purchase order.
+     * Foam blocks, finished goods, slices, etc. are produced internally and
+     * cannot be procured via an import order.
+     */
+    private const PROCUREMENT_ITEM_TYPES = [
+        'raw_material',
+        'packaging',
+        'barrel',
+        'pallet',
+    ];
+
     public function __construct(
         private readonly ImportOrderStateService $stateService
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = ImportOrder::with(['supplier', 'paymentRequests', 'landedCostLines', 'goodsReceipt']);
+        $query = ImportOrder::with([
+            'supplier',
+            'paymentRequests',
+            'landedCostLines',
+            'goodsReceipt',
+            'items.inventoryItem',
+        ]);
 
         if ($request->has('operating_unit_id')) {
             $query->where('operating_unit_id', $request->query('operating_unit_id'));
@@ -54,11 +75,83 @@ final class ImportOrderController extends Controller
             );
         }
 
-        $order = ImportOrder::create($data);
+        return DB::transaction(function () use ($request, $data) {
+            $currency = $data['currency'] ?? 'USD';
 
-        return (new ImportOrderResource($order->load('supplier')))
-            ->response()
-            ->setStatusCode(201);
+            // When line items are supplied, derive the header aggregates from
+            // them so the existing completion / goods-receipt / landed-cost
+            // flows continue to work unchanged.
+            $headerQuantity = $data['quantity'] ?? null;
+            $headerUnitPrice = $data['negotiated_price'] ?? null;
+
+            if ($request->has('items')) {
+                $items = $this->validateAndPrepareItems($request->input('items'), $currency);
+
+                $headerQuantity = array_sum(array_column($items, 'quantity'));
+                $headerUnitPrice = array_sum(array_map(
+                    fn ($line) => $line['quantity'] * $line['unit_price'],
+                    $items,
+                ));
+            }
+
+            $order = ImportOrder::create([
+                'operating_unit_id' => $data['operating_unit_id'],
+                'supplier_id' => $data['supplier_id'],
+                'currency' => $currency,
+                'negotiated_price' => $headerUnitPrice ?? 0,
+                'quantity' => $headerQuantity ?? 0,
+                'booked_fx_rate' => $data['booked_fx_rate'] ?? null,
+            ]);
+
+            if ($request->has('items')) {
+                foreach ($items as $line) {
+                    ImportOrderItem::create($line + ['import_order_id' => $order->id]);
+                }
+            }
+
+            return (new ImportOrderResource($order->load([
+                'supplier',
+                'items.inventoryItem',
+            ])))->response()->setStatusCode(201);
+        });
+    }
+
+    /**
+     * Ensure every referenced inventory item is procurement-eligible (i.e.
+     * not foam block / finished good / etc.). Reuses the validated uuids
+     * already produced by the FormRequest.
+     *
+     * @param  array<int, array{inventory_item_id: string, quantity: float|int|string, unit_price: float|int|string}>  $lines
+     * @return array<int, array<string, mixed>>
+     */
+    private function validateAndPrepareItems(array $lines, string $currency): array
+    {
+        $ids = array_column($lines, 'inventory_item_id');
+        $items = InventoryItem::whereIn('id', $ids)->get()->keyBy('id');
+
+        $prepared = [];
+        foreach ($lines as $line) {
+            $item = $items[$line['inventory_item_id']] ?? null;
+            if (! $item) {
+                // FormRequest already validated exists — this is defense in depth.
+                abort(422, 'Unknown inventory item: '.$line['inventory_item_id']);
+            }
+            if (! in_array($item->item_type, self::PROCUREMENT_ITEM_TYPES, true)) {
+                abort(response()->json([
+                    'message' => "Item \"{$item->name}\" is type \"{$item->item_type}\" which is not procurement-eligible.",
+                    'code' => 'INVALID_ITEM_TYPE',
+                ], 422));
+            }
+
+            $prepared[] = [
+                'inventory_item_id' => $item->id,
+                'quantity' => $line['quantity'],
+                'unit_price' => $line['unit_price'],
+                'currency' => $currency,
+            ];
+        }
+
+        return $prepared;
     }
 
     private function snapshotBookedFxRate(string $currency, string $operatingUnitId): ?string
@@ -79,8 +172,13 @@ final class ImportOrderController extends Controller
 
     public function show(string $id): ImportOrderResource
     {
-        $order = ImportOrder::with(['supplier', 'paymentRequests.bankHold', 'landedCostLines', 'goodsReceipt'])
-            ->findOrFail($id);
+        $order = ImportOrder::with([
+            'supplier',
+            'paymentRequests.bankHold',
+            'landedCostLines',
+            'goodsReceipt',
+            'items.inventoryItem',
+        ])->findOrFail($id);
 
         return new ImportOrderResource($order);
     }
@@ -136,7 +234,13 @@ final class ImportOrderController extends Controller
 
         return response()->json([
             'message' => 'Transition applied successfully.',
-            'data' => new ImportOrderResource($order->fresh(['supplier', 'paymentRequests.bankHold', 'landedCostLines', 'goodsReceipt'])),
+            'data' => new ImportOrderResource($order->fresh([
+                'supplier',
+                'paymentRequests.bankHold',
+                'landedCostLines',
+                'goodsReceipt',
+                'items.inventoryItem',
+            ])),
         ]);
     }
 }

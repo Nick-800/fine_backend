@@ -61,4 +61,9 @@ final class ImportOrder extends Model
     {
         return $this->hasOne(GoodsReceipt::class);
     }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(ImportOrderItem::class);
+    }
 }
