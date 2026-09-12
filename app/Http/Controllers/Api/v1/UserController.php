@@ -94,10 +94,16 @@ final class UserController extends Controller
     /**
      * Remove the specified user (soft delete).
      */
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
         $user = User::findOrFail($id);
         Gate::authorize('delete', $user);
+
+        if ($user->id === $request->user()->id) {
+            return response()->json([
+                'message' => 'You cannot delete your own account. Ask another owner.',
+            ], 422);
+        }
 
         $user->delete();
 
