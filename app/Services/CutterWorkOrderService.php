@@ -30,6 +30,68 @@ class CutterWorkOrderService
     public function __construct(private readonly AccountingService $accountingService) {}
 
     /**
+     * CUT-block-sale: create the order and atomically reserve the chosen
+     * precut block. The block's measurements + unit_cost are snapshotted on
+     * the order so the price is locked in even if the block's unit_cost
+     * changes later. The block's status flips to 'reserved' (visible in
+     * inventory as "in use") but its quantity is preserved — the cut hasn't
+     * happened yet.
+     */
+    public function createWithBlock(array $orderAttrs, ?StockLot $block = null): CutterWorkOrder
+    {
+        return DB::transaction(function () use ($orderAttrs, $block) {
+            $order = CutterWorkOrder::create($orderAttrs);
+
+            if ($block === null) {
+                return $order;
+            }
+
+            $locked = StockLot::whereKey($block->getKey())->lockForUpdate()->firstOrFail();
+
+            if ($locked->status !== 'available') {
+                throw new InvalidArgumentException(
+                    "Block {$locked->lot_number} is {$locked->status} and cannot be reserved."
+                );
+            }
+
+            $locked->status = 'reserved';
+            $locked->save();
+
+            $unitCost = (float) $locked->unit_cost;
+
+            $order->stock_lot_id = $locked->id;
+            $order->block_unit_cost_snapshot = $unitCost;
+            $order->block_length_m_snapshot = $locked->length_m;
+            $order->block_width_m_snapshot = $locked->width_m;
+            $order->block_height_m_snapshot = $locked->height_m;
+            $order->block_volume_m3_snapshot = $locked->volume_m3;
+            $order->wip_cost = round($unitCost, 4);
+            $order->save();
+
+            $this->accountingService->postJournal(
+                "Block {$locked->lot_number} reserved for cutter order {$order->order_number}",
+                [
+                    [
+                        'account_code' => '1122',
+                        'debit' => $unitCost,
+                        'operating_unit_id' => $order->operating_unit_id,
+                    ],
+                    [
+                        'account_code' => '1131',
+                        'credit' => $unitCost,
+                        'operating_unit_id' => $order->operating_unit_id,
+                    ],
+                ],
+                'CutterWorkOrder',
+                $order->id,
+                $order->operatingUnit?->company_id,
+            );
+
+            return $order->refresh();
+        });
+    }
+
+    /**
      * Blocks a cutter manager may choose from for a line.
      *
      * CUT-02: this filters and presents. It deliberately does not score, rank by
@@ -53,6 +115,21 @@ class CutterWorkOrderService
             ->whereDoesntHave('cutterConsumption')
             // Smallest adequate block first: cutting a large block for a small
             // template wastes the difference.
+            ->orderBy('volume_m3')
+            ->paginate($perPage);
+    }
+
+    /**
+     * Inventory-wide list of available foam blocks for the create-order picker.
+     * Doesn't require a line context (unlike availableBlocksFor).
+     */
+    public function availableFoamBlocks(int $perPage = 50): LengthAwarePaginator
+    {
+        return StockLot::query()
+            ->with(['inventoryItem', 'warehouse'])
+            ->where('status', 'available')
+            ->whereHas('inventoryItem', fn (Builder $q) => $q->where('item_type', 'foam_block'))
+            ->whereDoesntHave('cutterConsumption')
             ->orderBy('volume_m3')
             ->paginate($perPage);
     }
@@ -242,12 +319,71 @@ class CutterWorkOrderService
             $locked->status = $target;
             $locked->save();
 
+            // CUT-block-sale: the cut moment. The reserved block is now
+            // physically consumed (status flips to consumed, quantity zeroed)
+            // and the per-line FoamBlockConsumption record is created. Legacy
+            // orders without a reserved block skip this — selectBlock will
+            // have created the consumption record already.
+            if ($target === CutterWorkOrderStatus::InProduction && $locked->stock_lot_id) {
+                $this->consumeReservedBlock($locked);
+            }
+
             if ($target === CutterWorkOrderStatus::Completed) {
                 $this->produceOutputs($locked);
             }
 
             return $locked->fresh(['lines', 'byproductYields']);
         });
+    }
+
+    /**
+     * Flip the reserved block to consumed and create the FoamBlockConsumption
+     * record. Called automatically when a block-attached order advances to
+     * in_production. Idempotent: skips if the block is no longer reserved.
+     */
+    public function consumeReservedBlock(CutterWorkOrder $order): ?FoamBlockConsumption
+    {
+        if ($order->stock_lot_id === null) {
+            return null;
+        }
+
+        $locked = StockLot::whereKey($order->stock_lot_id)->lockForUpdate()->first();
+
+        if ($locked === null || $locked->status !== 'reserved') {
+            return null;
+        }
+
+        $firstLine = $order->lines()->orderBy('created_at')->first();
+
+        $consumption = FoamBlockConsumption::create([
+            'cutter_work_order_line_id' => $firstLine?->id,
+            'stock_lot_id' => $locked->id,
+            'block_volume_m3' => (float) $locked->volume_m3,
+            'volume_consumed_m3' => (float) $locked->volume_m3,
+            'consumption_type' => 'full',
+            'consumed_cost' => (float) $locked->unit_cost,
+            'remainder_cost' => 0,
+        ]);
+
+        $locked->status = 'consumed';
+        $locked->quantity = 0;
+        $locked->save();
+
+        // Movement 1 of 3 (CUT-09): the block leaves foam inventory.
+        InventoryMovement::create([
+            'operating_unit_id' => $order->operating_unit_id,
+            'stock_lot_id' => $locked->id,
+            'from_warehouse_id' => $locked->warehouse_id,
+            'sku' => $locked->inventoryItem?->sku ?? 'FOAM-BLOCK',
+            'movement_type' => 'consumption',
+            'quantity_delta' => -1,
+            'unit_cost' => (float) $locked->unit_cost,
+            'reason' => 'cutter_consumption',
+            'reference_document_type' => 'CutterWorkOrder',
+            'reference_id' => $order->id,
+        ]);
+
+        return $consumption;
     }
 
     private function guardTransition(CutterWorkOrder $order, CutterWorkOrderStatus $target): void
@@ -327,6 +463,10 @@ class CutterWorkOrderService
 
                 // CUT-05: the piece is stocked at its template dimensions, not
                 // the shape the client described.
+                // CUT-block-sale: each piece carries source_stock_lot_id + the
+                // source block's dimensions for traceability. The piece's own
+                // physical dims stay template-derived (the cut is smaller than
+                // the block); the source dims are reference, not replacement.
                 $piece = StockLot::create([
                     'inventory_item_id' => $line->output_inventory_item_id,
                     'warehouse_id' => $warehouseId,
@@ -337,6 +477,10 @@ class CutterWorkOrderService
                     'height_m' => $line->template_height_m,
                     'unit_cost' => $cost,
                     'status' => 'available',
+                    'source_stock_lot_id' => $order->stock_lot_id,
+                    'source_block_length_m' => $order->block_length_m_snapshot,
+                    'source_block_width_m' => $order->block_width_m_snapshot,
+                    'source_block_height_m' => $order->block_height_m_snapshot,
                 ]);
 
                 // Movement 3 of 3: the cut piece enters cutter inventory.

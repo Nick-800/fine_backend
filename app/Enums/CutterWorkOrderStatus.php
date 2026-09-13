@@ -39,11 +39,12 @@ enum CutterWorkOrderStatus: string
     }
 
     /**
-     * Blocks are picked once the order is confirmed and while it is being cut —
-     * not before a template exists to size the selection against.
+     * Blocks are picked at order creation (CUT-block-sale) and may be re-picked
+     * later as long as the order hasn't physically been cut yet. After that the
+     * block is already consumed and the picker is closed.
      */
     public function acceptsBlockSelection(): bool
     {
-        return in_array($this, [self::Confirmed, self::InProduction], true);
+        return in_array($this, [self::Requested, self::Confirmed], true);
     }
 }

@@ -16,6 +16,7 @@ use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use InvalidArgumentException;
 
 class CutterWorkOrderController extends Controller
 {
@@ -26,7 +27,7 @@ class CutterWorkOrderController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = CutterWorkOrder::with(['client', 'lines'])
+        $query = CutterWorkOrder::with(['client', 'lines', 'stockLot'])
             ->withCount('lines')
             ->latest();
 
@@ -48,6 +49,9 @@ class CutterWorkOrderController extends Controller
             // Null means an internal order from another unit (no credit check).
             'client_id' => ['nullable', 'uuid', 'exists:clients,id'],
             'notes' => ['nullable', 'string'],
+            // CUT-block-sale: the precut block the customer is buying. Selected
+            // at creation; price + dimensions are locked in at this moment.
+            'stock_lot_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(StockLot::class, 'stock lot')],
         ]);
 
         $unitId = $this->unitContext->getUnitId();
@@ -59,9 +63,26 @@ class CutterWorkOrderController extends Controller
             ], 422);
         }
 
-        $order = CutterWorkOrder::create([...$validated, 'operating_unit_id' => $unitId]);
+        $block = $validated['stock_lot_id'] ?? null
+            ? StockLot::with('inventoryItem')->findOrFail($validated['stock_lot_id'])
+            : null;
 
-        return response()->json($order->load(['client', 'lines']), 201);
+        try {
+            $order = $this->cutterService->createWithBlock(
+                [...$validated, 'operating_unit_id' => $unitId],
+                $block,
+            );
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_BLOCK_STATE',
+            ], 422);
+        }
+
+        return response()->json(
+            $order->load(['client', 'lines', 'stockLot']),
+            201
+        );
     }
 
     public function show(string $id): JsonResponse
@@ -71,6 +92,7 @@ class CutterWorkOrderController extends Controller
                 'client',
                 'lines.consumptions.stockLot',
                 'lines.outputItem',
+                'stockLot',
                 'byproductYields',
             ])->findOrFail($id)
         );
@@ -183,5 +205,17 @@ class CutterWorkOrderController extends Controller
         $order = CutterWorkOrder::findOrFail($id);
 
         return response()->json($order->byproductYields()->with(['stockLot', 'weighedBy'])->get());
+    }
+
+    /**
+     * CUT-block-sale: list of available foam blocks for the create-order picker.
+     * Distinct from the per-line availableBlocks endpoint, which sizes results
+     * against a template — here we just need a filterable catalog.
+     */
+    public function availableFoamBlocks(Request $request): JsonResponse
+    {
+        return response()->json(
+            $this->cutterService->availableFoamBlocks($request->integer('per_page', 50))
+        );
     }
 }

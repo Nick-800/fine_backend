@@ -30,18 +30,39 @@ final class CutterWorkOrder extends Model
         'order_number',
         'status',
         'notes',
+        'stock_lot_id',
+        'block_unit_cost_snapshot',
+        'block_length_m_snapshot',
+        'block_width_m_snapshot',
+        'block_height_m_snapshot',
+        'block_volume_m3_snapshot',
         'record_version',
     ];
 
     protected $casts = [
         'status' => CutterWorkOrderStatus::class,
         'wip_cost' => 'decimal:4',
+        'block_unit_cost_snapshot' => 'decimal:4',
+        'block_length_m_snapshot' => 'decimal:4',
+        'block_width_m_snapshot' => 'decimal:4',
+        'block_height_m_snapshot' => 'decimal:4',
+        'block_volume_m3_snapshot' => 'decimal:6',
         'record_version' => 'integer',
     ];
 
     public function operatingUnit(): BelongsTo
     {
         return $this->belongsTo(OperatingUnit::class);
+    }
+
+    /**
+     * The precut block the customer is buying. Selected at order creation; the
+     * lot stays in `reserved` status until production starts, at which point
+     * CutterWorkOrderService flips it to `consumed`.
+     */
+    public function stockLot(): BelongsTo
+    {
+        return $this->belongsTo(StockLot::class, 'stock_lot_id');
     }
 
     public function client(): BelongsTo
