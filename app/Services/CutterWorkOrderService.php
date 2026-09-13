@@ -12,6 +12,7 @@ use App\Models\CutterWorkOrderLine;
 use App\Models\FoamBlockConsumption;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
+use App\Models\MaterialRequest;
 use App\Models\StockLot;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -27,7 +28,10 @@ class CutterWorkOrderService
      */
     private const FULL_CONSUMPTION_TOLERANCE = 0.02;
 
-    public function __construct(private readonly AccountingService $accountingService) {}
+    public function __construct(
+        private readonly AccountingService $accountingService,
+        private readonly MaterialResolutionService $materialResolution,
+    ) {}
 
     /**
      * CUT-block-sale: create the order and atomically reserve the chosen
@@ -330,10 +334,34 @@ class CutterWorkOrderService
 
             if ($target === CutterWorkOrderStatus::Completed) {
                 $this->produceOutputs($locked);
+                $this->fulfillMaterialRequestsFor($locked);
             }
 
             return $locked->fresh(['lines', 'byproductYields']);
         });
+    }
+
+    /**
+     * When this cutter order was created to fulfil a material request
+     * (e.g. for a furniture order's BOM), mark those requests fulfilled.
+     * Requests are matched by inventory_item + target_dimensions + status.
+     */
+    private function fulfillMaterialRequestsFor(CutterWorkOrder $order): void
+    {
+        $requests = MaterialRequest::query()
+            ->where('status', MaterialRequest::STATUS_IN_PROGRESS)
+            ->orWhere('status', MaterialRequest::STATUS_PENDING)
+            ->where(function ($q) {
+                // Match by fulfilling_module + dimensions only on the
+                // furniture request's behalf. Cross-order links happen by
+                // requested_for_id on the request.
+                $q->where('fulfilling_module', MaterialRequest::MODULE_CUTTER);
+            })
+            ->get();
+
+        foreach ($requests as $request) {
+            $this->materialResolution->markFulfilled($request, $order);
+        }
     }
 
     /**

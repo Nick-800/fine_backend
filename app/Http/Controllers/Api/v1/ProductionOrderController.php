@@ -6,8 +6,10 @@ namespace App\Http\Controllers\Api\v1;
 
 use App\Enums\ProductionOrderStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\v1\MaterialRequestResource;
 use App\Models\Bom;
 use App\Models\Employee;
+use App\Models\MaterialRequest;
 use App\Models\ProductionOrder;
 use App\Services\ProductionOrderService;
 use App\Support\CurrentUnitContext;
@@ -115,6 +117,22 @@ class ProductionOrderController extends Controller
         $order = ProductionOrder::findOrFail($id);
 
         return response()->json($order->laborLogs()->with('employee.entity')->latest('logged_at')->get());
+    }
+
+    public function materialRequests(string $id): JsonResponse
+    {
+        $order = ProductionOrder::findOrFail($id);
+
+        $requests = MaterialRequest::query()
+            ->with('inventoryItem')
+            ->where('requested_for_type', 'production_order')
+            ->where('requested_for_id', $order->id)
+            ->latest()
+            ->get();
+
+        return response()->json([
+            'data' => MaterialRequestResource::collection($requests),
+        ]);
     }
 
     public function storeLaborLog(Request $request, string $id): JsonResponse

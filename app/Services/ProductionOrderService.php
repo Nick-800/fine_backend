@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\ProductionOrderStatus;
-use App\Exceptions\InsufficientComponentStockException;
 use App\Exceptions\InvalidStateTransitionException;
 use App\Models\Bom;
 use App\Models\Employee;
@@ -19,7 +18,10 @@ use InvalidArgumentException;
 
 class ProductionOrderService
 {
-    public function __construct(private readonly AccountingService $accountingService) {}
+    public function __construct(
+        private readonly AccountingService $accountingService,
+        private readonly MaterialResolutionService $materialResolution,
+    ) {}
 
     public function transition(ProductionOrder $order, ProductionOrderStatus $target): ProductionOrder
     {
@@ -43,7 +45,7 @@ class ProductionOrderService
             $locked->save();
 
             match ($target) {
-                ProductionOrderStatus::InProduction => $this->reserveComponents($locked),
+                ProductionOrderStatus::InProduction => $this->materialResolution->resolveForProductionOrder($locked),
                 ProductionOrderStatus::QualityCheck => $this->consumeReservations($locked),
                 ProductionOrderStatus::ReadyForCollection => $this->createFinishedGood($locked),
                 ProductionOrderStatus::Completed => $this->collect($locked),
@@ -67,6 +69,16 @@ class ProductionOrderService
             }
         }
 
+        // The order can't move into assembly until every material request
+        // posted at resolution time is fulfilled (cutter ran, foam poured,
+        // procurement arrived). The resolver manages the counter.
+        if ($target === ProductionOrderStatus::InProduction
+            && (int) $order->awaiting_material_requests_count > 0) {
+            throw new InvalidStateTransitionException(
+                "Order {$order->order_number} has {$order->awaiting_material_requests_count} open material request(s); resolve them first."
+            );
+        }
+
         // FUR-07: nothing was ever reserved means nothing was built.
         if ($target === ProductionOrderStatus::QualityCheck
             && ! InventoryMovement::where('reference_document_type', 'ProductionOrder')
@@ -76,78 +88,6 @@ class ProductionOrderService
             throw new InvalidStateTransitionException(
                 "Order {$order->order_number} has no reserved components; production never started."
             );
-        }
-    }
-
-    /**
-     * FUR-04/05: hold the BOM's components against this order.
-     *
-     * Sufficiency is checked across the whole BOM before any lot is touched —
-     * same reasoning as the tank draw. A half-reserved order pins stock for a
-     * build that cannot start, which blocks other orders for nothing.
-     *
-     * Lots are reserved whole (status = reserved) even when only part of a bulk
-     * lot is needed; the movement records the actual take, and consumption
-     * returns the surplus to stock.
-     */
-    private function reserveComponents(ProductionOrder $order): void
-    {
-        $lines = $order->bom->componentLines()->with('inventoryItem')->get();
-
-        $plan = [];
-        $shortfalls = [];
-
-        foreach ($lines as $line) {
-            $needed = round((float) $line->quantity * $order->quantity, 4);
-
-            $lots = StockLot::where('inventory_item_id', $line->inventory_item_id)
-                ->where('status', 'available')
-                ->orderBy('created_at') // FIFO
-                ->lockForUpdate()
-                ->get();
-
-            $remaining = $needed;
-
-            foreach ($lots as $lot) {
-                if ($remaining <= 0) {
-                    break;
-                }
-
-                $take = min((float) $lot->quantity, $remaining);
-                $plan[] = ['lot' => $lot, 'take' => round($take, 4)];
-                $remaining = round($remaining - $take, 4);
-            }
-
-            if ($remaining > 0) {
-                $sku = $line->inventoryItem?->sku ?? $line->inventory_item_id;
-                $shortfalls[] = "{$sku}: need {$needed}, short {$remaining}";
-            }
-        }
-
-        if ($shortfalls !== []) {
-            throw new InsufficientComponentStockException(
-                'Stock cannot cover this order — '.implode('; ', $shortfalls).'.'
-            );
-        }
-
-        foreach ($plan as $entry) {
-            $lot = $entry['lot'];
-
-            $lot->status = 'reserved';
-            $lot->save();
-
-            InventoryMovement::create([
-                'operating_unit_id' => $order->operating_unit_id,
-                'stock_lot_id' => $lot->id,
-                'from_warehouse_id' => $lot->warehouse_id,
-                'sku' => $lot->inventoryItem?->sku ?? 'COMPONENT',
-                'movement_type' => 'reservation',
-                'quantity_delta' => -$entry['take'],
-                'unit_cost' => (float) $lot->unit_cost,
-                'reason' => 'production_order_reservation',
-                'reference_document_type' => 'ProductionOrder',
-                'reference_id' => $order->id,
-            ]);
         }
     }
 

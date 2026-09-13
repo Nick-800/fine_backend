@@ -18,11 +18,17 @@ final class BomComponentLine extends Model
         'inventory_item_id',
         'quantity',
         'estimated_unit_cost',
+        'target_length_m',
+        'target_width_m',
+        'target_height_m',
     ];
 
     protected $casts = [
         'quantity' => 'decimal:4',
         'estimated_unit_cost' => 'decimal:4',
+        'target_length_m' => 'decimal:4',
+        'target_width_m' => 'decimal:4',
+        'target_height_m' => 'decimal:4',
     ];
 
     public function bom(): BelongsTo

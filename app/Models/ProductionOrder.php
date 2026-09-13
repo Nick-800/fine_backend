@@ -32,6 +32,7 @@ final class ProductionOrder extends Model
         'quantity',
         'status',
         'notes',
+        'awaiting_material_requests_count',
         'record_version',
     ];
 
@@ -40,6 +41,7 @@ final class ProductionOrder extends Model
         'quantity' => 'integer',
         'material_cost' => 'decimal:4',
         'labor_cost' => 'decimal:4',
+        'awaiting_material_requests_count' => 'integer',
         'record_version' => 'integer',
     ];
 

@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\ProductionBatchStatus;
 use App\Exceptions\InvalidStateTransitionException;
 use App\Models\InventoryMovement;
+use App\Models\MaterialRequest;
 use App\Models\ProductionBatch;
 use App\Models\Scopes\OperatingUnitScope;
 use App\Models\StockLot;
@@ -15,7 +16,10 @@ use InvalidArgumentException;
 
 class ProductionBatchService
 {
-    public function __construct(private readonly AccountingService $accountingService) {}
+    public function __construct(
+        private readonly AccountingService $accountingService,
+        private readonly MaterialResolutionService $materialResolution,
+    ) {}
 
     /**
      * Compose the human-readable block label: {sequence}-{pressure}-{operation}.
@@ -88,10 +92,31 @@ class ProductionBatchService
             if ($target === ProductionBatchStatus::Closed) {
                 $this->apportionMaterialCost($locked);
                 $this->postClosingJournal($locked);
+                $this->fulfillMaterialRequestsFor($locked);
             }
 
             return $locked->fresh();
         });
+    }
+
+    /**
+     * Foam batches produce the blocks the furniture BOM asked for via material
+     * requests. When the batch closes, mark those requests fulfilled so the
+     * upstream furniture order can advance.
+     */
+    private function fulfillMaterialRequestsFor(ProductionBatch $batch): void
+    {
+        $requests = MaterialRequest::query()
+            ->where('fulfilling_module', MaterialRequest::MODULE_FOAM)
+            ->whereIn('status', [
+                MaterialRequest::STATUS_PENDING,
+                MaterialRequest::STATUS_IN_PROGRESS,
+            ])
+            ->get();
+
+        foreach ($requests as $request) {
+            $this->materialResolution->markFulfilled($request, $batch);
+        }
     }
 
     /**

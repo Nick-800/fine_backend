@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\v1\JournalEntryController;
 use App\Http\Controllers\Api\v1\LaborRoleRateController;
 use App\Http\Controllers\Api\v1\LandedCostLineController;
 use App\Http\Controllers\Api\v1\LeaveRequestController;
+use App\Http\Controllers\Api\v1\MaterialRequestController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\OverheadAllocationController;
 use App\Http\Controllers\Api\v1\OverheadExpenseController;
@@ -233,6 +234,17 @@ Route::prefix('v1')->group(function () {
                 Route::post('/production-orders/{id}/transition', [ProductionOrderController::class, 'transition']);
                 Route::get('/production-orders/{id}/labor-logs', [ProductionOrderController::class, 'laborLogs']);
                 Route::post('/production-orders/{id}/labor-logs', [ProductionOrderController::class, 'storeLaborLog']);
+                Route::get('/production-orders/{id}/material-requests', [ProductionOrderController::class, 'materialRequests']);
+            });
+
+            // Cross-module material requests — visible to furniture/cutter/foam
+            // teams so they can see what's blocking assembly.
+            Route::middleware('require.role:owner,admin,furniture-manager,cutter-manager,foam-manager,unit_manager,manager')->group(function () {
+                Route::get('/material-requests', [MaterialRequestController::class, 'index']);
+                Route::get('/material-requests/{id}', [MaterialRequestController::class, 'show']);
+                Route::post('/material-requests/{id}/start', [MaterialRequestController::class, 'start']);
+                Route::post('/material-requests/{id}/fulfill', [MaterialRequestController::class, 'fulfill']);
+                Route::post('/material-requests/{id}/cancel', [MaterialRequestController::class, 'cancel']);
             });
 
             // Sales, POS & Credit

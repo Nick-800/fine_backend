@@ -8,6 +8,7 @@ use App\Models\Employee;
 use App\Models\Entity;
 use App\Models\InventoryItem;
 use App\Models\LaborRoleRate;
+use App\Models\MaterialRequest;
 use App\Models\OperatingUnit;
 use App\Models\ProductionOrder;
 use App\Models\Role;
@@ -149,7 +150,8 @@ test('confirming reserves stock and reserved lots are untouchable elsewhere', fu
         ->and(StockLot::where('lot_number', 'PC-2')->value('status'))->toBe('reserved')
         ->and(StockLot::where('lot_number', 'FAB-1')->value('status'))->toBe('reserved');
 
-    // A second order over the same stock must find nothing available.
+    // A second order over the same stock finds nothing available and instead
+    // files material requests to source the missing components.
     $second = ($this->api)()->postJson('/api/v1/production-orders', [
         'order_number' => 'PO-SECOND',
         'product_id' => $order['product_id'],
@@ -157,24 +159,32 @@ test('confirming reserves stock and reserved lots are untouchable elsewhere', fu
     ])->json();
 
     ($this->move)($second['id'], 'bom_confirmed')->assertStatus(200);
-    ($this->move)($second['id'], 'in_production')
-        ->assertStatus(422)
-        ->assertJsonPath('code', 'INSUFFICIENT_COMPONENT_STOCK');
+    ($this->move)($second['id'], 'in_production')->assertStatus(200);
+
+    expect(MaterialRequest::where('requested_for_id', $second['id'])->count())->toBe(2);
+    expect(ProductionOrder::find($second['id'])->awaiting_material_requests_count)->toBe(2);
+    expect(ProductionOrder::find($second['id'])->status->value)->toBe('in_production');
 });
 
-test('a shortfall reserves nothing at all', function () {
+test('a shortfall reserves nothing and files material requests instead', function () {
     // Only one piece exists; the BOM needs two. The fabric that *is* plentiful
-    // must not be left pinned by a build that cannot start.
+    // is reserved (the line is fully covered), and the piece line files a
+    // material request so the downstream module can source the second piece.
     ($this->lot)($this->pieceItem, 'PC-ONLY', 1, 45);
     ($this->lot)($this->fabricItem, 'FAB-1', 10, 8);
 
     $order = ($this->makeOrder)();
     ($this->move)($order['id'], 'bom_confirmed')->assertStatus(200);
-    ($this->move)($order['id'], 'in_production')->assertStatus(422);
+    ($this->move)($order['id'], 'in_production')->assertStatus(200);
 
+    // The covered line (fabric) reserves normally; the short line (piece)
+    // stays available until the MR is fulfilled.
     expect(StockLot::where('lot_number', 'PC-ONLY')->value('status'))->toBe('available')
-        ->and(StockLot::where('lot_number', 'FAB-1')->value('status'))->toBe('available')
-        ->and(ProductionOrder::find($order['id'])->status->value)->toBe('bom_confirmed');
+        ->and(StockLot::where('lot_number', 'FAB-1')->value('status'))->toBe('reserved');
+
+    $orderModel = ProductionOrder::find($order['id']);
+    expect($orderModel->awaiting_material_requests_count)->toBe(1);
+    expect($orderModel->status->value)->toBe('in_production');
 });
 
 test('consumption costs the order from real lots and returns bulk surplus', function () {
