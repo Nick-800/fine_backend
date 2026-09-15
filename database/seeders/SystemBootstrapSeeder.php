@@ -76,6 +76,7 @@ class SystemBootstrapSeeder extends Seeder
         $this->seedEntityBackedEmployee($units['procurement']);
         $this->seedSuppliersAndImportOrders($units['procurement']);
         $this->seedStandardUsers($units);
+        $this->seedOpeningBalances();
         $this->seedOneFoamBatch($units['foam']);
     }
 
@@ -114,6 +115,11 @@ class SystemBootstrapSeeder extends Seeder
     private function seedChartOfAccounts(): void
     {
         $this->call(ChartOfAccountsSeeder::class);
+    }
+
+    private function seedOpeningBalances(): void
+    {
+        $this->call(OpeningBalanceSeeder::class);
     }
 
     private function seedBlueprints(): void

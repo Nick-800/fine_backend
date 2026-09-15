@@ -16,25 +16,29 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * Production-ready structural seeder.
+ * Production-ready structural + financial seeder.
  *
- * Seeds ONLY:
+ * Seeds:
  *   - the company row
  *   - all roles + permissions (via RoleSeeder)
  *   - all 5 unit blueprints (via BlueprintSeeder)
  *   - all 5 operating units, each with its default warehouse
  *     (via OperatingUnitService::provision)
+ *   - the chart of accounts (via ChartOfAccountsSeeder) so the GL exists
+ *   - opening balances across AR / FG / FA / AP / Wages, offset to Retained
+ *     Earnings (via OpeningBalanceSeeder) so the system has working money
+ *     for orders on day one
  *   - the single owner user (owner@erp.com / password, company-wide role,
  *     must_change_password = false)
  *
- * Deliberately does NOT seed: chart of accounts, FX rates, cash accounts,
- * opening balances, demo inventory, demo suppliers/import orders, demo
- * batches, or per-unit demo users. The administrator creates those after the
- * system is up.
+ * Deliberately does NOT seed: FX rates, cash accounts, demo inventory,
+ * demo suppliers/import orders, demo batches, or per-unit demo users. The
+ * administrator creates those after the system is up — or operators run
+ * `db:seed:dummy` for a richer environment.
  *
  * Idempotent — every record is keyed on a natural unique (name / slug /
- * email / composite pivot). Re-running on an already-seeded database is a
- * no-op.
+ * email / account_code / journal description). Re-running on an
+ * already-seeded database is a no-op.
  */
 final class ProductionSeeder extends Seeder
 {
@@ -64,6 +68,8 @@ final class ProductionSeeder extends Seeder
         $this->seedRolesAndPermissions();
         $this->seedBlueprints();
         $this->seedOperatingUnits();
+        $this->seedChartOfAccounts();
+        $this->seedOpeningBalances();
         $this->seedOwnerUser();
     }
 
@@ -89,6 +95,16 @@ final class ProductionSeeder extends Seeder
     private function seedBlueprints(): void
     {
         $this->call(BlueprintSeeder::class);
+    }
+
+    private function seedChartOfAccounts(): void
+    {
+        $this->call(ChartOfAccountsSeeder::class);
+    }
+
+    private function seedOpeningBalances(): void
+    {
+        $this->call(OpeningBalanceSeeder::class);
     }
 
     /**
