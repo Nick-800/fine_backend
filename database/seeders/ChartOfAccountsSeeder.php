@@ -81,14 +81,16 @@ class ChartOfAccountsSeeder extends Seeder
         $created = [];
 
         foreach ($accounts as [$code, $name, $type, $parentCode]) {
-            $created[$code] = Account::create([
-                'chart_of_accounts_id' => $coa->id,
-                'account_code' => $code,
-                'name' => $name,
-                'type' => $type,
-                'currency' => $company->default_currency ?? 'LYD',
-                'parent_account_id' => $parentCode !== null ? $created[$parentCode]->id : null,
-            ]);
+            $created[$code] = Account::firstOrCreate(
+                ['account_code' => $code],
+                [
+                    'chart_of_accounts_id' => $coa->id,
+                    'name' => $name,
+                    'type' => $type,
+                    'currency' => $company->default_currency ?? 'LYD',
+                    'parent_account_id' => $parentCode !== null ? $created[$parentCode]->id : null,
+                ],
+            );
         }
     }
 }
