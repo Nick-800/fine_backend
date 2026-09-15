@@ -69,7 +69,7 @@ DB_PASSWORD=secret
 
 ## Database Migrations & Seeders
 
-The project ships with **two tiers** of seeders: a **system bootstrap** that provisions everything the application needs to function in a semi-production way, and a **dummy data** seeder that fills every model with moderate-volume fake data so reports, lists and dashboards have something to render.
+The project ships with **three tiers** of seeders: a **system bootstrap** that provisions everything the application needs to function in a semi-production way, a **production** seeder that provisions only the structural backbone for handing a fresh environment to prod, and a **dummy data** seeder that fills every model with moderate-volume fake data so reports, lists and dashboards have something to render.
 
 ### 1. System Bootstrap — `db:seed:bootstrap`
 
@@ -91,7 +91,31 @@ The bootstrap refuses to run in the `production` environment unless `--force` is
 php artisan db:seed:bootstrap --force
 ```
 
-### 2. Dummy Data — `db:seed:dummy`
+### 2. Production — `db:seed:prod`
+
+Seeds ONLY the structural backbone — for handing a fresh environment to production without demo data:
+
+- the company row (`Al-Amana Foam & Furniture Co.`)
+- all 14 roles + permissions (via `RoleSeeder`)
+- all 5 unit blueprints (via `BlueprintSeeder`)
+- all 5 operating units, each with its default warehouse (via `OperatingUnitService::provision`)
+- the single owner user (`owner@erp.com` / `password`, `must_change_password = false`, company-wide owner role)
+
+Does **NOT** seed: chart of accounts, FX rates, cash accounts, opening balances, demo inventory, demo suppliers / import orders, demo batches, or per-unit demo users. The administrator creates those after the system is up.
+
+```bash
+# Production environment only
+php artisan db:seed:prod
+
+# Local / staging override
+php artisan db:seed:prod --force
+```
+
+Idempotent — re-running is a no-op.
+
+The environment guard is inverted from `db:seed:bootstrap`: `db:seed:prod` refuses outside the `production` environment (because it writes structural data that may not match the developer's local environment), whereas `db:seed:bootstrap` refuses inside `production` (because it includes demo data).
+
+### 3. Dummy Data — `db:seed:dummy`
 
 Builds on top of the bootstrap. Generates moderate-volume faker data across every module (~5–10 rows per model) using the same services the application uses at runtime, so the seeded records exercise real guards and ledger postings.
 
@@ -165,16 +189,16 @@ All default accounts use the password: `password`
 | **Global Owner** | `owner@erp.com` | Company-wide (Full Admin) |
 | **Accounting Manager** | `accounting@erp.com` | Company-wide |
 | **HR Manager** | `hr@erp.com` | Company-wide |
-| **Procurement Manager** | `procurement@erp.com` | Central Procurement & Treasury Unit |
-| **Treasury Officer** | `treasury@erp.com` | Central Procurement & Treasury Unit |
-| **Foam Plant Manager** | `foam@erp.com` | Tajoura Foam Manufactory Unit |
-| **Foam Operator** | `foam-op@erp.com` | Tajoura Foam Manufactory Unit |
-| **Cutter Manager** | `cutter@erp.com` | Cutter Plant A Unit |
-| **Cutter Operator** | `cutter-op@erp.com` | Cutter Plant A Unit |
-| **Furniture Manager** | `furniture@erp.com` | Furniture Assembly Unit B |
-| **Furniture Assembler** | `assembler@erp.com` | Furniture Assembly Unit B |
-| **Showroom Manager** | `showroom@erp.com` | Tripoli Main Showroom |
-| **POS Cashier** | `cashier@erp.com` | Tripoli Main Showroom |
+| **Procurement Manager** | `procurement@erp.com` | Procurement & Treasury Unit |
+| **Treasury Officer** | `treasury@erp.com` | Procurement & Treasury Unit |
+| **Foam Plant Manager** | `foam@erp.com` | Foam Manufacturer Unit |
+| **Foam Operator** | `foam-op@erp.com` | Foam Manufacturer Unit |
+| **Cutter Manager** | `cutter@erp.com` | Cutter Unit |
+| **Cutter Operator** | `cutter-op@erp.com` | Cutter Unit |
+| **Furniture Manager** | `furniture@erp.com` | Furniture Unit |
+| **Furniture Assembler** | `assembler@erp.com` | Furniture Unit |
+| **Showroom Manager** | `showroom@erp.com` | Showroom Unit |
+| **POS Cashier** | `cashier@erp.com` | Showroom Unit |
 
 *Note: All seeded users have `must_change_password` set to `false` so the demo flows work end-to-end out of the box. The property is still honored by the auth layer for any user you create manually.*
 
