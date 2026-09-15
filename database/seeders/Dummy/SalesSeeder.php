@@ -30,7 +30,7 @@ class SalesSeeder extends Seeder
 {
     public function run(): void
     {
-        $showroom = OperatingUnit::where('name', 'Tripoli Main Showroom')->first();
+        $showroom = OperatingUnit::where('name', 'Showroom')->first();
         $storeManager = User::where('email', 'store-manager@erp.com')->first() ?? User::where('email', 'showroom@erp.com')->first();
 
         if ($showroom === null) {

@@ -8,7 +8,7 @@
 
 ## 1. System Overview & Core Principles
 
-The Inventory Management System provides the canonical stock ledger across all 5 operating units (Procurement, Foam Manufactory, Cutter Manufactory, Furniture Manufactory, Store/Showroom). 
+The Inventory Management System provides the canonical stock ledger across all 5 operating units (Procurement & Treasury, Foam Manufacturer, Cutter, Furniture, Showroom).
 
 ### Key Design Principles:
 1. **Operating Unit Isolation**: Each operating unit manages its own scoped warehouses and stock ledgers via `operating_unit_id` and `X-Operating-Unit-ID` headers.

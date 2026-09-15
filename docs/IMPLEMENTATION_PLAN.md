@@ -28,11 +28,11 @@ This plan implements a comprehensive ERP system for a foam-to-furniture manufact
 
 | # | Unit | Role |
 |---|------|------|
-| 1 | Procurement/Import & Treasury | Foreign supplier orders, FX payments, landed cost |
-| 2 | Foam Manufactory | Batch production, chemical consumption, block grading |
-| 3 | Cutter Manufactory | Work orders, template-based cutting, byproduct generation |
-| 4 | Furniture Manufactory | BOM-driven assembly, labor tracking, custom orders |
-| 5 | Store/Showroom | POS retail, internal restock requests |
+| 1 | Procurement & Treasury | Foreign supplier orders, FX payments, landed cost |
+| 2 | Foam Manufacturer | Batch production, chemical consumption, block grading |
+| 3 | Cutter | Work orders, template-based cutting, byproduct generation |
+| 4 | Furniture | BOM-driven assembly, labor tracking, custom orders |
+| 5 | Showroom | POS retail, internal restock requests |
 
 All units roll up to a central, full double-entry accounting ledger. The system supports multi-currency (USD/LYD), landed-cost inventory valuation, serialized batch tracking, and internal unit-to-unit trading.
 

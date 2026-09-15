@@ -28,11 +28,11 @@ class InventoryAndBomSeeder extends Seeder
 {
     public function run(): void
     {
-        $furnitureUnit = OperatingUnit::where('name', 'Furniture Assembly Unit B')->first()
+        $furnitureUnit = OperatingUnit::where('name', 'Furniture')->first()
             ?? OperatingUnit::first();
-        $cutterUnit = OperatingUnit::where('name', 'Cutter Plant A')->first()
+        $cutterUnit = OperatingUnit::where('name', 'Cutter')->first()
             ?? OperatingUnit::first();
-        $showroom = OperatingUnit::where('name', 'Tripoli Main Showroom')->first()
+        $showroom = OperatingUnit::where('name', 'Showroom')->first()
             ?? OperatingUnit::first();
 
         if ($furnitureUnit === null || $cutterUnit === null || $showroom === null) {

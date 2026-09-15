@@ -32,7 +32,7 @@ class ProcurementTreasurySeeder extends Seeder
 {
     public function run(): void
     {
-        $procurement = OperatingUnit::where('name', 'Central Procurement & Treasury')->first();
+        $procurement = OperatingUnit::where('name', 'Procurement & Treasury')->first();
         if ($procurement === null) {
             return;
         }

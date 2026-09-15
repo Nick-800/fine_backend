@@ -32,8 +32,8 @@ class EntitiesSeeder extends Seeder
             return;
         }
 
-        $showroom = $units->firstWhere('name', 'Tripoli Main Showroom') ?? $units->first();
-        $procurement = $units->firstWhere('name', 'Central Procurement & Treasury') ?? $units->first();
+        $showroom = $units->firstWhere('name', 'Showroom') ?? $units->first();
+        $procurement = $units->firstWhere('name', 'Procurement & Treasury') ?? $units->first();
 
         $this->seedClients($showroom);
         $this->seedEmployees($units);

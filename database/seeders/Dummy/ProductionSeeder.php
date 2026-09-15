@@ -39,10 +39,10 @@ class ProductionSeeder extends Seeder
 {
     public function run(): void
     {
-        $foamUnit = OperatingUnit::where('name', 'Tajoura Foam Manufactory')->first();
-        $cutterUnit = OperatingUnit::where('name', 'Cutter Plant A')->first();
-        $furnitureUnit = OperatingUnit::where('name', 'Furniture Assembly Unit B')->first();
-        $showroom = OperatingUnit::where('name', 'Tripoli Main Showroom')->first();
+        $foamUnit = OperatingUnit::where('name', 'Foam Manufacturer')->first();
+        $cutterUnit = OperatingUnit::where('name', 'Cutter')->first();
+        $furnitureUnit = OperatingUnit::where('name', 'Furniture')->first();
+        $showroom = OperatingUnit::where('name', 'Showroom')->first();
 
         if ($foamUnit === null || $cutterUnit === null || $furnitureUnit === null || $showroom === null) {
             return;

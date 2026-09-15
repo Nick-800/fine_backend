@@ -47,23 +47,23 @@ it('can provision an operating unit end-to-end via provisioning endpoint', funct
     $response = $this->actingAs($this->owner)
         ->postJson('/api/v1/operating-units', [
             'blueprint_id' => $this->blueprint->id,
-            'name' => 'Tajoura Foam Manufactory',
+            'name' => 'Foam Manufacturer',
         ]);
 
     $response->assertStatus(201)
-        ->assertJsonPath('data.name', 'Tajoura Foam Manufactory')
+        ->assertJsonPath('data.name', 'Foam Manufacturer')
         ->assertJsonPath('data.status', 'active');
 
     $unitId = $response->json('data.id');
 
     // Assert OperatingUnit exists in database
     $unit = OperatingUnit::findOrFail($unitId);
-    expect($unit->name)->toBe('Tajoura Foam Manufactory');
+    expect($unit->name)->toBe('Foam Manufacturer');
 
     // Assert scoped Warehouse exists in database
     $warehouse = Warehouse::where('operating_unit_id', $unitId)->first();
     expect($warehouse)->not->toBeNull();
-    expect($warehouse->name)->toBe('Tajoura Foam Manufactory Main Block Store');
+    expect($warehouse->name)->toBe('Foam Manufacturer Main Block Store');
 
     // Assert role was generated in database
     $role = Role::where('slug', 'foam-operator')->first();
