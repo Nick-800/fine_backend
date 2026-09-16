@@ -17,46 +17,46 @@ class RoleSeeder extends Seeder
     {
         $permissions = [
             // Users & Admin
-            ['slug' => 'manage-users', 'name' => 'Manage Users', 'module' => 'users', 'action' => 'manage'],
-            ['slug' => 'view-users', 'name' => 'View Users', 'module' => 'users', 'action' => 'view'],
-            ['slug' => 'create-users', 'name' => 'Create Users', 'module' => 'users', 'action' => 'create'],
-            ['slug' => 'edit-users', 'name' => 'Edit Users', 'module' => 'users', 'action' => 'edit'],
-            ['slug' => 'delete-users', 'name' => 'Delete Users', 'module' => 'users', 'action' => 'delete'],
+            ['slug' => 'manage-users', 'name' => 'إدارة المستخدمين', 'module' => 'users', 'action' => 'manage'],
+            ['slug' => 'view-users', 'name' => 'عرض المستخدمين', 'module' => 'users', 'action' => 'view'],
+            ['slug' => 'create-users', 'name' => 'إنشاء مستخدمين', 'module' => 'users', 'action' => 'create'],
+            ['slug' => 'edit-users', 'name' => 'تعديل المستخدمين', 'module' => 'users', 'action' => 'edit'],
+            ['slug' => 'delete-users', 'name' => 'حذف المستخدمين', 'module' => 'users', 'action' => 'delete'],
 
             // Procurement
-            ['slug' => 'create-procurement', 'name' => 'Create Procurement', 'module' => 'procurement', 'action' => 'create'],
-            ['slug' => 'view-procurement', 'name' => 'View Procurement', 'module' => 'procurement', 'action' => 'view'],
-            ['slug' => 'edit-procurement', 'name' => 'Edit Procurement', 'module' => 'procurement', 'action' => 'edit'],
+            ['slug' => 'create-procurement', 'name' => 'إنشاء مشتريات', 'module' => 'procurement', 'action' => 'create'],
+            ['slug' => 'view-procurement', 'name' => 'عرض المشتريات', 'module' => 'procurement', 'action' => 'view'],
+            ['slug' => 'edit-procurement', 'name' => 'تعديل المشتريات', 'module' => 'procurement', 'action' => 'edit'],
 
             // Treasury
-            ['slug' => 'create-treasury', 'name' => 'Create Treasury', 'module' => 'treasury', 'action' => 'create'],
-            ['slug' => 'view-treasury', 'name' => 'View Treasury', 'module' => 'treasury', 'action' => 'view'],
-            ['slug' => 'approve-treasury', 'name' => 'Approve Treasury', 'module' => 'treasury', 'action' => 'approve'],
-            ['slug' => 'settle-payables', 'name' => 'Settle Payables', 'module' => 'treasury', 'action' => 'settle'],
+            ['slug' => 'create-treasury', 'name' => 'إنشاء عمليات خزانة', 'module' => 'treasury', 'action' => 'create'],
+            ['slug' => 'view-treasury', 'name' => 'عرض الخزانة', 'module' => 'treasury', 'action' => 'view'],
+            ['slug' => 'approve-treasury', 'name' => 'اعتماد عمليات الخزانة', 'module' => 'treasury', 'action' => 'approve'],
+            ['slug' => 'settle-payables', 'name' => 'تسوية الذمم الدائنة', 'module' => 'treasury', 'action' => 'settle'],
 
             // Inventory
-            ['slug' => 'view-inventory', 'name' => 'View Inventory', 'module' => 'inventory', 'action' => 'view'],
+            ['slug' => 'view-inventory', 'name' => 'عرض المخزون', 'module' => 'inventory', 'action' => 'view'],
 
             // Foam Production
-            ['slug' => 'create-foam', 'name' => 'Create Foam', 'module' => 'foam', 'action' => 'create'],
-            ['slug' => 'view-foam', 'name' => 'View Foam', 'module' => 'foam', 'action' => 'view'],
-            ['slug' => 'edit-foam', 'name' => 'Edit Foam', 'module' => 'foam', 'action' => 'edit'],
-            ['slug' => 'grade-foam', 'name' => 'Grade Foam', 'module' => 'foam', 'action' => 'grade'],
+            ['slug' => 'create-foam', 'name' => 'إنشاء إنتاج إسفنج', 'module' => 'foam', 'action' => 'create'],
+            ['slug' => 'view-foam', 'name' => 'عرض الإسفنج', 'module' => 'foam', 'action' => 'view'],
+            ['slug' => 'edit-foam', 'name' => 'تعديل الإسفنج', 'module' => 'foam', 'action' => 'edit'],
+            ['slug' => 'grade-foam', 'name' => 'تصنيف الإسفنج', 'module' => 'foam', 'action' => 'grade'],
 
             // Cutting
-            ['slug' => 'create-cutting', 'name' => 'Create Cutting', 'module' => 'cutting', 'action' => 'create'],
-            ['slug' => 'view-cutting', 'name' => 'View Cutting', 'module' => 'cutting', 'action' => 'view'],
-            ['slug' => 'edit-cutting', 'name' => 'Edit Cutting', 'module' => 'cutting', 'action' => 'edit'],
+            ['slug' => 'create-cutting', 'name' => 'إنشاء عمليات قص', 'module' => 'cutting', 'action' => 'create'],
+            ['slug' => 'view-cutting', 'name' => 'عرض القص', 'module' => 'cutting', 'action' => 'view'],
+            ['slug' => 'edit-cutting', 'name' => 'تعديل القص', 'module' => 'cutting', 'action' => 'edit'],
 
             // Furniture
-            ['slug' => 'create-furniture', 'name' => 'Create Furniture', 'module' => 'furniture', 'action' => 'create'],
-            ['slug' => 'view-furniture', 'name' => 'View Furniture', 'module' => 'furniture', 'action' => 'view'],
-            ['slug' => 'edit-furniture', 'name' => 'Edit Furniture', 'module' => 'furniture', 'action' => 'edit'],
+            ['slug' => 'create-furniture', 'name' => 'إنشاء أثاث', 'module' => 'furniture', 'action' => 'create'],
+            ['slug' => 'view-furniture', 'name' => 'عرض الأثاث', 'module' => 'furniture', 'action' => 'view'],
+            ['slug' => 'edit-furniture', 'name' => 'تعديل الأثاث', 'module' => 'furniture', 'action' => 'edit'],
 
             // Sales & POS
-            ['slug' => 'create-sales', 'name' => 'Create Sales', 'module' => 'sales', 'action' => 'create'],
-            ['slug' => 'view-sales', 'name' => 'View Sales', 'module' => 'sales', 'action' => 'view'],
-            ['slug' => 'edit-sales', 'name' => 'Edit Sales', 'module' => 'sales', 'action' => 'edit'],
+            ['slug' => 'create-sales', 'name' => 'إنشاء مبيعات', 'module' => 'sales', 'action' => 'create'],
+            ['slug' => 'view-sales', 'name' => 'عرض المبيعات', 'module' => 'sales', 'action' => 'view'],
+            ['slug' => 'edit-sales', 'name' => 'تعديل المبيعات', 'module' => 'sales', 'action' => 'edit'],
         ];
 
         $permissionModels = [];
@@ -73,87 +73,87 @@ class RoleSeeder extends Seeder
 
         $roles = [
             [
-                'name' => 'Owner',
+                'name' => 'المالك',
                 'slug' => 'owner',
-                'description' => 'Global system owner with full control.',
+                'description' => 'مالك النظام العام بتحكم كامل.',
                 'permissions' => ['*'],
             ],
             [
-                'name' => 'Admin',
+                'name' => 'المدير العام',
                 'slug' => 'admin',
-                'description' => 'Global administrator with full administrative access.',
+                'description' => 'مدير عام بوصول إداري كامل.',
                 'permissions' => ['*'],
             ],
             [
-                'name' => 'Accounting Manager',
+                'name' => 'مدير المحاسبة',
                 'slug' => 'accounting-manager',
-                'description' => 'Financial and accounting management.',
+                'description' => 'إدارة الشؤون المالية والمحاسبية.',
                 'permissions' => ['settle-payables', 'view-inventory', 'view-procurement', 'view-treasury'],
             ],
             [
-                'name' => 'HR Manager',
+                'name' => 'مدير الموارد البشرية',
                 'slug' => 'hr-manager',
-                'description' => 'Human resources and payroll management.',
+                'description' => 'إدارة الموارد البشرية وكشوف الرواتب.',
                 'permissions' => ['manage-users', 'view-users', 'create-users', 'edit-users'],
             ],
             [
-                'name' => 'Procurement Manager',
+                'name' => 'مدير المشتريات',
                 'slug' => 'procurement-manager',
-                'description' => 'Procurement and purchasing management.',
+                'description' => 'إدارة المشتريات وعمليات الشراء.',
                 'permissions' => ['create-procurement', 'view-procurement', 'edit-procurement', 'view-inventory'],
             ],
             [
-                'name' => 'Treasury Officer',
+                'name' => 'مسؤول الخزانة',
                 'slug' => 'treasury-officer',
-                'description' => 'Treasury and cash flow management.',
+                'description' => 'إدارة الخزانة والتدفقات النقدية.',
                 'permissions' => ['create-treasury', 'view-treasury', 'approve-treasury', 'view-inventory', 'settle-payables'],
             ],
             [
-                'name' => 'Foam Plant Manager',
+                'name' => 'مدير مصنع الإسفنج',
                 'slug' => 'foam-manager',
-                'description' => 'Foam production plant management.',
+                'description' => 'إدارة مصنع إنتاج الإسفنج.',
                 'permissions' => ['create-foam', 'view-foam', 'edit-foam', 'grade-foam', 'view-inventory'],
             ],
             [
-                'name' => 'Foam Operator',
+                'name' => 'مشغل الإسفنج',
                 'slug' => 'foam-operator',
-                'description' => 'Foam manufactory machine operator.',
+                'description' => 'مشغل آلات مصنع الإسفنج.',
                 'permissions' => ['view-foam', 'edit-foam', 'view-inventory'],
             ],
             [
-                'name' => 'Cutter Plant Manager',
+                'name' => 'مدير قسم القص',
                 'slug' => 'cutter-manager',
-                'description' => 'Cutter production plant management.',
+                'description' => 'إدارة قسم القص.',
                 'permissions' => ['create-cutting', 'view-cutting', 'edit-cutting', 'view-inventory'],
             ],
             [
-                'name' => 'Cutter Operator',
+                'name' => 'مشغل القص',
                 'slug' => 'cutter-operator',
-                'description' => 'Cutter machine operator.',
+                'description' => 'مشغل آلة القص.',
                 'permissions' => ['view-cutting', 'edit-cutting', 'view-inventory'],
             ],
             [
-                'name' => 'Furniture Manager',
+                'name' => 'مدير قسم الأثاث',
                 'slug' => 'furniture-manager',
-                'description' => 'Furniture assembly management.',
+                'description' => 'إدارة قسم تجميع الأثاث.',
                 'permissions' => ['create-furniture', 'view-furniture', 'edit-furniture', 'view-inventory'],
             ],
             [
-                'name' => 'Furniture Assembler',
+                'name' => 'مجمع الأثاث',
                 'slug' => 'assembler',
-                'description' => 'Furniture assembly worker.',
+                'description' => 'عامل في تجميع الأثاث.',
                 'permissions' => ['view-furniture', 'edit-furniture', 'view-inventory'],
             ],
             [
-                'name' => 'Showroom Manager',
+                'name' => 'مدير صالة العرض',
                 'slug' => 'store-manager',
-                'description' => 'Showroom and sales management.',
+                'description' => 'إدارة صالة العرض والمبيعات.',
                 'permissions' => ['create-sales', 'view-sales', 'edit-sales', 'view-inventory'],
             ],
             [
-                'name' => 'POS Cashier',
+                'name' => 'كاشير نقطة البيع',
                 'slug' => 'pos-cashier',
-                'description' => 'Point of sale cashier.',
+                'description' => 'كاشير نقطة البيع.',
                 'permissions' => ['create-sales', 'view-sales', 'view-inventory'],
             ],
         ];
