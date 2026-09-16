@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * Production-ready structural + financial seeder.
+ * Production-ready structural seeder.
  *
  * Seeds:
  *   - the company row
@@ -25,20 +25,19 @@ use Illuminate\Support\Str;
  *   - all 5 operating units, each with its default warehouse
  *     (via OperatingUnitService::provision)
  *   - the chart of accounts (via ChartOfAccountsSeeder) so the GL exists
- *   - opening balances across AR / FG / FA / AP / Wages, offset to Retained
- *     Earnings (via OpeningBalanceSeeder) so the system has working money
- *     for orders on day one
+ *     with every account empty — no opening journal entries are posted
  *   - the single owner user (owner@erp.com / password, company-wide role,
  *     must_change_password = false)
  *
- * Deliberately does NOT seed: FX rates, cash accounts, demo inventory,
- * demo suppliers/import orders, demo batches, or per-unit demo users. The
- * administrator creates those after the system is up — or operators run
+ * Deliberately does NOT seed: opening balances, FX rates, cash accounts,
+ * demo inventory, demo suppliers/import orders, demo batches, or per-unit
+ * demo users. The administrator opens balances via the manual journal API
+ * and creates the rest after the system is up — or operators run
  * `db:seed:dummy` for a richer environment.
  *
  * Idempotent — every record is keyed on a natural unique (name / slug /
- * email / account_code / journal description). Re-running on an
- * already-seeded database is a no-op.
+ * email / account_code). Re-running on an already-seeded database is a
+ * no-op.
  */
 final class ProductionSeeder extends Seeder
 {
@@ -69,7 +68,6 @@ final class ProductionSeeder extends Seeder
         $this->seedBlueprints();
         $this->seedOperatingUnits();
         $this->seedChartOfAccounts();
-        $this->seedOpeningBalances();
         $this->seedOwnerUser();
     }
 
@@ -100,11 +98,6 @@ final class ProductionSeeder extends Seeder
     private function seedChartOfAccounts(): void
     {
         $this->call(ChartOfAccountsSeeder::class);
-    }
-
-    private function seedOpeningBalances(): void
-    {
-        $this->call(OpeningBalanceSeeder::class);
     }
 
     /**

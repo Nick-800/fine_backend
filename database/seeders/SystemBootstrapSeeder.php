@@ -53,6 +53,11 @@ use Illuminate\Support\Str;
 /**
  * Seeds the minimum data the system needs to function in a semi-production way.
  *
+ * The chart of accounts is seeded empty — every account row exists but
+ * carries no opening journal entries. Cash + raw-material inventory
+ * openings are posted by seedCashAccountsAndOpeningBalance() and
+ * seedInventoryMasterData() as part of their normal master-data flow.
+ *
  * Idempotent: every record is keyed on a natural unique (slug, sku, email,
  * order_number, …) so re-running on an already-seeded database is a no-op.
  *
@@ -76,7 +81,6 @@ class SystemBootstrapSeeder extends Seeder
         $this->seedEntityBackedEmployee($units['procurement']);
         $this->seedSuppliersAndImportOrders($units['procurement']);
         $this->seedStandardUsers($units);
-        $this->seedOpeningBalances();
         $this->seedOneFoamBatch($units['foam']);
     }
 
@@ -115,11 +119,6 @@ class SystemBootstrapSeeder extends Seeder
     private function seedChartOfAccounts(): void
     {
         $this->call(ChartOfAccountsSeeder::class);
-    }
-
-    private function seedOpeningBalances(): void
-    {
-        $this->call(OpeningBalanceSeeder::class);
     }
 
     private function seedBlueprints(): void
