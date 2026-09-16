@@ -54,10 +54,7 @@ final class OperatingUnitService
 
             // Create default Warehouse
             $inventoryConfig = $blueprint->default_inventory_config ?? [];
-            $warehouseName = $name.' Warehouse';
-            if (! empty($inventoryConfig['warehouse_name'])) {
-                $warehouseName = $name.' '.$inventoryConfig['warehouse_name'];
-            }
+            $warehouseName = $name.' '.($inventoryConfig['warehouse_name'] ?? 'Warehouse');
 
             Warehouse::create([
                 'operating_unit_id' => $unit->id,

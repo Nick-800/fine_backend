@@ -25,7 +25,7 @@ class BlueprintSeeder extends Seeder
                     'treasury-officer' => ['create-treasury', 'view-treasury', 'approve-treasury', 'view-inventory'],
                 ],
                 'default_inventory_config' => [
-                    'warehouse_name' => 'Central Import Depot',
+                    'warehouse_name' => 'مستودع الاستيراد المركزي',
                 ],
             ],
             [
@@ -38,7 +38,7 @@ class BlueprintSeeder extends Seeder
                     'foam-operator' => ['view-foam', 'edit-foam', 'view-inventory'],
                 ],
                 'default_inventory_config' => [
-                    'warehouse_name' => 'Foam Block Yard',
+                    'warehouse_name' => 'ساحة قوالب الإسفنج',
                 ],
             ],
             [
@@ -51,7 +51,7 @@ class BlueprintSeeder extends Seeder
                     'cutter-operator' => ['view-cutting', 'edit-cutting', 'view-inventory'],
                 ],
                 'default_inventory_config' => [
-                    'warehouse_name' => 'Cuting Materials Warehouse',
+                    'warehouse_name' => 'مستودع مواد القص',
                 ],
             ],
             [
@@ -64,7 +64,7 @@ class BlueprintSeeder extends Seeder
                     'assembler' => ['view-furniture', 'edit-furniture', 'view-inventory'],
                 ],
                 'default_inventory_config' => [
-                    'warehouse_name' => 'Furniture Assembly Warehouse',
+                    'warehouse_name' => 'مستودع تجميع الأثاث',
                 ],
             ],
             [
@@ -78,7 +78,7 @@ class BlueprintSeeder extends Seeder
                     'pos-cashier' => ['create-sales', 'view-sales', 'view-inventory'],
                 ],
                 'default_inventory_config' => [
-                    'warehouse_name' => 'Showroom Warehouse',
+                    'warehouse_name' => 'مستودع صالة العرض',
                 ],
             ],
         ];

@@ -135,11 +135,11 @@ class SystemBootstrapSeeder extends Seeder
         $service = app(OperatingUnitService::class);
 
         $specs = [
-            'procurement' => ['Foam Manufactory Blueprint', 'Procurement & Treasury'],
-            'foam' => ['Foam Manufactory Blueprint', 'Foam Manufacturer'],
-            'cutter' => ['Cutter Manufactory Blueprint', 'Cutter'],
-            'furniture' => ['Furniture Manufactory Blueprint', 'Furniture'],
-            'showroom' => ['Store Blueprint', 'Showroom'],
+            'procurement' => ['Foam Manufactory Blueprint', 'المشتريات والخزانة'],
+            'foam' => ['Foam Manufactory Blueprint', 'مصنع الإسفنج'],
+            'cutter' => ['Cutter Manufactory Blueprint', 'قسم القص'],
+            'furniture' => ['Furniture Manufactory Blueprint', 'قسم الأثاث'],
+            'showroom' => ['Store Blueprint', 'صالة العرض'],
         ];
 
         $resolved = [];

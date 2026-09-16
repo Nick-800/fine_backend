@@ -124,10 +124,10 @@ class OpeningBalanceSeeder extends Seeder
      */
     private function resolveOperatingUnits(): ?array
     {
-        $procurement = OperatingUnit::where('name', 'Procurement & Treasury')->first();
-        $foam = OperatingUnit::where('name', 'Foam Manufacturer')->first();
-        $cutter = OperatingUnit::where('name', 'Cutter')->first();
-        $showroom = OperatingUnit::where('name', 'Showroom')->first();
+        $procurement = OperatingUnit::where('name', 'المشتريات والخزانة')->first();
+        $foam = OperatingUnit::where('name', 'مصنع الإسفنج')->first();
+        $cutter = OperatingUnit::where('name', 'قسم القص')->first();
+        $showroom = OperatingUnit::where('name', 'صالة العرض')->first();
 
         if ($procurement === null || $foam === null || $cutter === null || $showroom === null) {
             return null;
