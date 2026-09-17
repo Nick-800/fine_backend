@@ -19,20 +19,12 @@ final class StoreEmployeeRequest extends FormRequest
 
     public function rules(): array
     {
-        $entityId = $this->input('entity_id');
-
         return [
             'entity_id' => ['nullable', 'uuid', 'exists:entities,id', 'unique:employees,entity_id'],
             'name' => ['nullable', 'string', 'max:255'],
             'entity_type' => ['nullable', Rule::enum(EntityType::class)],
             'tax_number' => ['nullable', 'string', 'max:50'],
             'operating_unit_id' => ['required', 'uuid', 'exists:operating_units,id'],
-            'employer_entity_id' => [
-                'nullable',
-                'uuid',
-                'exists:entities,id',
-                Rule::notIn(array_filter([$entityId])),
-            ],
             'job_title' => ['required', 'string', 'max:150'],
             'labor_role' => ['nullable', 'string', 'max:100'],
             'pay_type' => ['required', Rule::enum(PayType::class)],

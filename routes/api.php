@@ -17,7 +17,6 @@ use App\Http\Controllers\Api\v1\CutterWorkOrderController;
 use App\Http\Controllers\Api\v1\DashboardController;
 use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityLookupController;
-use App\Http\Controllers\Api\v1\ExternalEmployerController;
 use App\Http\Controllers\Api\v1\FinancialReportController;
 use App\Http\Controllers\Api\v1\FixedAssetController;
 use App\Http\Controllers\Api\v1\FxRateController;
@@ -188,7 +187,6 @@ Route::prefix('v1')->group(function () {
                 Route::post('/leave-requests', [LeaveRequestController::class, 'store']);
                 Route::put('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']);
                 Route::put('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']);
-                Route::apiResource('external-employers', ExternalEmployerController::class);
             });
 
             // Foam Manufacturing
