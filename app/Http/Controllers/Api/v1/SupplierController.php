@@ -16,7 +16,7 @@ final class SupplierController extends Controller
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Supplier::query();
+        $query = Supplier::with('operatingUnit');
 
         if ($request->has('operating_unit_id')) {
             $query->where('operating_unit_id', $request->query('operating_unit_id'));

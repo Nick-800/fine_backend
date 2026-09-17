@@ -17,13 +17,13 @@ class InventoryValuationController extends Controller
     {
         $unitId = $request->header('X-Operating-Unit-ID') ?? $request->query('operating_unit_id');
 
-        if (! $unitId) {
-            return response()->json(['message' => 'X-Operating-Unit-ID header or operating_unit_id query parameter is required.'], 400);
+        if ($unitId) {
+            return response()->json($this->valuationService->getUnitValuation((string) $unitId));
         }
 
-        $valuation = $this->valuationService->getUnitValuation((string) $unitId);
-
-        return response()->json($valuation);
+        // No unit pinned — fall back to the roll-up so a company-wide caller
+        // sees the whole company's stock value in one call.
+        return response()->json($this->valuationService->getCompanyRollup());
     }
 
     public function rollup(): JsonResponse
