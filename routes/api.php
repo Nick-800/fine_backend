@@ -78,15 +78,22 @@ Route::prefix('v1')->group(function () {
             // Admin: Owner and Global Admins only
             Route::middleware('require.role:owner')->group(function () {
                 Route::apiResource('operating-units', OperatingUnitController::class)->except(['index']);
+                Route::post('operating-units/{id}/restore', [OperatingUnitController::class, 'restore']);
                 Route::get('/unit-blueprints', [UnitBlueprintController::class, 'index']);
                 Route::post('/unit-blueprints', [UnitBlueprintController::class, 'store']);
+                Route::get('/unit-blueprints/{id}', [UnitBlueprintController::class, 'show']);
+                Route::put('/unit-blueprints/{id}', [UnitBlueprintController::class, 'update']);
+                Route::delete('/unit-blueprints/{id}', [UnitBlueprintController::class, 'destroy']);
+                Route::post('unit-blueprints/{id}/restore', [UnitBlueprintController::class, 'restore']);
                 Route::get('/roles', [RoleController::class, 'index']);
                 Route::post('/roles', [RoleController::class, 'store']);
                 Route::get('/roles/{id}', [RoleController::class, 'show']);
                 Route::put('/roles/{id}', [RoleController::class, 'update']);
                 Route::delete('/roles/{id}', [RoleController::class, 'destroy']);
+                Route::post('roles/{id}/restore', [RoleController::class, 'restore']);
                 Route::get('/permissions', [PermissionController::class, 'index']);
                 Route::apiResource('users', UserController::class);
+                Route::post('users/{id}/restore', [UserController::class, 'restore']);
                 Route::get('/users/{id}/roles', [UserController::class, 'roles']);
                 Route::post('/users/{id}/roles/assign', [UserController::class, 'assignRole']);
                 Route::delete('/users/{id}/roles/{roleId}', [UserController::class, 'removeRole']);

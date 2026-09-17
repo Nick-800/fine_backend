@@ -18,13 +18,18 @@ use Illuminate\Support\Facades\Hash;
 final class UserController extends Controller
 {
     /**
-     * Display a listing of the users.
+     * Display a listing of the users. Pass ?with_trashed=1 to include soft-deleted.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
         Gate::authorize('viewAny', User::class);
 
-        return UserResource::collection(User::with('roles')->get());
+        $query = User::with('roles');
+        if ($request->boolean('with_trashed')) {
+            $query->withTrashed();
+        }
+
+        return UserResource::collection($query->get());
     }
 
     /**
@@ -54,11 +59,15 @@ final class UserController extends Controller
     }
 
     /**
-     * Display the specified user.
+     * Display the specified user. Pass ?with_trashed=1 to resolve a soft-deleted user.
      */
-    public function show(string $id): UserResource
+    public function show(Request $request, string $id): UserResource
     {
-        $user = User::with('roles')->findOrFail($id);
+        $query = User::query();
+        if ($request->boolean('with_trashed')) {
+            $query->withTrashed();
+        }
+        $user = $query->with('roles')->findOrFail($id);
         Gate::authorize('view', $user);
 
         return new UserResource($user);
@@ -110,6 +119,18 @@ final class UserController extends Controller
         return response()->json([
             'message' => 'User deleted successfully.',
         ]);
+    }
+
+    /**
+     * Restore a soft-deleted user.
+     */
+    public function restore(string $id): UserResource
+    {
+        $user = User::withTrashed()->findOrFail($id);
+        Gate::authorize('restore', $user);
+        $user->restore();
+
+        return new UserResource($user);
     }
 
     /**

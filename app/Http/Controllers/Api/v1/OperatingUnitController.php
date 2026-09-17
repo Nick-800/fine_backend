@@ -20,7 +20,9 @@ final class OperatingUnitController extends Controller
     ) {}
 
     /**
-     * Display a listing of operating units.
+     * Display a listing of operating units. Pass ?with_trashed=1 to include
+     * soft-deleted ones (admin-only — used by the management page's
+     * 'محذوفة' tab).
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -37,13 +39,19 @@ final class OperatingUnitController extends Controller
                     ->pluck('user_roles.operating_unit_id')
                     ->unique();
 
-                return OperatingUnitResource::collection(
-                    OperatingUnit::whereIn('id', $assignedUnitIds)->get()
-                );
+                $query = OperatingUnit::whereIn('id', $assignedUnitIds);
+            } else {
+                $query = OperatingUnit::query();
             }
+        } else {
+            $query = OperatingUnit::query();
         }
 
-        return OperatingUnitResource::collection(OperatingUnit::all());
+        if ($request->boolean('with_trashed')) {
+            $query->withTrashed();
+        }
+
+        return OperatingUnitResource::collection($query->orderBy('name')->get());
     }
 
     /**
@@ -65,11 +73,16 @@ final class OperatingUnitController extends Controller
     }
 
     /**
-     * Display the specified operating unit.
+     * Display the specified operating unit. Pass ?with_trashed=1 to resolve
+     * a soft-deleted unit by id.
      */
-    public function show(string $id): OperatingUnitResource
+    public function show(Request $request, string $id): OperatingUnitResource
     {
-        $unit = OperatingUnit::findOrFail($id);
+        $query = OperatingUnit::query();
+        if ($request->boolean('with_trashed')) {
+            $query->withTrashed();
+        }
+        $unit = $query->findOrFail($id);
 
         return new OperatingUnitResource($unit);
     }
@@ -92,7 +105,7 @@ final class OperatingUnitController extends Controller
     }
 
     /**
-     * Remove the specified operating unit from storage.
+     * Soft-delete the specified operating unit.
      */
     public function destroy(string $id): JsonResponse
     {
@@ -102,5 +115,16 @@ final class OperatingUnitController extends Controller
         return response()->json([
             'message' => 'Operating unit deleted successfully.',
         ]);
+    }
+
+    /**
+     * Restore a soft-deleted operating unit.
+     */
+    public function restore(string $id): OperatingUnitResource
+    {
+        $unit = OperatingUnit::withTrashed()->findOrFail($id);
+        $unit->restore();
+
+        return new OperatingUnitResource($unit);
     }
 }

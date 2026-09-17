@@ -14,19 +14,28 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 final class RoleController extends Controller
 {
     /**
-     * Display a listing of the roles.
+     * Display a listing of the roles. Pass ?with_trashed=1 to include soft-deleted.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return RoleResource::collection(Role::all());
+        $query = Role::query();
+        if ($request->boolean('with_trashed')) {
+            $query->withTrashed();
+        }
+
+        return RoleResource::collection($query->orderBy('name')->get());
     }
 
     /**
      * Display the specified role with its current permissions.
      */
-    public function show(string $id): RoleResource
+    public function show(Request $request, string $id): RoleResource
     {
-        $role = Role::with('permissions')->findOrFail($id);
+        $query = Role::query();
+        if ($request->boolean('with_trashed')) {
+            $query->withTrashed();
+        }
+        $role = $query->with('permissions')->findOrFail($id);
 
         return new RoleResource($role);
     }
@@ -87,11 +96,12 @@ final class RoleController extends Controller
     }
 
     /**
-     * Remove the specified role.
+     * Soft-delete the specified role.
      *
      * Refuses to delete the roles backing the require.role:owner middleware
      * (owner / admin) since doing so would lock the system out.
      * user_roles.role_id cascades on delete, so assignments drop silently.
+     * A soft-deleted role can be brought back via POST /roles/{id}/restore.
      */
     public function destroy(string $id): JsonResponse
     {
@@ -108,5 +118,16 @@ final class RoleController extends Controller
         return response()->json([
             'message' => 'Role deleted successfully.',
         ]);
+    }
+
+    /**
+     * Restore a soft-deleted role.
+     */
+    public function restore(string $id): RoleResource
+    {
+        $role = Role::withTrashed()->findOrFail($id);
+        $role->restore();
+
+        return new RoleResource($role->load('permissions'));
     }
 }
