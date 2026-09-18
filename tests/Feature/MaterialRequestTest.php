@@ -29,7 +29,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->company = Company::create([
-        'name' => 'Al-Amana Material Request Test',
+        'name' => 'Fine Material Request Test',
         'default_currency' => 'LYD',
         'overhead_absorption_enabled' => false,
         'transfer_pricing_mode' => 'at_cost',

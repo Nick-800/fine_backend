@@ -87,7 +87,7 @@ class SystemBootstrapSeeder extends Seeder
     private function seedCompany(): void
     {
         Company::firstOrCreate(
-            ['name' => 'Al-Amana Foam & Furniture Co.'],
+            ['name' => 'Fine'],
             [
                 'id' => (string) Str::uuid(),
                 'default_currency' => 'LYD',

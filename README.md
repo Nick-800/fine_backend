@@ -95,7 +95,7 @@ php artisan db:seed:bootstrap --force
 
 Seeds ONLY the structural backbone — for handing a fresh environment to production without demo data:
 
-- the company row (`Al-Amana Foam & Furniture Co.`)
+- the company row (`Fine`)
 - all 14 roles + permissions (via `RoleSeeder`)
 - all 5 unit blueprints (via `BlueprintSeeder`)
 - all 5 operating units, each with its default warehouse (via `OperatingUnitService::provision`)
@@ -180,7 +180,7 @@ php artisan db:seed:dummy --reset
 
 ## Default Seeded Credentials
 
-When running `php artisan db:seed`, the system automatically provisions the initial company (**Al-Amana Foam & Furniture Co.**), operating units, blueprints, and standard user accounts.
+When running `php artisan db:seed`, the system automatically provisions the initial company (**Fine**), operating units, blueprints, and standard user accounts.
 
 All default accounts use the password: `password`
 
