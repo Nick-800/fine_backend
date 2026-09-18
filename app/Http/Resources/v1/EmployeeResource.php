@@ -15,7 +15,6 @@ final class EmployeeResource extends JsonResource
             'id' => $this->id,
             'entity_id' => $this->entity_id,
             'operating_unit_id' => $this->operating_unit_id,
-            'employer_entity_id' => $this->employer_entity_id,
             'job_title' => $this->job_title,
             'labor_role' => $this->labor_role,
             'pay_type' => $this->pay_type->value ?? $this->pay_type,
@@ -26,7 +25,6 @@ final class EmployeeResource extends JsonResource
             'record_version' => $this->record_version,
             'entity' => new EntityResource($this->whenLoaded('entity')),
             'operating_unit' => new OperatingUnitResource($this->whenLoaded('operatingUnit')),
-            'employer_entity' => new EntityResource($this->whenLoaded('employerEntity')),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

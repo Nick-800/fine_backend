@@ -11,7 +11,6 @@ use App\Enums\PayType;
 use App\Models\Client;
 use App\Models\Employee;
 use App\Models\Entity;
-use App\Models\ExternalEmployer;
 use App\Models\OperatingUnit;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
@@ -57,20 +56,6 @@ final class DomainModelsSeeder extends Seeder
             'pay_type' => PayType::Monthly,
             'hire_date' => now()->subYears(2)->toDateString(),
             'status' => EmployeeStatus::Active,
-        ]);
-
-        // 3. Seed Sample External Employer Agency
-        $agencyEntity = Entity::where('name', 'Al-Nagm Logistics & Contracting Agency')->first() ?? Entity::create([
-            'id' => (string) Str::uuid(),
-            'name' => 'Al-Nagm Logistics & Contracting Agency',
-            'entity_type' => EntityType::Organization,
-        ]);
-
-        ExternalEmployer::create([
-            'id' => (string) Str::uuid(),
-            'entity_id' => $agencyEntity->id,
-            'contract_reference' => 'AGENCY-2026-901',
-            'billing_rate_multiplier' => 1.15,
         ]);
     }
 }

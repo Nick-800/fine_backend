@@ -23,7 +23,6 @@ final class Employee extends Model
     protected $fillable = [
         'entity_id',
         'operating_unit_id',
-        'employer_entity_id',
         'job_title',
         'labor_role',
         'pay_type',
@@ -54,11 +53,6 @@ final class Employee extends Model
     public function operatingUnit(): BelongsTo
     {
         return $this->belongsTo(OperatingUnit::class);
-    }
-
-    public function employerEntity(): BelongsTo
-    {
-        return $this->belongsTo(Entity::class, 'employer_entity_id');
     }
 
     public function attendances(): HasMany

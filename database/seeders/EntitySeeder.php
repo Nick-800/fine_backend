@@ -67,19 +67,5 @@ final class EntitySeeder extends Seeder
             'role_type' => EntityRoleType::Employee,
             'operating_unit_id' => $unit->id,
         ]);
-
-        // 3. Create External Agency Entity
-        $agencyEntity = Entity::create([
-            'id' => (string) Str::uuid(),
-            'name' => 'Al-Nagm Logistics & Contracting Agency',
-            'entity_type' => EntityType::Organization,
-            'tax_number' => 'TAX-AGENCY-5544',
-        ]);
-
-        EntityRole::create([
-            'entity_id' => $agencyEntity->id,
-            'role_type' => EntityRoleType::ExternalEmployer,
-            'operating_unit_id' => $unit->id,
-        ]);
     }
 }

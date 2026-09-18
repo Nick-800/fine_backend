@@ -9,5 +9,4 @@ enum EntityRoleType: string
     case Employee = 'employee';
     case Client = 'client';
     case Vendor = 'vendor';
-    case ExternalEmployer = 'external_employer';
 }

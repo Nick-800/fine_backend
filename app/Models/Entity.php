@@ -68,11 +68,6 @@ final class Entity extends Model
         return $this->hasOne(Client::class);
     }
 
-    public function externalEmployer(): HasOne
-    {
-        return $this->hasOne(ExternalEmployer::class);
-    }
-
     public function scopeIndividual(Builder $query): Builder
     {
         return $query->where('entity_type', EntityType::Individual);
