@@ -25,7 +25,7 @@ final class EmployeeController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Employee::with(['entity', 'operatingUnit', 'employerEntity']);
+        $query = Employee::with(['entity', 'operatingUnit']);
 
         // Unit drill-down is only honoured for company-wide roles; a unit
         // caller's listing stays inside their ambient unit scope. Lifting only
@@ -77,7 +77,6 @@ final class EmployeeController extends Controller
             $employee = Employee::create([
                 'entity_id' => $entityId,
                 'operating_unit_id' => $request->operating_unit_id,
-                'employer_entity_id' => $request->employer_entity_id,
                 'job_title' => $request->job_title,
                 'labor_role' => $request->labor_role,
                 'pay_type' => $request->pay_type,
@@ -87,7 +86,7 @@ final class EmployeeController extends Controller
                 'status' => $request->input('status', 'active'),
             ]);
 
-            return $employee->load(['entity', 'operatingUnit', 'employerEntity']);
+            return $employee->load(['entity', 'operatingUnit']);
         });
 
         return (new EmployeeResource($employee))
@@ -100,7 +99,7 @@ final class EmployeeController extends Controller
      */
     public function show(string $id): EmployeeResource
     {
-        $employee = Employee::with(['entity', 'operatingUnit', 'employerEntity'])->findOrFail($id);
+        $employee = Employee::with(['entity', 'operatingUnit'])->findOrFail($id);
 
         return new EmployeeResource($employee);
     }
@@ -143,7 +142,6 @@ final class EmployeeController extends Controller
 
         $request->validate([
             'operating_unit_id' => 'sometimes|required|uuid|exists:operating_units,id',
-            'employer_entity_id' => 'nullable|uuid|exists:entities,id|different:entity_id',
             'job_title' => 'sometimes|required|string|max:150',
             'labor_role' => 'sometimes|nullable|string|max:100',
             'pay_type' => 'sometimes|required|string',
@@ -156,7 +154,6 @@ final class EmployeeController extends Controller
 
         $employee->update($request->only(
             'operating_unit_id',
-            'employer_entity_id',
             'job_title',
             'labor_role',
             'pay_type',
@@ -167,7 +164,7 @@ final class EmployeeController extends Controller
             'record_version'
         ));
 
-        return new EmployeeResource($employee->load(['entity', 'operatingUnit', 'employerEntity']));
+        return new EmployeeResource($employee->load(['entity', 'operatingUnit']));
     }
 
     /**

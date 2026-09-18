@@ -27,6 +27,14 @@ final class OperatingUnitResource extends JsonResource
                 'id' => $this->manager->id,
                 'name' => $this->manager->name,
             ] : null),
+            'warehouses' => $this->whenLoaded('warehouses', fn () => $this->warehouses->map(fn ($w) => [
+                'id' => $w->id,
+                'operating_unit_id' => $w->operating_unit_id,
+                'name' => $w->name,
+                'is_internal_unit' => (bool) $w->is_internal_unit,
+                'created_at' => $w->created_at?->toIso8601String(),
+                'updated_at' => $w->updated_at?->toIso8601String(),
+            ])),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

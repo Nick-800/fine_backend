@@ -14,6 +14,7 @@ final class SupplierResource extends JsonResource
         return [
             'id' => $this->id,
             'operating_unit_id' => $this->operating_unit_id,
+            'operating_unit' => new OperatingUnitResource($this->whenLoaded('operatingUnit')),
             'name' => $this->name,
             'contact' => $this->contact,
             'default_currency' => $this->default_currency,

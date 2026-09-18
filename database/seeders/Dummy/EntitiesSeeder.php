@@ -13,13 +13,12 @@ use App\Models\Employee;
 use App\Models\Entity;
 use App\Models\EntityContact;
 use App\Models\EntityRole;
-use App\Models\ExternalEmployer;
 use App\Models\OperatingUnit;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
 /**
- * Dummy clients, employees and external agencies across the operating units.
+ * Dummy clients and employees across the operating units.
  * Caps intentionally moderate so reports and lists are populated without
  * flooding dashboards.
  */
@@ -33,11 +32,9 @@ class EntitiesSeeder extends Seeder
         }
 
         $showroom = $units->firstWhere('name', 'صالة العرض') ?? $units->first();
-        $procurement = $units->firstWhere('name', 'المشتريات والخزانة') ?? $units->first();
 
         $this->seedClients($showroom);
         $this->seedEmployees($units);
-        $this->seedExternalAgencies($procurement);
     }
 
     private function seedClients(OperatingUnit $unit): void
@@ -99,27 +96,6 @@ class EntitiesSeeder extends Seeder
                     'status' => EmployeeStatus::Active,
                 ]);
             }
-        }
-    }
-
-    private function seedExternalAgencies(OperatingUnit $unit): void
-    {
-        for ($i = 1; $i <= 2; $i++) {
-            $entity = Entity::factory()->organization()->create();
-
-            EntityRole::create([
-                'id' => (string) Str::uuid(),
-                'entity_id' => $entity->id,
-                'role_type' => EntityRoleType::ExternalEmployer,
-                'operating_unit_id' => $unit->id,
-            ]);
-
-            ExternalEmployer::create([
-                'id' => (string) Str::uuid(),
-                'entity_id' => $entity->id,
-                'contract_reference' => 'AGENCY-'.now()->format('Y').'-'.str_pad((string) $i, 3, '0', STR_PAD_LEFT),
-                'billing_rate_multiplier' => fake()->randomFloat(2, 1.05, 1.30),
-            ]);
         }
     }
 }

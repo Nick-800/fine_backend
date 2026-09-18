@@ -9,10 +9,11 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 final class Role extends Model
 {
-    use Auditable, HasFactory, HasUuids;
+    use Auditable, HasFactory, HasUuids, SoftDeletes;
 
     protected $fillable = [
         'name',
