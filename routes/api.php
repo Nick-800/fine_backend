@@ -79,6 +79,8 @@ Route::prefix('v1')->group(function () {
             Route::middleware('require.role:owner')->group(function () {
                 Route::apiResource('operating-units', OperatingUnitController::class)->except(['index']);
                 Route::post('operating-units/{id}/restore', [OperatingUnitController::class, 'restore']);
+                Route::get('operating-units/{id}/warehouses', [WarehouseController::class, 'forOperatingUnit']);
+                Route::post('operating-units/{id}/warehouses', [WarehouseController::class, 'storeForOperatingUnit']);
                 Route::get('/unit-blueprints', [UnitBlueprintController::class, 'index']);
                 Route::post('/unit-blueprints', [UnitBlueprintController::class, 'store']);
                 Route::get('/unit-blueprints/{id}', [UnitBlueprintController::class, 'show']);

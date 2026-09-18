@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
+use App\Models\OperatingUnit;
 use App\Models\StockLot;
 use App\Models\Warehouse;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class WarehouseController extends Controller
 {
@@ -27,41 +27,79 @@ class WarehouseController extends Controller
         return response()->json(Warehouse::orderBy('name')->get());
     }
 
+    /**
+     * Warehouses belonging to a specific operating unit (admin view).
+     */
+    public function forOperatingUnit(string $operatingUnitId): JsonResponse
+    {
+        $unit = OperatingUnit::withTrashed()->findOrFail($operatingUnitId);
+
+        $warehouses = Warehouse::withoutGlobalScopes()
+            ->where('operating_unit_id', $unit->id)
+            ->orderBy('name')
+            ->get();
+
+        return response()->json($warehouses);
+    }
+
+    /**
+     * Create a warehouse directly for a specific operating unit (admin action).
+     */
+    public function storeForOperatingUnit(Request $request, string $operatingUnitId): JsonResponse
+    {
+        $unit = OperatingUnit::findOrFail($operatingUnitId);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'is_internal_unit' => ['nullable', 'boolean'],
+        ]);
+
+        $warehouse = Warehouse::create([
+            'operating_unit_id' => $unit->id,
+            'name' => $validated['name'],
+            'is_internal_unit' => $validated['is_internal_unit'] ?? false,
+        ]);
+
+        return response()->json($warehouse, 201);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:50', 'unique:warehouses,code'],
+            'operating_unit_id' => ['nullable', 'uuid', 'exists:operating_units,id'],
             'is_internal_unit' => ['nullable', 'boolean'],
         ]);
 
-        // The trait fills operating_unit_id from context on create, so a
-        // company-wide role with no unit selected would leave it null against a
-        // NOT NULL column.
-        if ($this->unitContext->getUnitId() === null) {
+        $unitId = $validated['operating_unit_id'] ?? $this->unitContext->getUnitId();
+
+        if ($unitId === null) {
             return response()->json([
                 'message' => 'Select an operating unit before creating a warehouse.',
                 'code' => 'OPERATING_UNIT_REQUIRED',
             ], 422);
         }
 
-        $warehouse = Warehouse::create($validated);
+        $warehouse = Warehouse::create([
+            'operating_unit_id' => $unitId,
+            'name' => $validated['name'],
+            'is_internal_unit' => $validated['is_internal_unit'] ?? false,
+        ]);
 
         return response()->json($warehouse, 201);
     }
 
     public function show(string $id): JsonResponse
     {
-        return response()->json(Warehouse::with('operatingUnit')->findOrFail($id));
+        return response()->json(Warehouse::withoutGlobalScopes()->with('operatingUnit')->findOrFail($id));
     }
 
     public function update(Request $request, string $id): JsonResponse
     {
-        $warehouse = Warehouse::findOrFail($id);
+        $warehouse = Warehouse::withoutGlobalScopes()->findOrFail($id);
 
         $validated = $request->validate([
-            'name' => ['sometimes', 'string', 'max:255'],
-            'code' => ['sometimes', 'string', 'max:50', Rule::unique('warehouses', 'code')->ignore($warehouse->id)],
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
             'is_internal_unit' => ['nullable', 'boolean'],
         ]);
 
@@ -72,7 +110,7 @@ class WarehouseController extends Controller
 
     public function destroy(string $id): JsonResponse
     {
-        $warehouse = Warehouse::findOrFail($id);
+        $warehouse = Warehouse::withoutGlobalScopes()->findOrFail($id);
 
         // Stock lots are located by warehouse; removing one out from under live
         // stock would orphan it.
@@ -80,6 +118,18 @@ class WarehouseController extends Controller
             return response()->json([
                 'message' => 'Cannot delete a warehouse that still holds stock lots.',
                 'code' => 'WAREHOUSE_NOT_EMPTY',
+            ], 422);
+        }
+
+        // An operating unit must retain at least one warehouse for operational workflows.
+        $totalWarehouses = Warehouse::withoutGlobalScopes()
+            ->where('operating_unit_id', $warehouse->operating_unit_id)
+            ->count();
+
+        if ($totalWarehouses <= 1) {
+            return response()->json([
+                'message' => 'Cannot delete the only warehouse of an operating unit.',
+                'code' => 'CANNOT_DELETE_LAST_WAREHOUSE',
             ], 422);
         }
 

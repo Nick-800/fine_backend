@@ -82,7 +82,7 @@ final class OperatingUnitController extends Controller
         if ($request->boolean('with_trashed')) {
             $query->withTrashed();
         }
-        $unit = $query->findOrFail($id);
+        $unit = $query->with(['warehouses' => fn ($q) => $q->orderBy('name'), 'manager', 'blueprint'])->findOrFail($id);
 
         return new OperatingUnitResource($unit);
     }
