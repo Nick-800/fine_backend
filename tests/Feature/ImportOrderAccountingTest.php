@@ -43,7 +43,9 @@ beforeEach(function () {
 
     $this->user = User::factory()->create(['must_change_password' => false]);
     $role = Role::create(['name' => 'Procurement Manager', 'slug' => 'procurement_manager']);
+    $accountantRole = Role::create(['name' => 'Accounting Manager', 'slug' => 'accounting-manager']);
     UserRole::create(['user_id' => $this->user->id, 'role_id' => $role->id, 'operating_unit_id' => $this->unit->id]);
+    UserRole::create(['user_id' => $this->user->id, 'role_id' => $accountantRole->id, 'operating_unit_id' => $this->unit->id]);
 
     $this->api = fn () => $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);

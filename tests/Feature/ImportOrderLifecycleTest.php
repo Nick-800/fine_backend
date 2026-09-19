@@ -7,9 +7,11 @@ use App\Enums\PaymentRoute;
 use App\Models\Company;
 use App\Models\ImportOrder;
 use App\Models\OperatingUnit;
+use App\Models\Role;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Models\User;
+use App\Models\UserRole;
 use App\Models\Warehouse;
 use App\Services\ImportOrderStateService;
 use Database\Seeders\ChartOfAccountsSeeder;
@@ -165,3 +167,124 @@ test('cannot complete import order if unconfirmed landed cost lines exist', func
     expect(fn () => $this->stateService->completeOrder($order->fresh()))
         ->toThrow(InvalidArgumentException::class);
 });
+
+test('non-finance user cannot select payment route in step 2', function () {
+    $procurementUser = User::factory()->create(['must_change_password' => false]);
+    $procurementRole = Role::firstOrCreate(['slug' => 'procurement-manager'], ['name' => 'Procurement Manager']);
+    UserRole::create([
+        'user_id' => $procurementUser->id,
+        'role_id' => $procurementRole->id,
+        'operating_unit_id' => $this->operatingUnit->id,
+    ]);
+
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->operatingUnit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 100,
+        'quantity' => 10,
+        'status' => ImportOrderStatus::PendingPayment,
+    ]);
+
+    $this->actingAs($procurementUser)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->operatingUnit->id])
+        ->postJson("/api/v1/import-orders/{$order->id}/transition", [
+            'action' => 'select_route',
+            'route' => 'market',
+            'amount_requested' => 1000,
+        ])
+        ->assertStatus(403)
+        ->assertJsonPath('code', 'FINANCE_ONLY_TRANSITION');
+});
+
+test('finance user can select payment route in step 2', function () {
+    $accountant = User::factory()->create(['must_change_password' => false]);
+    $accountantRole = Role::firstOrCreate(['slug' => 'accounting-manager'], ['name' => 'Accounting Manager']);
+    UserRole::create([
+        'user_id' => $accountant->id,
+        'role_id' => $accountantRole->id,
+        'operating_unit_id' => $this->operatingUnit->id,
+    ]);
+
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->operatingUnit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 100,
+        'quantity' => 10,
+        'status' => ImportOrderStatus::PendingPayment,
+    ]);
+
+    $this->actingAs($accountant)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->operatingUnit->id])
+        ->postJson("/api/v1/import-orders/{$order->id}/transition", [
+            'action' => 'select_route',
+            'route' => 'market',
+            'amount_requested' => 1000,
+        ])
+        ->assertStatus(200)
+        ->assertJsonPath('data.status', 'awaiting_transfer');
+});
+
+test('non-finance user cannot execute payment in step 3', function () {
+    $procurementUser = User::factory()->create(['must_change_password' => false]);
+    $procurementRole = Role::firstOrCreate(['slug' => 'procurement-manager'], ['name' => 'Procurement Manager']);
+    UserRole::create([
+        'user_id' => $procurementUser->id,
+        'role_id' => $procurementRole->id,
+        'operating_unit_id' => $this->operatingUnit->id,
+    ]);
+
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->operatingUnit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 100,
+        'quantity' => 10,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
+    $paymentRequest = $order->paymentRequests()->first();
+
+    $this->actingAs($procurementUser)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->operatingUnit->id])
+        ->postJson("/api/v1/payment-requests/{$paymentRequest->id}/execute", [
+            'fx_rate_used' => 5.20,
+        ])
+        ->assertStatus(403)
+        ->assertJsonPath('code', 'FINANCE_ONLY_EXECUTION');
+});
+
+test('finance user can execute payment in step 3 directly via payment request or transition', function () {
+    $treasury = User::factory()->create(['must_change_password' => false]);
+    $treasuryRole = Role::firstOrCreate(['slug' => 'treasury-officer'], ['name' => 'Treasury Officer']);
+    UserRole::create([
+        'user_id' => $treasury->id,
+        'role_id' => $treasuryRole->id,
+        'operating_unit_id' => $this->operatingUnit->id,
+    ]);
+
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->operatingUnit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 100,
+        'quantity' => 10,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
+
+    $this->actingAs($treasury)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->operatingUnit->id])
+        ->postJson("/api/v1/import-orders/{$order->id}/transition", [
+            'action' => 'execute_payment',
+            'fx_rate_used' => 5.20,
+            'bank_reference' => 'TXN-9988',
+            'extra_allocation_note' => 'Market rate variation',
+        ])
+        ->assertStatus(200)
+        ->assertJsonPath('data.status', 'paid');
+});
+

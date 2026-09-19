@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Enums\ImportOrderStatus;
+use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\v1\StoreImportOrderRequest;
@@ -22,6 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 final class ImportOrderController extends Controller
@@ -244,17 +246,36 @@ final class ImportOrderController extends Controller
         }
 
         $request->validate([
-            'action' => 'required|string|in:pending_payment,select_route,shipment,arrive_port,arrived_at_warehouse,transport_warehouse,receive_goods,complete',
+            'action' => 'required|string|in:pending_payment,select_route,execute_payment,shipment,arrive_port,arrived_at_warehouse,transport_warehouse,receive_goods,complete',
             'route' => 'required_if:action,select_route|string|in:bank,market',
             'amount_requested' => 'required_if:action,select_route|numeric|min:0.0001',
             'held_amount_lyd' => 'required_if:route,bank|nullable|numeric|min:0.0001',
             'invoice_ref' => 'nullable|string',
+            'fx_rate_used' => 'required_if:action,execute_payment|nullable|numeric|min:0.000001',
+            'exact_amount_used_lyd' => 'nullable|numeric|min:0',
+            'bank_reference' => 'nullable|string',
+            'extra_allocation_note' => 'nullable|string|max:500',
             'warehouse_id' => ['required_if:action,arrived_at_warehouse,receive_goods', 'nullable', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
             'received_qty' => 'required_if:action,receive_goods|nullable|numeric|min:0.0001',
             'condition_notes' => 'nullable|string',
         ]);
 
         $action = $request->input('action');
+
+        $user = $request->user();
+        $isFinance = $user && (
+            $user->hasRole('owner')
+            || $user->hasRole('admin')
+            || $user->hasRole('accounting-manager')
+            || $user->hasRole('treasury-officer')
+        );
+
+        if (in_array($action, ['select_route', 'execute_payment'], true) && ! $isFinance) {
+            return response()->json([
+                'message' => 'Only finance officers (accountant, treasury officer, owner) can execute financial transitions.',
+                'code' => 'FINANCE_ONLY_TRANSITION',
+            ], 403);
+        }
 
         try {
             match ($action) {
@@ -266,6 +287,7 @@ final class ImportOrderController extends Controller
                     $request->filled('held_amount_lyd') ? (float) $request->input('held_amount_lyd') : null,
                     $request->input('invoice_ref')
                 ),
+                'execute_payment' => $this->executePaymentForOrder($order, $request),
                 'shipment' => $this->stateService->confirmShipment($order),
                 'arrive_port' => $this->stateService->arriveAtPort($order),
                 'arrived_at_warehouse' => $this->stateService->arriveAtWarehouse(
@@ -303,5 +325,35 @@ final class ImportOrderController extends Controller
                 'arrivedWarehouse',
             ])),
         ]);
+    }
+
+    private function executePaymentForOrder(ImportOrder $order, Request $request): void
+    {
+        $paymentRequest = $order->paymentRequests()
+            ->where('status', PaymentRequestStatus::Pending)
+            ->first();
+
+        if (! $paymentRequest) {
+            throw new InvalidArgumentException('No pending payment request found for this import order.');
+        }
+
+        $bookedRate = (float) ($order->booked_fx_rate ?? 0);
+        $fxRateUsed = (float) $request->input('fx_rate_used');
+        $amountRequested = (float) $paymentRequest->amount_requested;
+        $extraAllocationLyd = ($fxRateUsed - $bookedRate) * $amountRequested;
+
+        if (abs($extraAllocationLyd) > 0 && blank($request->input('extra_allocation_note'))) {
+            throw ValidationException::withMessages([
+                'extra_allocation_note' => 'سبب التكلفة الإضافية مطلوب عند وجود فرق في سعر الصرف.',
+            ]);
+        }
+
+        $this->stateService->executePayment(
+            $paymentRequest,
+            $fxRateUsed,
+            $request->filled('exact_amount_used_lyd') ? (float) $request->input('exact_amount_used_lyd') : null,
+            $request->input('bank_reference'),
+            $request->input('extra_allocation_note')
+        );
     }
 }

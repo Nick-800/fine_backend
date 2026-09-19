@@ -93,6 +93,21 @@ final class PaymentRequestController extends Controller
 
     private function runExecution(Request $request, PaymentRequest $paymentRequest): JsonResponse
     {
+        $user = $request->user();
+        $isFinance = $user && (
+            $user->hasRole('owner')
+            || $user->hasRole('admin')
+            || $user->hasRole('accounting-manager')
+            || $user->hasRole('treasury-officer')
+        );
+
+        if (! $isFinance) {
+            return response()->json([
+                'message' => 'Only finance officers (accountant, treasury officer, owner) can execute payments.',
+                'code' => 'FINANCE_ONLY_EXECUTION',
+            ], 403);
+        }
+
         $request->validate([
             'fx_rate_used' => 'required|numeric|min:0.000001',
             'exact_amount_used_lyd' => 'nullable|numeric|min:0',
