@@ -292,3 +292,16 @@ test('an hr manager can run payroll but not approve it', function () {
         ->assertStatus(403)
         ->assertJsonPath('code', 'PAYROLL_APPROVAL_FORBIDDEN');
 });
+
+test('payroll runs index can be filtered by period', function () {
+    ($this->asOwner)()->postJson('/api/v1/payroll-runs', ['period' => '2026-07'])->assertStatus(201);
+    ($this->asOwner)()->postJson('/api/v1/payroll-runs', ['period' => '2026-08'])->assertStatus(201);
+
+    $responseAll = ($this->asOwner)()->getJson('/api/v1/payroll-runs')->assertStatus(200)->json();
+    expect($responseAll['total'])->toBe(2);
+
+    $responseFiltered = ($this->asOwner)()->getJson('/api/v1/payroll-runs?period=2026-07')->assertStatus(200)->json();
+    expect($responseFiltered['total'])->toBe(1);
+    expect($responseFiltered['data'][0]['period'])->toBe('2026-07');
+});
+

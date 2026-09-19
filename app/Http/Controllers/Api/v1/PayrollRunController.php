@@ -21,10 +21,14 @@ final class PayrollRunController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $query = PayrollRun::withCount('payslips')->orderByDesc('period');
+
+        if ($request->filled('period')) {
+            $query->where('period', $request->query('period'));
+        }
+
         return response()->json(
-            PayrollRun::withCount('payslips')
-                ->orderByDesc('period')
-                ->paginate($request->integer('per_page', 25))
+            $query->paginate($request->integer('per_page', 25))
         );
     }
 
