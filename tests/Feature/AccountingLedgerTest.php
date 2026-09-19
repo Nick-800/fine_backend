@@ -295,3 +295,73 @@ test('journal references do not collide', function () {
 
     expect($refs->unique())->toHaveCount(5);
 });
+
+test('an accounting manager or owner can create an account and sub-account', function () {
+    $accountant = User::factory()->create(['must_change_password' => false]);
+    $role = Role::firstOrCreate(['slug' => 'accounting-manager'], ['name' => 'Accounting Manager']);
+    UserRole::create(['user_id' => $accountant->id, 'role_id' => $role->id, 'operating_unit_id' => null]);
+
+    // Create top-level account
+    $response = $this->actingAs($accountant)->postJson('/api/v1/accounts', [
+        'account_code' => '6000',
+        'name' => 'Other Expenses',
+        'type' => 'expense',
+    ])->assertStatus(201);
+
+    expect($response->json('data.account_code'))->toBe('6000')
+        ->and($response->json('data.name'))->toBe('Other Expenses')
+        ->and($response->json('data.type'))->toBe('expense')
+        ->and($response->json('data.parent_account_id'))->toBeNull();
+
+    $parentId = $response->json('data.id');
+
+    // Create child account under parent
+    $childResponse = $this->actingAs($accountant)->postJson('/api/v1/accounts', [
+        'account_code' => '6100',
+        'name' => 'Marketing & Advertising',
+        'type' => 'expense',
+        'parent_account_id' => $parentId,
+    ])->assertStatus(201);
+
+    expect($childResponse->json('data.account_code'))->toBe('6100')
+        ->and($childResponse->json('data.parent_account_id'))->toBe($parentId);
+});
+
+test('duplicate account code is rejected', function () {
+    $accountant = User::factory()->create(['must_change_password' => false]);
+    $role = Role::firstOrCreate(['slug' => 'accounting-manager'], ['name' => 'Accounting Manager']);
+    UserRole::create(['user_id' => $accountant->id, 'role_id' => $role->id, 'operating_unit_id' => null]);
+
+    // 1000 already seeded by ChartOfAccountsSeeder
+    $this->actingAs($accountant)->postJson('/api/v1/accounts', [
+        'account_code' => '1000',
+        'name' => 'Duplicate Assets',
+        'type' => 'asset',
+    ])->assertStatus(422)
+      ->assertJsonValidationErrors(['account_code']);
+});
+
+test('child account must match parent account type', function () {
+    $accountant = User::factory()->create(['must_change_password' => false]);
+    $role = Role::firstOrCreate(['slug' => 'accounting-manager'], ['name' => 'Accounting Manager']);
+    UserRole::create(['user_id' => $accountant->id, 'role_id' => $role->id, 'operating_unit_id' => null]);
+
+    $parent = \App\Models\Account::where('account_code', '5000')->firstOrFail(); // Expense
+
+    $this->actingAs($accountant)->postJson('/api/v1/accounts', [
+        'account_code' => '5999',
+        'name' => 'Mismatched Asset Under Expense',
+        'type' => 'asset',
+        'parent_account_id' => $parent->id,
+    ])->assertStatus(422);
+});
+
+test('unauthorized users cannot create accounts', function () {
+    // $this->user has 'foam_manager' role, which is not permitted to mutate financial accounts
+    ($this->api)()->postJson('/api/v1/accounts', [
+        'account_code' => '7000',
+        'name' => 'Forbidden Account',
+        'type' => 'expense',
+    ])->assertStatus(403);
+});
+

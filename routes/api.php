@@ -113,6 +113,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/fixed-assets/{id}/depreciate', [FixedAssetController::class, 'depreciate']);
                 Route::post('/fixed-assets/{id}/dispose', [FixedAssetController::class, 'dispose']);
                 Route::post('/fixed-assets/{id}/transition', [FixedAssetController::class, 'transition']);
+                Route::post('/accounts', [AccountController::class, 'store']);
             });
 
             // Allocation & landed cost approvals are guarded at the domain level by AllocationPaymentService (asserts manager of unit)

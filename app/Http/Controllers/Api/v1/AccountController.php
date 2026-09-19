@@ -7,16 +7,13 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
+use App\Models\ChartOfAccounts;
+use App\Models\Company;
 use App\Models\JournalLine;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-/**
- * Read-only chart of accounts. Accounts are seeded, not managed through the
- * API — a ledger whose accounts can be edited from a client is a ledger whose
- * history can silently change meaning.
- */
 final class AccountController extends Controller
 {
     use ResolvesReportScope;
@@ -79,4 +76,64 @@ final class AccountController extends Controller
 
         return response()->json($query->paginate($request->integer('per_page', 25)));
     }
+
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'account_code' => 'required|string|max:50|unique:accounts,account_code',
+            'name' => 'required|string|max:255',
+            'type' => 'required|string|in:asset,liability,equity,revenue,expense',
+            'parent_account_id' => 'nullable|uuid|exists:accounts,id',
+            'currency' => 'nullable|string|size:3',
+        ]);
+
+        $parent = null;
+        if (!empty($validated['parent_account_id'])) {
+            $parent = Account::findOrFail($validated['parent_account_id']);
+            if ($parent->type !== $validated['type']) {
+                return response()->json([
+                    'message' => 'Account type must match parent account type.',
+                    'errors' => [
+                        'type' => ['The account type must match parent account type (' . $parent->type . ').'],
+                    ],
+                ], 422);
+            }
+        }
+
+        $company = Company::first();
+        if ($company === null) {
+            return response()->json(['message' => 'No company exists.'], 422);
+        }
+
+        $coaId = $parent?->chart_of_accounts_id
+            ?? ChartOfAccounts::firstOrCreate(
+                ['company_id' => $company->id],
+                ['name' => 'Main Chart of Accounts']
+            )->id;
+
+        $account = Account::create([
+            'chart_of_accounts_id' => $coaId,
+            'account_code' => $validated['account_code'],
+            'name' => $validated['name'],
+            'type' => $validated['type'],
+            'currency' => strtoupper($validated['currency'] ?? $company->default_currency ?? 'LYD'),
+            'parent_account_id' => $validated['parent_account_id'] ?? null,
+        ]);
+
+        return response()->json([
+            'message' => 'Account created successfully.',
+            'data' => [
+                'id' => $account->id,
+                'account_code' => $account->account_code,
+                'name' => $account->name,
+                'type' => $account->type,
+                'currency' => $account->currency,
+                'parent_account_id' => $account->parent_account_id,
+                'total_debit' => 0.0,
+                'total_credit' => 0.0,
+                'balance' => 0.0,
+            ],
+        ], 201);
+    }
 }
+
