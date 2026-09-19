@@ -150,3 +150,31 @@ test('finished-good item types land on their own inventory accounts', function (
     expect($debit->account->account_code)->toBe('1131')
         ->and((float) $debit->debit)->toBe(600.0);
 });
+
+test('stock intake auto-generates unique lot number when omitted', function () {
+    $res1 = ($this->intake)(['lot_number' => null])->assertStatus(201);
+    $res2 = ($this->intake)(['lot_number' => ''])->assertStatus(201);
+
+    $lot1 = StockLot::find($res1->json('id'));
+    $lot2 = StockLot::find($res2->json('id'));
+
+    expect($lot1->lot_number)->toContain('LOT-FAB-')
+        ->and($lot2->lot_number)->toContain('LOT-FAB-')
+        ->and($lot1->lot_number)->not->toBe($lot2->lot_number);
+});
+
+test('stock intake gracefully resolves duplicate vendor lot numbers with suffixes', function () {
+    $res1 = ($this->intake)(['lot_number' => 'VENDOR-BATCH-001'])->assertStatus(201);
+    $res2 = ($this->intake)(['lot_number' => 'VENDOR-BATCH-001'])->assertStatus(201);
+    $res3 = ($this->intake)(['lot_number' => 'VENDOR-BATCH-001'])->assertStatus(201);
+
+    $lot1 = StockLot::find($res1->json('id'));
+    $lot2 = StockLot::find($res2->json('id'));
+    $lot3 = StockLot::find($res3->json('id'));
+
+    expect($lot1->lot_number)->toBe('VENDOR-BATCH-001')
+        ->and($lot2->lot_number)->toBe('VENDOR-BATCH-001-01')
+        ->and($lot2->attribute_values['vendor_lot_number'])->toBe('VENDOR-BATCH-001')
+        ->and($lot3->lot_number)->toBe('VENDOR-BATCH-001-02')
+        ->and($lot3->attribute_values['vendor_lot_number'])->toBe('VENDOR-BATCH-001');
+});

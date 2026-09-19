@@ -74,7 +74,7 @@ class StockLotController extends Controller
         $validated = $request->validate([
             'inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
             'warehouse_id' => ['required', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
-            'lot_number' => ['required', 'string', 'unique:stock_lots,lot_number'],
+            'lot_number' => ['nullable', 'string', 'max:255'],
             'quantity' => ['required', 'numeric', 'min:0.0001'],
             'unit_cost' => ['required', 'numeric', 'min:0'],
             'source' => ['required', 'string', 'in:opening_balance,purchase_cash,purchase_credit,import_receipt'],

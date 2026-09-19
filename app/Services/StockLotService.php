@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\ImportOrder;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
 use App\Models\StockLot;
@@ -35,7 +36,7 @@ class StockLotService
      *   import_receipt   no journal — ImportOrder.Complete already posts the
      *                    landed value; this only materialises the physical lots
      *
-     * @param array{inventory_item_id: string, warehouse_id: string, lot_number: string,
+     * @param array{inventory_item_id: string, warehouse_id: string, lot_number?: string|null,
      *     quantity: float, unit_cost: float, source: string, import_order_id?: string|null,
      *     attribute_values?: array<string, mixed>|null} $data
      */
@@ -45,13 +46,28 @@ class StockLotService
             $item = InventoryItem::findOrFail($data['inventory_item_id']);
             $warehouse = Warehouse::findOrFail($data['warehouse_id']);
 
+            $attributeValues = $data['attribute_values'] ?? [];
+            if (! is_array($attributeValues)) {
+                $attributeValues = [];
+            }
+
+            $rawLot = trim((string) ($data['lot_number'] ?? ''));
+            if ($rawLot === '') {
+                $lotNumber = $this->generateUniqueLotNumber($item, $data['source'], $data['import_order_id'] ?? null);
+            } else {
+                [$lotNumber, $originalVendorLot] = $this->resolveUniqueLotNumber($rawLot, $item);
+                if ($originalVendorLot !== null && ! isset($attributeValues['vendor_lot_number'])) {
+                    $attributeValues['vendor_lot_number'] = $originalVendorLot;
+                }
+            }
+
             $lot = StockLot::create([
                 'inventory_item_id' => $item->id,
                 'warehouse_id' => $warehouse->id,
-                'lot_number' => $data['lot_number'],
+                'lot_number' => $lotNumber,
                 'quantity' => round((float) $data['quantity'], 4),
                 'unit_cost' => round((float) $data['unit_cost'], 4),
-                'attribute_values' => $data['attribute_values'] ?? null,
+                'attribute_values' => ! empty($attributeValues) ? $attributeValues : null,
                 'status' => 'available',
             ]);
 
@@ -81,7 +97,7 @@ class StockLotService
                 };
 
                 $this->accountingService->postJournal(
-                    "Stock intake: {$item->sku} lot {$data['lot_number']} ({$data['source']})",
+                    "Stock intake: {$item->sku} lot {$lotNumber} ({$data['source']})",
                     [
                         [
                             'account_code' => $this->inventoryAccountFor($item),
@@ -445,5 +461,53 @@ class StockLotService
                 'byproduct_movement' => $byproductMovement,
             ];
         });
+    }
+
+    public function generateUniqueLotNumber(InventoryItem $item, string $source, ?string $importOrderId = null): string
+    {
+        $skuPart = preg_replace('/[^A-Za-z0-9_-]/', '', (string) $item->sku) ?: 'ITEM';
+        $datePart = now()->format('Ymd');
+
+        if ($source === 'import_receipt' && $importOrderId) {
+            $order = ImportOrder::find($importOrderId);
+            $orderRef = $order?->order_number ?? substr($importOrderId, 0, 8);
+            $base = "IMP-{$orderRef}-{$skuPart}";
+        } else {
+            $base = "LOT-{$skuPart}-{$datePart}";
+        }
+
+        $candidate = "{$base}-01";
+        $seq = 1;
+        while (StockLot::withTrashed()->where('lot_number', $candidate)->exists()) {
+            $seq++;
+            $candidate = sprintf('%s-%02d', $base, $seq);
+        }
+
+        return $candidate;
+    }
+
+    /**
+     * @return array{0: string, 1: string|null} [resolvedLotNumber, originalVendorLot]
+     */
+    public function resolveUniqueLotNumber(string $lotNumber, ?InventoryItem $item = null): array
+    {
+        $raw = trim($lotNumber);
+        if ($raw === '') {
+            return [$this->generateUniqueLotNumber($item ?? new InventoryItem, 'default'), null];
+        }
+
+        if (! StockLot::withTrashed()->where('lot_number', $raw)->exists()) {
+            return [$raw, null];
+        }
+
+        // Collision: auto-suffix and preserve original vendor lot
+        $seq = 1;
+        $candidate = sprintf('%s-%02d', $raw, $seq);
+        while (StockLot::withTrashed()->where('lot_number', $candidate)->exists()) {
+            $seq++;
+            $candidate = sprintf('%s-%02d', $raw, $seq);
+        }
+
+        return [$candidate, $raw];
     }
 }
