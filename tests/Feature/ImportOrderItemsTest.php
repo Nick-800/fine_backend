@@ -217,3 +217,88 @@ it('calculates total cost correctly for multi-item orders and payment requests',
     $paymentRequest = $order->paymentRequests()->first();
     expect((float) $paymentRequest->amount_requested)->toBe(1625.0);
 });
+
+it('lets an owner update line items of a draft import order', function () {
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1500.0,
+        'quantity' => 1000.0,
+        'status' => \App\Enums\ImportOrderStatus::Draft,
+    ]);
+
+    \App\Models\ImportOrderItem::create([
+        'import_order_id' => $order->id,
+        'inventory_item_id' => $this->rawMaterial->id,
+        'quantity' => 1000,
+        'unit_price' => 1.5,
+        'currency' => 'USD',
+    ]);
+
+    $updatePayload = [
+        'items' => [
+            ['inventory_item_id' => $this->rawMaterial->id, 'quantity' => 500, 'unit_price' => 2.0],
+            ['inventory_item_id' => $this->packaging->id, 'quantity' => 100, 'unit_price' => 3.0],
+        ],
+    ];
+
+    $response = $this->actingAs($this->owner)->putJson("/api/v1/import-orders/{$order->id}", $updatePayload);
+
+    $response->assertStatus(200);
+    $data = $response->json('data');
+
+    // 500*2 + 100*3 = 1000 + 300 = 1300
+    expect((float) $data['total_amount'])->toBe(1300.0);
+    expect((float) $data['quantity'])->toBe(600.0);
+    expect((float) $data['items']['items_total'])->toBe(1300.0);
+    expect(count($data['items']['data']))->toBe(2);
+
+    $this->assertDatabaseCount('import_order_items', 2);
+    $order->refresh();
+    expect($order->totalCost())->toBe(1300.0);
+});
+
+it('rejects editing items if the import order is not in draft status', function () {
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1500.0,
+        'quantity' => 1000.0,
+        'status' => \App\Enums\ImportOrderStatus::PendingPayment,
+    ]);
+
+    $updatePayload = [
+        'items' => [
+            ['inventory_item_id' => $this->rawMaterial->id, 'quantity' => 200, 'unit_price' => 1.5],
+        ],
+    ];
+
+    $response = $this->actingAs($this->owner)->putJson("/api/v1/import-orders/{$order->id}", $updatePayload);
+
+    $response->assertStatus(422)
+        ->assertJsonPath('code', 'ORDER_NOT_IN_DRAFT');
+});
+
+it('rejects updating items with a non-procurement item type', function () {
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1500.0,
+        'quantity' => 1000.0,
+        'status' => \App\Enums\ImportOrderStatus::Draft,
+    ]);
+
+    $updatePayload = [
+        'items' => [
+            ['inventory_item_id' => $this->foamBlock->id, 'quantity' => 50, 'unit_price' => 10.0],
+        ],
+    ];
+
+    $response = $this->actingAs($this->owner)->putJson("/api/v1/import-orders/{$order->id}", $updatePayload);
+
+    $response->assertStatus(422)
+        ->assertJsonPath('code', 'INVALID_ITEM_TYPE');
+});

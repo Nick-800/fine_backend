@@ -164,7 +164,7 @@ Route::prefix('v1')->group(function () {
             // Procurement
             Route::middleware('require.role:owner,procurement-manager,treasury-officer,accounting-manager,unit_manager,manager')->group(function () {
                 Route::apiResource('suppliers', SupplierController::class);
-                Route::apiResource('import-orders', ImportOrderController::class)->only(['index', 'store', 'show']);
+                Route::apiResource('import-orders', ImportOrderController::class)->only(['index', 'store', 'show', 'update']);
                 Route::post('/import-orders/{id}/transition', [ImportOrderController::class, 'transition']);
                 Route::get('/import-orders/{id}/landed-cost-lines', [LandedCostLineController::class, 'index']);
                 Route::post('/import-orders/{id}/landed-cost-lines', [LandedCostLineController::class, 'store']);

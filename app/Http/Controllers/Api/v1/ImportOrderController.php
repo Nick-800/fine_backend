@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\v1;
 
+use App\Enums\ImportOrderStatus;
 use App\Enums\PaymentRoute;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\v1\StoreImportOrderRequest;
+use App\Http\Requests\v1\UpdateImportOrderRequest;
 use App\Http\Resources\v1\ImportOrderResource;
 use App\Models\FxRate;
 use App\Models\ImportOrder;
@@ -113,6 +115,50 @@ final class ImportOrderController extends Controller
                 'supplier',
                 'items.inventoryItem',
             ])))->response()->setStatusCode(201);
+        });
+    }
+
+    public function update(UpdateImportOrderRequest $request, string $id): JsonResponse|ImportOrderResource
+    {
+        $order = ImportOrder::findOrFail($id);
+
+        if ($order->status !== ImportOrderStatus::Draft) {
+            return response()->json([
+                'message' => 'Items can only be edited when the import order is in draft status.',
+                'code' => 'ORDER_NOT_IN_DRAFT',
+            ], 422);
+        }
+
+        $items = $this->validateAndPrepareItems($request->input('items'), $order->currency);
+
+        return DB::transaction(function () use ($order, $items, $request) {
+            $order->items()->delete();
+
+            foreach ($items as $line) {
+                ImportOrderItem::create($line + ['import_order_id' => $order->id]);
+            }
+
+            $headerQuantity = array_sum(array_column($items, 'quantity'));
+            $headerUnitPrice = array_sum(array_map(
+                fn ($line) => $line['quantity'] * $line['unit_price'],
+                $items,
+            ));
+
+            $attributes = [
+                'quantity' => $headerQuantity,
+                'negotiated_price' => $headerUnitPrice,
+            ];
+
+            if ($request->filled('supplier_id')) {
+                $attributes['supplier_id'] = $request->input('supplier_id');
+            }
+
+            $order->update($attributes);
+
+            return new ImportOrderResource($order->fresh([
+                'supplier',
+                'items.inventoryItem',
+            ]));
         });
     }
 
