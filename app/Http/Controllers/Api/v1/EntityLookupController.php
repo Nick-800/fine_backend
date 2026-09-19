@@ -17,7 +17,7 @@ final class EntityLookupController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Entity::with(['user', 'roles', 'contacts', 'primaryContact', 'employee', 'client', 'externalEmployer']);
+        $query = Entity::with(['user', 'roles', 'contacts', 'primaryContact', 'employee', 'client']);
 
         if ($request->has('entity_type')) {
             $query->where('entity_type', $request->query('entity_type'));
