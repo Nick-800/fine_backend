@@ -27,9 +27,9 @@ class ProductionBatchService
      * This string is a label, never an identity. Every component is also stored
      * as its own column, and nothing may parse this back to recover data.
      */
-    public function composeLotNumber(int $sequence, int $pressure, int $operationNumber): string
+    public function composeLotNumber(int $sequence, ?int $pressure, int $operationNumber): string
     {
-        return sprintf('%03d-%d-%d', $sequence, $pressure, $operationNumber);
+        return sprintf('%03d-%d-%d', $sequence, $pressure ?? 0, $operationNumber);
     }
 
     /**
@@ -223,7 +223,7 @@ class ProductionBatchService
                 );
             }
 
-            $ungraded = $batch->blocks()->whereNull('pressure')->count();
+            $ungraded = $batch->blocks()->where('block_type', 'block')->whereNull('pressure')->count();
 
             if ($ungraded > 0) {
                 throw new InvalidStateTransitionException(
@@ -240,8 +240,7 @@ class ProductionBatchService
      * block is individually labelled — so each group is expanded into `count`
      * serialized lots, each with its own sequence and printable code.
      *
-     * Scrap groups (فاصل / بداية) create no lots and consume no sequence, but
-     * their volume is accumulated onto the batch so material yield reconciles.
+     * Groups can be standard blocks, separators (فاصل), heads (بداية), or scrap (هدر).
      *
      * @param  array<int, array<string, mixed>>  $groups
      * @return array{blocks: array<int, StockLot>, scrap_volume_m3: float, batch: ProductionBatch}
@@ -269,8 +268,10 @@ class ProductionBatchService
                 $length = (float) $group['length_m'];
                 $height = (float) $group['height_m'];
                 $unitVolume = round($length * $width * $height, 4);
+                $kind = $group['kind'] ?? 'block';
+                $blockType = $group['block_type'] ?? (in_array($kind, ['separator', 'head', 'scrap'], true) ? $kind : 'block');
 
-                if (($group['kind'] ?? 'block') === 'scrap') {
+                if ($blockType === 'scrap' || $kind === 'scrap') {
                     $groupVolume = round($unitVolume * $count, 4);
                     $scrapVolume += $groupVolume;
 
@@ -291,6 +292,7 @@ class ProductionBatchService
                         // piece, which would contradict the total in quantity.
                         'quantity' => $groupVolume,
                         'unit_cost' => 0,
+                        'block_type' => 'scrap',
                         'status' => 'available',
                     ]);
 
@@ -312,11 +314,11 @@ class ProductionBatchService
                     continue;
                 }
 
-                if (! isset($group['pressure'])) {
-                    throw new InvalidArgumentException('Pressure is required for block groups; no code can be composed without it.');
+                if ($blockType === 'block' && (! isset($group['pressure']) || $group['pressure'] === '' || $group['pressure'] === null)) {
+                    throw new InvalidArgumentException('Pressure is required for standard block groups; no code can be composed without it.');
                 }
 
-                $pressure = (int) $group['pressure'];
+                $pressure = isset($group['pressure']) && $group['pressure'] !== '' && $group['pressure'] !== null ? (int) $group['pressure'] : null;
                 $startSequence = (int) $locked->next_sequence;
 
                 for ($offset = 0; $offset < $count; $offset++) {
@@ -328,6 +330,7 @@ class ProductionBatchService
                         'production_batch_id' => $locked->id,
                         'sequence_in_batch' => $sequence,
                         'pressure' => $pressure,
+                        'block_type' => $blockType,
                         'lot_number' => $this->composeLotNumber($sequence, $pressure, (int) $locked->operation_number),
                         'quantity' => 1,
                         'length_m' => $length,

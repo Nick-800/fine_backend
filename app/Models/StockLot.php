@@ -36,6 +36,7 @@ class StockLot extends Model
         'weight_kg',
         'unit_cost',
         'grade',
+        'block_type',
         'status',
         'attribute_values',
         'production_batch_id',

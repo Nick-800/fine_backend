@@ -576,3 +576,116 @@ test('remnant numbering uses a per parent revision counter', function () {
 
     expect($second->json('remnant_lot.lot_number'))->toBe('001-35-191-R2');
 });
+
+test('separator and head cuts are registered with their block_type and optional pressure', function () {
+    $batch = ($this->makeBatch)();
+
+    $response = ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [
+            [
+                'kind' => 'head',
+                'block_type' => 'head',
+                'count' => 1,
+                'length_m' => 1.5,
+                'height_m' => 0.8,
+                'inventory_item_id' => $this->blockItem->id,
+                'warehouse_id' => $this->warehouse->id,
+            ],
+            [
+                'kind' => 'block',
+                'block_type' => 'block',
+                'count' => 2,
+                'length_m' => 2.0,
+                'height_m' => 0.8,
+                'pressure' => 30,
+                'inventory_item_id' => $this->blockItem->id,
+                'warehouse_id' => $this->warehouse->id,
+            ],
+            [
+                'kind' => 'separator',
+                'block_type' => 'separator',
+                'count' => 1,
+                'length_m' => 0.5,
+                'height_m' => 0.8,
+                'inventory_item_id' => $this->blockItem->id,
+                'warehouse_id' => $this->warehouse->id,
+            ],
+        ],
+    ]);
+
+    $response->assertStatus(201)
+        ->assertJsonPath('blocks_created', 4);
+
+    $lots = StockLot::where('production_batch_id', $batch->id)
+        ->orderBy('sequence_in_batch')
+        ->get();
+
+    expect($lots)->toHaveCount(4);
+
+    // Lot 1: head cut (no pressure specified -> defaults to 0 in code)
+    expect($lots[0]->block_type)->toBe('head')
+        ->and($lots[0]->sequence_in_batch)->toBe(1)
+        ->and($lots[0]->pressure)->toBeNull()
+        ->and($lots[0]->lot_number)->toBe('001-0-191');
+
+    // Lots 2-3: standard blocks
+    expect($lots[1]->block_type)->toBe('block')
+        ->and($lots[1]->sequence_in_batch)->toBe(2)
+        ->and($lots[1]->pressure)->toBe(30)
+        ->and($lots[1]->lot_number)->toBe('002-30-191');
+
+    expect($lots[2]->block_type)->toBe('block')
+        ->and($lots[2]->sequence_in_batch)->toBe(3)
+        ->and($lots[2]->pressure)->toBe(30)
+        ->and($lots[2]->lot_number)->toBe('003-30-191');
+
+    // Lot 4: separator cut
+    expect($lots[3]->block_type)->toBe('separator')
+        ->and($lots[3]->sequence_in_batch)->toBe(4)
+        ->and($lots[3]->pressure)->toBeNull()
+        ->and($lots[3]->lot_number)->toBe('004-0-191');
+
+    // Filter by block_type in stock-lots API
+    $separators = ($this->api)()->getJson("/api/v1/stock-lots?production_batch_id={$batch->id}&block_type=separator")
+        ->assertStatus(200)
+        ->json('data');
+
+    expect($separators)->toHaveCount(1)
+        ->and($separators[0]['block_type'])->toBe('separator');
+});
+
+test('batch with separator having null pressure transitions to graded successfully', function () {
+    $batch = ProductionBatch::create([
+        'operating_unit_id' => $this->unit->id,
+        'operation_number' => 205,
+        'bun_width_m' => 2.4,
+        'status' => 'ready_for_grading',
+    ]);
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [
+            [
+                'kind' => 'block',
+                'count' => 1,
+                'length_m' => 2.0,
+                'height_m' => 0.8,
+                'pressure' => 35,
+                'inventory_item_id' => $this->blockItem->id,
+                'warehouse_id' => $this->warehouse->id,
+            ],
+            [
+                'kind' => 'separator',
+                'count' => 1,
+                'length_m' => 0.4,
+                'height_m' => 0.8,
+                'inventory_item_id' => $this->blockItem->id,
+                'warehouse_id' => $this->warehouse->id,
+            ],
+        ],
+    ])->assertStatus(201);
+
+    // Should transition to graded without failing unmeasured pressure check
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/transition", [
+        'status' => 'graded',
+    ])->assertStatus(200)->assertJsonPath('status', 'graded');
+});

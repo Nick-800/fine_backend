@@ -197,11 +197,17 @@ class ProductionBatchController extends Controller
 
         $validated = $request->validate([
             'groups' => ['required', 'array', 'min:1'],
-            'groups.*.kind' => ['required', 'string', 'in:block,scrap'],
+            'groups.*.kind' => ['required', 'string', 'in:block,separator,head,scrap'],
+            'groups.*.block_type' => ['nullable', 'string', 'in:block,separator,head,scrap'],
             'groups.*.count' => ['required', 'integer', 'min:1'],
             'groups.*.length_m' => ['required', 'numeric', 'min:0.001'],
             'groups.*.height_m' => ['required', 'numeric', 'min:0.001'],
-            'groups.*.pressure' => ['required_if:groups.*.kind,block', 'integer', 'min:1'],
+            'groups.*.pressure' => [
+                'required_if:groups.*.kind,block',
+                'nullable',
+                'integer',
+                'min:1',
+            ],
             // Scrap now enters stock too, so it needs an item and a location just
             // like a block does.
             'groups.*.inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],

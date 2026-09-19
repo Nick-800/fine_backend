@@ -146,6 +146,10 @@ class StockLotService
             });
         }
 
+        if (isset($filters['block_type']) && filled($filters['block_type'])) {
+            $query->where('block_type', $filters['block_type']);
+        }
+
         // Apply dynamic JSON attribute filters: ?attrs[pressure_kpa][gte]=35
         if (isset($filters['attrs']) && is_array($filters['attrs'])) {
             foreach ($filters['attrs'] as $key => $condition) {
