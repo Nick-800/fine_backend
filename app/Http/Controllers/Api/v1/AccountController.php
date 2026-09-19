@@ -53,10 +53,46 @@ final class AccountController extends Controller
         return response()->json(['data' => $accounts]);
     }
 
+    public function show(Request $request, string $id): JsonResponse
+    {
+        $account = Account::with(['parent:id,account_code,name,type'])->findOrFail($id);
+
+        $unitId = $this->resolveReportUnitId($request, $this->unitContext);
+
+        $linesQuery = $account->journalLines();
+        if ($unitId) {
+            $linesQuery->where('operating_unit_id', $unitId);
+        }
+
+        $debit = round((float) (clone $linesQuery)->sum('debit'), 4);
+        $credit = round((float) (clone $linesQuery)->sum('credit'), 4);
+        $balance = in_array($account->type, ['asset', 'expense'], true)
+            ? round($debit - $credit, 4)
+            : round($credit - $debit, 4);
+        $transactionCount = (clone $linesQuery)->count();
+
+        return response()->json([
+            'data' => [
+                'id' => $account->id,
+                'account_code' => $account->account_code,
+                'name' => $account->name,
+                'type' => $account->type,
+                'currency' => $account->currency,
+                'parent_account_id' => $account->parent_account_id,
+                'parent' => $account->parent,
+                'total_debit' => $debit,
+                'total_credit' => $credit,
+                'balance' => $balance,
+                'transaction_count' => $transactionCount,
+                'created_at' => $account->created_at?->toISOString(),
+            ],
+        ]);
+    }
+
     /**
      * The account's statement: every line ever posted against it, newest
      * first. A unit-scoped caller sees only their unit's lines — the same rule
-     * the journal list follows.
+     * the journal list follows. Supports from/to date filtering and text search.
      */
     public function ledger(Request $request, string $id): JsonResponse
     {
@@ -72,6 +108,23 @@ final class AccountController extends Controller
 
         if ($unitId = $this->resolveReportUnitId($request, $this->unitContext)) {
             $query->where('journal_lines.operating_unit_id', $unitId);
+        }
+
+        if ($from = $request->query('from')) {
+            $query->where('journal_entries.entry_date', '>=', $from);
+        }
+
+        if ($to = $request->query('to')) {
+            $query->where('journal_entries.entry_date', '<=', $to);
+        }
+
+        if ($search = $request->query('search')) {
+            $term = '%' . trim((string) $search) . '%';
+            $query->where(function ($q) use ($term) {
+                $q->where('journal_entries.reference', 'like', $term)
+                    ->orWhere('journal_entries.description', 'like', $term)
+                    ->orWhere('journal_lines.memo', 'like', $term);
+            });
         }
 
         return response()->json($query->paginate($request->integer('per_page', 25)));

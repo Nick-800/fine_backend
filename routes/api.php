@@ -128,6 +128,7 @@ Route::prefix('v1')->group(function () {
             // Financial Ledger & Reports: Ledger queries, statements and reports (scoped by unit)
             Route::middleware('require.role:owner,accounting-manager,unit_manager,manager,inventory-manager,foam-manager,foam-operator,cutter-manager,cutter-operator,furniture-manager,assembler,store-manager,pos-cashier,procurement-manager,treasury-officer')->group(function () {
                 Route::get('/accounts', [AccountController::class, 'index']);
+                Route::get('/accounts/{id}', [AccountController::class, 'show']);
                 Route::get('/accounts/{id}/ledger', [AccountController::class, 'ledger']);
                 Route::get('/journal-entries', [JournalEntryController::class, 'index']);
                 Route::get('/journal-entries/for-document/{type}/{documentId}', [JournalEntryController::class, 'forDocument']);

@@ -365,3 +365,76 @@ test('unauthorized users cannot create accounts', function () {
     ])->assertStatus(403);
 });
 
+test('user can view account details with computed balances and parent', function () {
+    $parent = \App\Models\Account::where('account_code', '1000')->firstOrFail();
+    $child = \App\Models\Account::where('account_code', '1131')->firstOrFail();
+
+    $this->accounting->postJournal('Material purchase test', [
+        ['account_code' => '1131', 'debit' => 1200.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '1121', 'credit' => 1200.0, 'operating_unit_id' => $this->unit->id],
+    ]);
+
+    $res = ($this->api)()->getJson("/api/v1/accounts/{$child->id}")
+        ->assertStatus(200)
+        ->assertJsonStructure([
+            'data' => [
+                'id',
+                'account_code',
+                'name',
+                'type',
+                'currency',
+                'parent_account_id',
+                'parent',
+                'total_debit',
+                'total_credit',
+                'balance',
+                'transaction_count',
+                'created_at',
+            ],
+        ]);
+
+    expect($res->json('data.account_code'))->toBe('1131')
+        ->and((float) $res->json('data.total_debit'))->toEqual(1200.0)
+        ->and((float) $res->json('data.total_credit'))->toEqual(0.0)
+        ->and((float) $res->json('data.balance'))->toEqual(1200.0)
+        ->and($res->json('data.transaction_count'))->toBe(1);
+});
+
+test('account ledger supports date range and text search filtering', function () {
+    $account = \App\Models\Account::where('account_code', '1131')->firstOrFail();
+
+    $entry1 = $this->accounting->postJournal('Alpha batch chemicals', [
+        ['account_code' => '1131', 'debit' => 300.0, 'operating_unit_id' => $this->unit->id, 'memo' => 'Polyol drums'],
+        ['account_code' => '1121', 'credit' => 300.0, 'operating_unit_id' => $this->unit->id],
+    ], entryDate: '2026-05-01');
+
+    $entry2 = $this->accounting->postJournal('Beta batch pigments', [
+        ['account_code' => '1131', 'debit' => 700.0, 'operating_unit_id' => $this->unit->id, 'memo' => 'Color additives'],
+        ['account_code' => '1121', 'credit' => 700.0, 'operating_unit_id' => $this->unit->id],
+    ], entryDate: '2026-06-15');
+
+    // Date range filter: May only
+    $resMay = ($this->api)()->getJson("/api/v1/accounts/{$account->id}/ledger?from=2026-05-01&to=2026-05-31")
+        ->assertStatus(200);
+    expect($resMay->json('total'))->toBe(1)
+        ->and($resMay->json('data.0.journal_entry.reference'))->toBe($entry1->reference);
+
+    // Date range filter: June only
+    $resJune = ($this->api)()->getJson("/api/v1/accounts/{$account->id}/ledger?from=2026-06-01&to=2026-06-30")
+        ->assertStatus(200);
+    expect($resJune->json('total'))->toBe(1)
+        ->and($resJune->json('data.0.journal_entry.reference'))->toBe($entry2->reference);
+
+    // Search by description: 'pigments'
+    $resSearchDesc = ($this->api)()->getJson("/api/v1/accounts/{$account->id}/ledger?search=pigments")
+        ->assertStatus(200);
+    expect($resSearchDesc->json('total'))->toBe(1)
+        ->and($resSearchDesc->json('data.0.journal_entry.reference'))->toBe($entry2->reference);
+
+    // Search by memo: 'Polyol'
+    $resSearchMemo = ($this->api)()->getJson("/api/v1/accounts/{$account->id}/ledger?search=Polyol")
+        ->assertStatus(200);
+    expect($resSearchMemo->json('total'))->toBe(1)
+        ->and($resSearchMemo->json('data.0.journal_entry.reference'))->toBe($entry1->reference);
+});
+
