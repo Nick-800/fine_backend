@@ -187,4 +187,33 @@ it('still allows the legacy header-only order creation for backward compat', fun
     expect((float) $body['data']['negotiated_price'])->toBe(250.0);
     expect($body['data']['items']['data'])->toBe([]);
     expect((float) $body['data']['items']['items_total'])->toBe(0.0);
+    expect((float) $body['data']['total_amount'])->toBe(125000.0);
+});
+
+it('calculates total cost correctly for multi-item orders and payment requests', function () {
+    $payload = [
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'items' => [
+            ['inventory_item_id' => $this->rawMaterial->id, 'quantity' => 1000, 'unit_price' => 1.5],
+            ['inventory_item_id' => $this->packaging->id, 'quantity' => 50, 'unit_price' => 2.5],
+        ],
+    ];
+
+    $response = $this->actingAs($this->owner)->postJson('/api/v1/import-orders', $payload);
+    $response->assertStatus(201);
+
+    $body = $response->json();
+    expect((float) $body['data']['total_amount'])->toBe(1625.0);
+
+    $order = ImportOrder::first();
+    expect($order->totalCost())->toBe(1625.0);
+
+    // Transition to pending payment should request exactly totalCost ($1,625), NOT $1,706,250
+    $stateService = app(\App\Services\ImportOrderStateService::class);
+    $order = $stateService->transitionToPendingPayment($order);
+
+    $paymentRequest = $order->paymentRequests()->first();
+    expect((float) $paymentRequest->amount_requested)->toBe(1625.0);
 });

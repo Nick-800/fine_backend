@@ -19,6 +19,7 @@ final class ImportOrderResource extends JsonResource
             'currency' => $this->currency,
             'negotiated_price' => (float) $this->negotiated_price,
             'quantity' => (float) $this->quantity,
+            'total_amount' => $this->totalCost(),
             'booked_fx_rate' => $this->booked_fx_rate !== null ? (float) $this->booked_fx_rate : null,
             'arrived_warehouse_id' => $this->arrived_warehouse_id,
             'arrived_warehouse' => $this->whenLoaded('arrivedWarehouse', function () {

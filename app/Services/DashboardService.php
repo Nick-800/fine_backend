@@ -48,11 +48,12 @@ final class DashboardService
         // FX exposure: foreign-currency commitments still in flight, per
         // currency (§10.4 — status before complete).
         $exposure = ImportOrder::withoutGlobalScopes()
+            ->with('items')
             ->where('status', '!=', 'complete')
             ->get()
             ->groupBy('currency')
             ->map(fn ($orders) => round((float) $orders->sum(
-                fn (ImportOrder $o) => (float) $o->negotiated_price * (float) $o->quantity
+                fn (ImportOrder $o) => $o->totalCost()
             ), 4))
             ->toArray();
 

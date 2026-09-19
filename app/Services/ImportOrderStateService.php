@@ -31,7 +31,7 @@ final class ImportOrderStateService
                 throw new InvalidStateTransitionException('Order must be in draft status to transition to pending payment.');
             }
 
-            $amountRequested = (float) $order->negotiated_price * (float) $order->quantity;
+            $amountRequested = $order->totalCost();
 
             PaymentRequest::create([
                 'operating_unit_id' => $order->operating_unit_id,
@@ -175,7 +175,7 @@ final class ImportOrderStateService
      */
     private function settledLyd(ImportOrder $order, string $functionalCurrency): float
     {
-        $supplierCostFc = round((float) $order->negotiated_price * (float) $order->quantity, 4);
+        $supplierCostFc = $order->totalCost();
 
         if ($order->currency === $functionalCurrency) {
             return $supplierCostFc;
@@ -345,7 +345,7 @@ final class ImportOrderStateService
     {
         $functionalCurrency = $order->operatingUnit?->company?->default_currency ?? 'LYD';
 
-        $supplierCostFc = round((float) $order->negotiated_price * (float) $order->quantity, 4);
+        $supplierCostFc = $order->totalCost();
         $realizedRate = $this->realizedFxRate($order, $functionalCurrency);
         $settled = $this->settledLyd($order, $functionalCurrency);
         $bookedRate = $this->bookedFxRate($order, $functionalCurrency);

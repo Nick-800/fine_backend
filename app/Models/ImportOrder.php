@@ -72,4 +72,28 @@ final class ImportOrder extends Model
     {
         return $this->belongsTo(Warehouse::class, 'arrived_warehouse_id');
     }
+
+    public function totalCost(): float
+    {
+        if ($this->relationLoaded('items')) {
+            if ($this->items->isNotEmpty()) {
+                return (float) round(
+                    $this->items->sum(fn ($item) => (float) $item->quantity * (float) $item->unit_price),
+                    4
+                );
+            }
+        } elseif ($this->items()->exists()) {
+            return (float) round(
+                (float) $this->items()->sum(\Illuminate\Support\Facades\DB::raw('quantity * unit_price')),
+                4
+            );
+        }
+
+        return (float) round((float) $this->negotiated_price * (float) $this->quantity, 4);
+    }
+
+    public function getTotalAmountAttribute(): float
+    {
+        return $this->totalCost();
+    }
 }
