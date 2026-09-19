@@ -87,6 +87,79 @@ test('attendance refuses future dates and impossible hours', function () {
     ])->assertStatus(422);
 });
 
+test('attendance list supports filtering by status, search, and date range', function () {
+    $a = ($this->makeEmployee)('Ahmed Ali');
+    $b = ($this->makeEmployee)('Bilal Omar');
+
+    ($this->asOwner)()->postJson('/api/v1/attendance/bulk', [
+        'work_date' => '2026-08-10',
+        'entries' => [
+            ['employee_id' => $a->id, 'status' => 'present', 'hours_worked' => 8, 'notes' => 'On time'],
+            ['employee_id' => $b->id, 'status' => 'absent', 'notes' => 'Unexcused'],
+        ],
+    ])->assertStatus(201);
+
+    ($this->asOwner)()->postJson('/api/v1/attendance/bulk', [
+        'work_date' => '2026-08-11',
+        'entries' => [
+            ['employee_id' => $a->id, 'status' => 'leave', 'notes' => 'Approved leave'],
+            ['employee_id' => $b->id, 'status' => 'present', 'hours_worked' => 8],
+        ],
+    ])->assertStatus(201);
+
+    // Filter by status
+    $absentList = ($this->asOwner)()->getJson('/api/v1/attendance?status=absent')
+        ->assertStatus(200)->json('data');
+    expect($absentList)->toHaveCount(1)
+        ->and($absentList[0]['employee_id'])->toBe($b->id);
+
+    // Search by employee name
+    $ahmedList = ($this->asOwner)()->getJson('/api/v1/attendance?search=Ahmed')
+        ->assertStatus(200)->json('data');
+    expect($ahmedList)->toHaveCount(2);
+
+    // Date range filter
+    $singleDay = ($this->asOwner)()->getJson('/api/v1/attendance?from=2026-08-10&to=2026-08-10')
+        ->assertStatus(200)->json('data');
+    expect($singleDay)->toHaveCount(2);
+});
+
+test('single attendance record can be stored, updated, and deleted', function () {
+    $a = ($this->makeEmployee)('Worker Single');
+
+    // Create / upsert single attendance
+    $createRes = ($this->asOwner)()->postJson('/api/v1/attendance', [
+        'employee_id' => $a->id,
+        'work_date' => '2026-08-10',
+        'status' => 'present',
+        'hours_worked' => 8,
+        'notes' => 'Morning shift',
+    ])->assertStatus(201)->json();
+
+    expect($createRes['status'])->toBe('present')
+        ->and((float) $createRes['hours_worked'])->toBe(8.0)
+        ->and($createRes['notes'])->toBe('Morning shift');
+
+    $id = $createRes['id'];
+
+    // Update single attendance
+    $updateRes = ($this->asOwner)()->putJson("/api/v1/attendance/{$id}", [
+        'status' => 'half_day',
+        'hours_worked' => 4,
+        'notes' => 'Left early',
+    ])->assertStatus(200)->json();
+
+    expect($updateRes['status'])->toBe('half_day')
+        ->and((float) $updateRes['hours_worked'])->toBe(4.0)
+        ->and($updateRes['notes'])->toBe('Left early');
+
+    // Delete attendance
+    ($this->asOwner)()->deleteJson("/api/v1/attendance/{$id}")
+        ->assertStatus(200);
+
+    expect(Attendance::find($id))->toBeNull();
+});
+
 test('role rates are versioned and resolve by date', function () {
     LaborRoleRate::create(['role' => 'tailor', 'hourly_rate' => 10, 'effective_from' => '2026-01-01']);
     LaborRoleRate::create(['role' => 'tailor', 'hourly_rate' => 12, 'effective_from' => '2026-07-01']);

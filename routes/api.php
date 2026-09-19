@@ -178,8 +178,10 @@ Route::prefix('v1')->group(function () {
                 Route::get('/employees/{id}/payslips', [EmployeeController::class, 'payslips']);
                 Route::apiResource('employees', EmployeeController::class);
                 Route::get('/attendance', [AttendanceController::class, 'index']);
+                Route::post('/attendance', [AttendanceController::class, 'store']);
                 Route::post('/attendance/bulk', [AttendanceController::class, 'bulk']);
                 Route::put('/attendance/{id}', [AttendanceController::class, 'update']);
+                Route::delete('/attendance/{id}', [AttendanceController::class, 'destroy']);
                 Route::get('/labor-role-rates', [LaborRoleRateController::class, 'index']);
                 Route::get('/labor-role-rates/current', [LaborRoleRateController::class, 'current']);
                 Route::post('/labor-role-rates', [LaborRoleRateController::class, 'store']);
