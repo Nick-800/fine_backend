@@ -135,7 +135,7 @@ class ProductionBatchController extends Controller
 
         $batch->update($validated);
 
-        return response()->json($batch->load(['operatingUnit', 'requestedByClient']));
+        return response()->json($batch->load(['operatingUnit', 'requestedByClient'])->loadCount(['blocks', 'scrapLots']));
     }
 
     /**

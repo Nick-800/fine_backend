@@ -131,6 +131,8 @@ class StockLotController extends Controller
             'width_m' => ['nullable', 'numeric', 'min:0'],
             'height_m' => ['nullable', 'numeric', 'min:0'],
             'weight_kg' => ['nullable', 'numeric', 'min:0'],
+            'pressure' => ['nullable', 'integer', 'min:1'],
+            'block_type' => ['nullable', 'string', 'in:block,separator,head,scrap'],
             'grade' => ['sometimes', 'string', 'in:standard,acceptable_variant,defective_usable,reject'],
             'status' => ['sometimes', 'string', 'in:available,reserved,consumed,quarantined'],
             'attribute_values' => ['nullable', 'array'],
