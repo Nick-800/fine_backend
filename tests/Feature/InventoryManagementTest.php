@@ -382,3 +382,60 @@ test('cutter operator can process cut remnant by converting remaining block to b
     $parentLot->refresh();
     expect($parentLot->status)->toBe('consumed');
 });
+
+test('can update an inventory item', function () {
+    $item = InventoryItem::create([
+        'name' => 'Original Item',
+        'sku' => 'ITEM-ORIG-01',
+        'item_type' => 'raw_material',
+        'unit_of_measure' => 'kg',
+        'primary_uom' => 'barrel',
+        'secondary_uom' => 'kg',
+    ]);
+
+    $response = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->putJson("/api/v1/inventory-items/{$item->id}", [
+            'name' => 'Updated Item Name',
+            'sku' => 'ITEM-ORIG-01',
+            'unit_of_measure' => 'liter',
+            'primary_uom' => 'drum',
+            'secondary_uom' => 'liter',
+        ]);
+
+    $response->assertStatus(200)
+        ->assertJsonPath('name', 'Updated Item Name')
+        ->assertJsonPath('unit_of_measure', 'liter')
+        ->assertJsonPath('primary_uom', 'drum')
+        ->assertJsonPath('secondary_uom', 'liter');
+
+    $item->refresh();
+    expect($item->name)->toBe('Updated Item Name')
+        ->and($item->unit_of_measure)->toBe('liter')
+        ->and($item->primary_uom)->toBe('drum');
+});
+
+test('updating inventory item with duplicate SKU is rejected', function () {
+    $item1 = InventoryItem::create([
+        'name' => 'First Item',
+        'sku' => 'ITEM-SKU-1',
+        'item_type' => 'raw_material',
+        'unit_of_measure' => 'kg',
+    ]);
+
+    $item2 = InventoryItem::create([
+        'name' => 'Second Item',
+        'sku' => 'ITEM-SKU-2',
+        'item_type' => 'raw_material',
+        'unit_of_measure' => 'kg',
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->putJson("/api/v1/inventory-items/{$item2->id}", [
+            'sku' => 'ITEM-SKU-1',
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['sku']);
+});
+
