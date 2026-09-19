@@ -81,11 +81,21 @@ final class DashboardController extends Controller
                 'category' => $a->overheadExpense?->category,
             ]);
 
-        $landed = LandedCostLine::query()
+        $isFinancialApprover = $user->hasRole('owner')
+            || $user->hasRole('admin')
+            || $user->hasRole('accounting-manager')
+            || $user->hasRole('treasury-officer');
+
+        $landedQuery = LandedCostLine::query()
             ->select('landed_cost_lines.*')
             ->join('import_orders', 'import_orders.id', '=', 'landed_cost_lines.import_order_id')
-            ->whereIn('landed_cost_lines.status', ['pending', 'approved'])
-            ->whereIn('import_orders.operating_unit_id', $managedUnitIds)
+            ->whereIn('landed_cost_lines.status', ['pending', 'approved']);
+
+        if (! $isFinancialApprover) {
+            $landedQuery->whereIn('import_orders.operating_unit_id', $managedUnitIds);
+        }
+
+        $landed = $landedQuery
             ->latest('landed_cost_lines.created_at')
             ->get()
             ->map(fn (LandedCostLine $l) => [

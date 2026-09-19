@@ -35,7 +35,7 @@ final class AllocationPaymentService
         ?string $note,
     ): Model {
         $unit = $this->resolveOperatingUnit($allocation);
-        $this->assertCanDecide($unit, $user);
+        $this->assertCanDecide($allocation, $unit, $user);
 
         $current = $allocation->status instanceof AllocationPaymentStatus
             ? $allocation->status
@@ -85,18 +85,37 @@ final class AllocationPaymentService
         throw new InvalidAllocationTransitionException('Unsupported allocation model.');
     }
 
-    private function assertCanDecide(OperatingUnit $unit, User $user): void
+    private function assertCanDecide(Model $allocation, OperatingUnit $unit, User $user): void
     {
+        $isFinancialApprover = $user->hasRole('owner')
+            || $user->hasRole('admin')
+            || $user->hasRole('accounting-manager')
+            || $user->hasRole('treasury-officer');
+
+        $isUnitManager = $unit->manager_user_id !== null && $unit->manager_user_id === $user->id;
+
+        if ($allocation instanceof LandedCostLine) {
+            if ($isFinancialApprover || $isUnitManager) {
+                return;
+            }
+
+            throw new AllocationNotResponsibleException(
+                'Only an authorized financial officer (accountant, treasury officer, owner) or the unit manager can approve or mark paid this landed cost.'
+            );
+        }
+
+        if ($isFinancialApprover || $isUnitManager) {
+            return;
+        }
+
         if ($unit->manager_user_id === null) {
             throw new AllocationNoResponsibleUserException(
                 "Operating unit {$unit->name} has no responsible user assigned."
             );
         }
 
-        if ($unit->manager_user_id !== $user->id) {
-            throw new AllocationNotResponsibleException(
-                'Only the operating unit manager can approve or mark paid this allocation.'
-            );
-        }
+        throw new AllocationNotResponsibleException(
+            'Only the operating unit manager can approve or mark paid this allocation.'
+        );
     }
 }

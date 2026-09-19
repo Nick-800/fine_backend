@@ -60,6 +60,24 @@ beforeEach(function () {
     $this->asOutsider = fn () => $this->actingAs($this->outsider)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
 
+    $this->accountant = User::factory()->create(['must_change_password' => false]);
+    $accountantRole = Role::create(['name' => 'Accounting Manager', 'slug' => 'accounting-manager']);
+    UserRole::create([
+        'user_id' => $this->accountant->id, 'role_id' => $accountantRole->id,
+        'operating_unit_id' => $this->unit->id,
+    ]);
+    $this->asAccountant = fn () => $this->actingAs($this->accountant)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
+
+    $this->treasury = User::factory()->create(['must_change_password' => false]);
+    $treasuryRole = Role::create(['name' => 'Treasury Officer', 'slug' => 'treasury-officer']);
+    UserRole::create([
+        'user_id' => $this->treasury->id, 'role_id' => $treasuryRole->id,
+        'operating_unit_id' => $this->unit->id,
+    ]);
+    $this->asTreasury = fn () => $this->actingAs($this->treasury)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
+
     $this->makeReceivedOrder = function (): ImportOrder {
         $supplier = Supplier::create([
             'operating_unit_id' => $this->unit->id,
@@ -276,4 +294,111 @@ test('a fresh landed cost line is no longer created as pre-confirmed by the cont
     $line = $order->landedCostLines()->first();
     expect($line->status)->toBe(AllocationPaymentStatus::Pending);
     expect($line->is_confirmed)->toBeFalse();
+});
+
+test('accounting-manager can approve and mark paid a landed cost line', function () {
+    $order = ($this->makeReceivedOrder)();
+
+    $line = $order->landedCostLines()->create([
+        'type' => 'customs', 'amount' => 400.0, 'currency' => 'LYD',
+    ]);
+
+    ($this->asAccountant)()
+        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve", ['note' => 'cleared'])
+        ->assertStatus(200)
+        ->assertJsonPath('data.status', 'approved');
+
+    ($this->asAccountant)()
+        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/mark-paid")
+        ->assertStatus(200)
+        ->assertJsonPath('data.status', 'paid');
+
+    $fresh = $line->fresh();
+    expect($fresh->is_confirmed)->toBeTrue();
+    expect($fresh->paid_by_user_id)->toBe($this->accountant->id);
+});
+
+test('treasury-officer can approve and mark paid a landed cost line', function () {
+    $order = ($this->makeReceivedOrder)();
+
+    $line = $order->landedCostLines()->create([
+        'type' => 'freight', 'amount' => 180.0, 'currency' => 'USD',
+    ]);
+
+    ($this->asTreasury)()
+        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
+        ->assertStatus(200)
+        ->assertJsonPath('data.status', 'approved');
+
+    ($this->asTreasury)()
+        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/mark-paid", ['note' => 'bank transfer'])
+        ->assertStatus(200)
+        ->assertJsonPath('data.status', 'paid');
+
+    $fresh = $line->fresh();
+    expect($fresh->is_confirmed)->toBeTrue();
+    expect($fresh->paid_by_user_id)->toBe($this->treasury->id);
+});
+
+test('outsider is still rejected when trying to approve a landed cost line', function () {
+    $order = ($this->makeReceivedOrder)();
+
+    $line = $order->landedCostLines()->create([
+        'type' => 'local_transport', 'amount' => 75.0, 'currency' => 'LYD',
+    ]);
+
+    ($this->asOutsider)()
+        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
+        ->assertStatus(403)
+        ->assertJsonPath('code', 'ALLOCATION_NOT_RESPONSIBLE');
+});
+
+test('accounting-manager sees pending landed cost lines in my-allocation-approvals', function () {
+    $order = ($this->makeReceivedOrder)();
+
+    $order->landedCostLines()->create([
+        'type' => 'customs', 'amount' => 200.0, 'currency' => 'LYD',
+    ]);
+    $order->landedCostLines()->create([
+        'type' => 'freight', 'amount' => 300.0, 'currency' => 'USD',
+    ]);
+
+    $response = ($this->asAccountant)()
+        ->getJson('/api/v1/dashboard/my-allocation-approvals')
+        ->assertStatus(200)
+        ->json();
+
+    expect($response['landed_cost_lines'])->toHaveCount(2);
+    expect($response['total'])->toBeGreaterThanOrEqual(2);
+});
+
+test('treasury-officer sees pending landed cost lines in my-allocation-approvals', function () {
+    $order = ($this->makeReceivedOrder)();
+
+    $order->landedCostLines()->create([
+        'type' => 'local_transport', 'amount' => 90.0, 'currency' => 'LYD',
+    ]);
+
+    $response = ($this->asTreasury)()
+        ->getJson('/api/v1/dashboard/my-allocation-approvals')
+        ->assertStatus(200)
+        ->json();
+
+    $lineIds = collect($response['landed_cost_lines'])->pluck('id')->all();
+    expect($lineIds)->not->toBeEmpty();
+});
+
+test('accounting-manager can approve landed cost even when unit has no manager assigned', function () {
+    $this->unit->update(['manager_user_id' => null]);
+
+    $order = ($this->makeReceivedOrder)();
+
+    $line = $order->landedCostLines()->create([
+        'type' => 'other', 'amount' => 50.0, 'currency' => 'LYD',
+    ]);
+
+    ($this->asAccountant)()
+        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
+        ->assertStatus(200)
+        ->assertJsonPath('data.status', 'approved');
 });
