@@ -178,3 +178,38 @@ test('stock intake gracefully resolves duplicate vendor lot numbers with suffixe
         ->and($lot3->lot_number)->toBe('VENDOR-BATCH-001-02')
         ->and($lot3->attribute_values['vendor_lot_number'])->toBe('VENDOR-BATCH-001');
 });
+
+test('stock intake records container_quantity and container_capacity', function () {
+    $res = ($this->intake)([
+        'quantity' => 2000.0,
+        'container_quantity' => 10.0,
+        'container_capacity' => 200.0,
+        'primary_uom' => 'barrel',
+        'secondary_uom' => 'liter',
+        'save_as_item_default' => true,
+    ])->assertStatus(201);
+
+    $lot = StockLot::find($res->json('id'));
+
+    expect((float) $lot->quantity)->toBe(2000.0)
+        ->and((float) $lot->container_quantity)->toBe(10.0)
+        ->and((float) $lot->attribute_values['container_capacity'])->toBe(200.0);
+
+    $this->fabric->refresh();
+    expect((float) $this->fabric->container_capacity)->toBe(200.0)
+        ->and($this->fabric->primary_uom)->toBe('barrel')
+        ->and($this->fabric->secondary_uom)->toBe('liter');
+});
+
+test('stock intake auto-derives container_quantity when container_quantity is omitted but capacity is given', function () {
+    $res = ($this->intake)([
+        'quantity' => 1500.0,
+        'container_capacity' => 250.0,
+    ])->assertStatus(201);
+
+    $lot = StockLot::find($res->json('id'));
+
+    expect((float) $lot->quantity)->toBe(1500.0)
+        ->and((float) $lot->container_quantity)->toBe(6.0); // 1500 / 250 = 6
+});
+

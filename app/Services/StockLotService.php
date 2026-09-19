@@ -61,15 +61,50 @@ class StockLotService
                 }
             }
 
+            $capacity = null;
+            if (isset($data['container_capacity']) && (float) $data['container_capacity'] > 0) {
+                $capacity = (float) $data['container_capacity'];
+            } elseif ($item->container_capacity && (float) $item->container_capacity > 0) {
+                $capacity = (float) $item->container_capacity;
+            }
+
+            $containerQuantity = null;
+            if (isset($data['container_quantity']) && (float) $data['container_quantity'] > 0) {
+                $containerQuantity = round((float) $data['container_quantity'], 4);
+            } elseif ($capacity !== null && $capacity > 0) {
+                $containerQuantity = round((float) $data['quantity'] / $capacity, 4);
+            } else {
+                $containerQuantity = 1.0;
+            }
+
+            if ($capacity !== null && ! isset($attributeValues['container_capacity'])) {
+                $attributeValues['container_capacity'] = round($capacity, 4);
+            }
+
             $lot = StockLot::create([
                 'inventory_item_id' => $item->id,
                 'warehouse_id' => $warehouse->id,
                 'lot_number' => $lotNumber,
                 'quantity' => round((float) $data['quantity'], 4),
+                'container_quantity' => $containerQuantity,
                 'unit_cost' => round((float) $data['unit_cost'], 4),
                 'attribute_values' => ! empty($attributeValues) ? $attributeValues : null,
                 'status' => 'available',
             ]);
+
+            $itemUpdates = [];
+            if ($capacity !== null && (! empty($data['save_as_item_default']) || $item->container_capacity === null)) {
+                $itemUpdates['container_capacity'] = round($capacity, 4);
+            }
+            if (! empty($data['primary_uom']) && empty($item->primary_uom)) {
+                $itemUpdates['primary_uom'] = $data['primary_uom'];
+            }
+            if (! empty($data['secondary_uom']) && empty($item->secondary_uom)) {
+                $itemUpdates['secondary_uom'] = $data['secondary_uom'];
+            }
+            if (! empty($itemUpdates)) {
+                $item->update($itemUpdates);
+            }
 
             $isImportReceipt = $data['source'] === 'import_receipt';
 
@@ -96,6 +131,10 @@ class StockLotService
                     default => throw new InvalidArgumentException("Unknown intake source \"{$data['source']}\"."),
                 };
 
+                $memo = ! empty($item->primary_uom) && ! empty($item->secondary_uom)
+                    ? "{$data['quantity']} {$item->secondary_uom} ({$containerQuantity} {$item->primary_uom}) × {$data['unit_cost']}"
+                    : "{$data['quantity']} × {$data['unit_cost']}";
+
                 $this->accountingService->postJournal(
                     "Stock intake: {$item->sku} lot {$lotNumber} ({$data['source']})",
                     [
@@ -103,7 +142,7 @@ class StockLotService
                             'account_code' => $this->inventoryAccountFor($item),
                             'debit' => $value,
                             'operating_unit_id' => $warehouse->operating_unit_id,
-                            'memo' => "{$data['quantity']} × {$data['unit_cost']}",
+                            'memo' => $memo,
                         ],
                         [
                             'account_code' => $creditAccount,
