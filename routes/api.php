@@ -146,7 +146,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/payable-settlements', [PayableSettlementController::class, 'store']);
 
             // Treasury & Payables
-            Route::middleware('require.role:owner,treasury-officer,accounting-manager,procurement-manager,unit_manager,manager')->group(function () {
+            Route::middleware('require.role:owner,treasury-officer,accounting-manager,procurement-manager,hr-manager,inventory-manager,foam-manager,cutter-manager,furniture-manager,store-manager,unit_manager,manager')->group(function () {
                 Route::get('/payment-requests', [PaymentRequestController::class, 'all']);
                 Route::get('/import-orders/{id}/payment-requests', [PaymentRequestController::class, 'index']);
                 Route::post('/import-orders/{id}/payment-requests/{requestId}/process', [PaymentRequestController::class, 'process']);
@@ -162,7 +162,7 @@ Route::prefix('v1')->group(function () {
             });
 
             // Procurement
-            Route::middleware('require.role:owner,procurement-manager,treasury-officer,accounting-manager,unit_manager,manager')->group(function () {
+            Route::middleware('require.role:owner,procurement-manager,treasury-officer,accounting-manager,hr-manager,inventory-manager,foam-manager,cutter-manager,furniture-manager,store-manager,unit_manager,manager')->group(function () {
                 Route::apiResource('suppliers', SupplierController::class);
                 Route::apiResource('import-orders', ImportOrderController::class)->only(['index', 'store', 'show', 'update']);
                 Route::post('/import-orders/{id}/transition', [ImportOrderController::class, 'transition']);

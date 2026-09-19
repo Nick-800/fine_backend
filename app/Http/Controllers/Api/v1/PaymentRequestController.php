@@ -26,7 +26,7 @@ final class PaymentRequestController extends Controller
      */
     public function all(Request $request): AnonymousResourceCollection
     {
-        $query = PaymentRequest::with(['importOrder', 'bankHold']);
+        $query = PaymentRequest::with(['importOrder.supplier', 'bankHold']);
 
         if ($request->has('operating_unit_id')) {
             $query->where('operating_unit_id', $request->query('operating_unit_id'));
@@ -58,7 +58,7 @@ final class PaymentRequestController extends Controller
      */
     public function index(Request $request, string $id): AnonymousResourceCollection
     {
-        $query = PaymentRequest::with(['importOrder', 'bankHold'])
+        $query = PaymentRequest::with(['importOrder.supplier', 'bankHold'])
             ->where('import_order_id', $id);
 
         if ($request->has('status')) {
@@ -74,7 +74,7 @@ final class PaymentRequestController extends Controller
      */
     public function execute(Request $request, string $id): JsonResponse
     {
-        $paymentRequest = PaymentRequest::with(['bankHold', 'importOrder'])->findOrFail($id);
+        $paymentRequest = PaymentRequest::with(['bankHold', 'importOrder.supplier'])->findOrFail($id);
 
         return $this->runExecution($request, $paymentRequest);
     }
@@ -84,7 +84,7 @@ final class PaymentRequestController extends Controller
      */
     public function process(Request $request, string $orderId, string $requestId): JsonResponse
     {
-        $paymentRequest = PaymentRequest::with(['bankHold', 'importOrder'])
+        $paymentRequest = PaymentRequest::with(['bankHold', 'importOrder.supplier'])
             ->where('import_order_id', $orderId)
             ->findOrFail($requestId);
 
@@ -94,16 +94,25 @@ final class PaymentRequestController extends Controller
     private function runExecution(Request $request, PaymentRequest $paymentRequest): JsonResponse
     {
         $user = $request->user();
-        $isFinance = $user && (
+        $isAuthorized = $user && (
             $user->hasRole('owner')
             || $user->hasRole('admin')
             || $user->hasRole('accounting-manager')
             || $user->hasRole('treasury-officer')
+            || $user->hasRole('procurement-manager')
+            || $user->hasRole('hr-manager')
+            || $user->hasRole('inventory-manager')
+            || $user->hasRole('foam-manager')
+            || $user->hasRole('cutter-manager')
+            || $user->hasRole('furniture-manager')
+            || $user->hasRole('store-manager')
+            || $user->hasRole('unit_manager')
+            || $user->hasRole('manager')
         );
 
-        if (! $isFinance) {
+        if (! $isAuthorized) {
             return response()->json([
-                'message' => 'Only finance officers (accountant, treasury officer, owner) can execute payments.',
+                'message' => 'Only managers and finance officers can execute payments.',
                 'code' => 'FINANCE_ONLY_EXECUTION',
             ], 403);
         }

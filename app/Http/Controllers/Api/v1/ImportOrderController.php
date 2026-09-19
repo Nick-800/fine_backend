@@ -263,16 +263,25 @@ final class ImportOrderController extends Controller
         $action = $request->input('action');
 
         $user = $request->user();
-        $isFinance = $user && (
+        $isAuthorized = $user && (
             $user->hasRole('owner')
             || $user->hasRole('admin')
             || $user->hasRole('accounting-manager')
             || $user->hasRole('treasury-officer')
+            || $user->hasRole('procurement-manager')
+            || $user->hasRole('hr-manager')
+            || $user->hasRole('inventory-manager')
+            || $user->hasRole('foam-manager')
+            || $user->hasRole('cutter-manager')
+            || $user->hasRole('furniture-manager')
+            || $user->hasRole('store-manager')
+            || $user->hasRole('unit_manager')
+            || $user->hasRole('manager')
         );
 
-        if (in_array($action, ['select_route', 'execute_payment'], true) && ! $isFinance) {
+        if (in_array($action, ['select_route', 'execute_payment'], true) && ! $isAuthorized) {
             return response()->json([
-                'message' => 'Only finance officers (accountant, treasury officer, owner) can execute financial transitions.',
+                'message' => 'Only managers and finance officers can execute financial transitions.',
                 'code' => 'FINANCE_ONLY_TRANSITION',
             ], 403);
         }

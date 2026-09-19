@@ -29,6 +29,21 @@ final class PaymentRequestResource extends JsonResource
             'extra_allocation_lyd' => $extraAllocationLyd,
             'booked_fx_rate' => $bookedRate > 0 ? $bookedRate : null,
             'bank_hold' => new BankHoldResource($this->whenLoaded('bankHold')),
+            'import_order' => $this->whenLoaded('importOrder', function () {
+                return [
+                    'id' => $this->importOrder->id,
+                    'order_number' => $this->importOrder->order_number,
+                    'status' => $this->importOrder->status?->value ?? $this->importOrder->status,
+                    'supplier_id' => $this->importOrder->supplier_id,
+                    'supplier' => $this->importOrder->supplier ? [
+                        'id' => $this->importOrder->supplier->id,
+                        'name' => $this->importOrder->supplier->name,
+                        'code' => $this->importOrder->supplier->code ?? null,
+                        'contact_person' => $this->importOrder->supplier->contact_person ?? null,
+                        'phone' => $this->importOrder->supplier->phone ?? null,
+                    ] : null,
+                ];
+            }),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];
