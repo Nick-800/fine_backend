@@ -224,3 +224,29 @@ it('blocks any non-owner from hitting /users routes even with manage-users permi
 
     expect($target->fresh()->trashed())->toBeFalse();
 });
+
+it('allows owner to fetch user details including roles, permissions, and deleted_at', function () {
+    $owner = makeUserWithRole('owner');
+    $target = User::factory()->create([
+        'name' => 'Sara Connor',
+        'email' => 'sara@example.com',
+    ]);
+    $role = Role::firstOrCreate(['slug' => 'sales-officer'], ['name' => 'Sales Officer']);
+    attachPermission($role, 'sales.create');
+    UserRole::create([
+        'user_id' => $target->id,
+        'role_id' => $role->id,
+        'operating_unit_id' => $this->unit->id,
+    ]);
+
+    $res = $this->actingAs($owner)
+        ->getJson("/api/v1/users/{$target->id}")
+        ->assertStatus(200)
+        ->assertJsonPath('data.name', 'Sara Connor')
+        ->assertJsonPath('data.email', 'sara@example.com')
+        ->assertJsonPath('data.deleted_at', null);
+
+    expect($res->json('data.permissions'))->toContain('sales.create')
+        ->and($res->json('data.roles'))->toHaveCount(1);
+});
+

@@ -67,7 +67,7 @@ final class UserController extends Controller
         if ($request->boolean('with_trashed')) {
             $query->withTrashed();
         }
-        $user = $query->with('roles')->findOrFail($id);
+        $user = $query->with('roles.permissions')->findOrFail($id);
         Gate::authorize('view', $user);
 
         return new UserResource($user);
