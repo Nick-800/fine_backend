@@ -183,3 +183,56 @@ test('can store and query stock lots by dynamic JSON attributes', function () {
         ->assertJsonFragment(['lot_number' => 'LOT-HIGH-35P'])
         ->assertJsonMissing(['lot_number' => 'LOT-LOW-20P']);
 });
+
+test('can define and update inventory item with container capacity and dual UOMs', function () {
+    // 1. Create item with barrel holding 200 liters
+    $response = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/inventory-items', [
+            'name' => 'Polyol Special Chemical',
+            'sku' => 'POLY-SPEC-200',
+            'item_type' => 'raw_material',
+            'unit_of_measure' => 'liter',
+            'primary_uom' => 'barrel',
+            'secondary_uom' => 'liter',
+            'container_capacity' => 200.0,
+        ]);
+
+    $response->assertStatus(201)
+        ->assertJsonPath('name', 'Polyol Special Chemical')
+        ->assertJsonPath('sku', 'POLY-SPEC-200')
+        ->assertJsonPath('primary_uom', 'barrel')
+        ->assertJsonPath('secondary_uom', 'liter');
+
+    $itemId = $response->json('id');
+    $item = InventoryItem::findOrFail($itemId);
+    expect((float) $item->container_capacity)->toBe(200.0)
+        ->and($item->primary_uom)->toBe('barrel')
+        ->and($item->secondary_uom)->toBe('liter')
+        ->and($item->tracksContainers())->toBeTrue();
+
+    // 2. Update item to change container capacity to 220 liters
+    $updateResponse = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->putJson("/api/v1/inventory-items/{$itemId}", [
+            'container_capacity' => 220.0,
+        ]);
+
+    $updateResponse->assertStatus(200);
+
+    $item->refresh();
+    expect((float) $item->container_capacity)->toBe(220.0);
+
+    // 3. Clear container capacity (nullable)
+    $clearResponse = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->putJson("/api/v1/inventory-items/{$itemId}", [
+            'container_capacity' => null,
+        ]);
+
+    $clearResponse->assertStatus(200);
+    $item->refresh();
+    expect($item->container_capacity)->toBeNull()
+        ->and($item->tracksContainers())->toBeFalse();
+});
+
