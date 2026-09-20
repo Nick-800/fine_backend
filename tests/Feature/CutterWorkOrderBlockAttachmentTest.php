@@ -288,3 +288,149 @@ it('orders list includes the attached block snapshot fields and stock_lot relati
     expect($row['stock_lot']['lot_number'])->toBe('BLK-TEST-001');
     expect((float) $row['block_unit_cost_snapshot'])->toBe(500.0);
 });
+
+it('can attach a block to an order that was created without a block', function () {
+    // 1. Create order without a block
+    $createRes = $this->actingAs($this->owner)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson('/api/v1/cutter-work-orders', [
+            'order_number' => 'CW-TEST-NO-BLOCK',
+        ]);
+    $createRes->assertStatus(201);
+    $orderId = $createRes->json('id');
+    expect($createRes->json('stock_lot_id'))->toBeNull();
+
+    // 2. Attach block later via attachBlock endpoint
+    $attachRes = $this->actingAs($this->owner)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson("/api/v1/cutter-work-orders/{$orderId}/attach-block", [
+            'stock_lot_id' => $this->block->id,
+        ]);
+
+    $attachRes->assertOk()
+        ->assertJsonPath('stock_lot_id', $this->block->id)
+        ->assertJsonPath('stock_lot.lot_number', 'BLK-TEST-001');
+
+    $this->block->refresh();
+    expect($this->block->status)->toBe('reserved');
+
+    $order = CutterWorkOrder::findOrFail($orderId);
+    expect((float) $order->wip_cost)->toBe(500.0)
+        ->and((float) $order->block_length_m_snapshot)->toBe(2.0);
+});
+
+it('can change the attached block to another block before production starts', function () {
+    $secondBlock = StockLot::create([
+        'inventory_item_id' => $this->foamItem->id,
+        'warehouse_id' => $this->warehouse->id,
+        'lot_number' => 'BLK-TEST-002',
+        'quantity' => 1,
+        'length_m' => 2.2,
+        'width_m' => 1.8,
+        'height_m' => 1.1,
+        'volume_m3' => 4.356,
+        'unit_cost' => 650.0,
+        'status' => 'available',
+    ]);
+
+    $order = CutterWorkOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'order_number' => 'CW-TEST-SWAP',
+        'status' => 'confirmed',
+    ]);
+
+    // Attach first block
+    $this->actingAs($this->owner)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson("/api/v1/cutter-work-orders/{$order->id}/attach-block", [
+            'stock_lot_id' => $this->block->id,
+        ])->assertOk();
+
+    expect($this->block->fresh()->status)->toBe('reserved');
+
+    // Replace with second block
+    $swapRes = $this->actingAs($this->owner)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson("/api/v1/cutter-work-orders/{$order->id}/attach-block", [
+            'stock_lot_id' => $secondBlock->id,
+        ]);
+
+    $swapRes->assertOk()
+        ->assertJsonPath('stock_lot_id', $secondBlock->id);
+
+    // First block restored to available; second block reserved
+    expect($this->block->fresh()->status)->toBe('available')
+        ->and($secondBlock->fresh()->status)->toBe('reserved');
+
+    $order->refresh();
+    expect((float) $order->wip_cost)->toBe(650.0)
+        ->and((float) $order->block_unit_cost_snapshot)->toBe(650.0);
+});
+
+it('can detach an attached block before production', function () {
+    $order = CutterWorkOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'order_number' => 'CW-TEST-DETACH',
+        'status' => 'requested',
+    ]);
+
+    $this->actingAs($this->owner)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson("/api/v1/cutter-work-orders/{$order->id}/attach-block", [
+            'stock_lot_id' => $this->block->id,
+        ])->assertOk();
+
+    expect($this->block->fresh()->status)->toBe('reserved');
+
+    // Detach
+    $detachRes = $this->actingAs($this->owner)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->deleteJson("/api/v1/cutter-work-orders/{$order->id}/detach-block");
+
+    $detachRes->assertOk();
+    expect($this->block->fresh()->status)->toBe('available');
+
+    $order->refresh();
+    expect($order->stock_lot_id)->toBeNull()
+        ->and((float) $order->wip_cost)->toBe(0.0);
+});
+
+it('prevents transitioning to in_production if no block has been chosen', function () {
+    $pieceItem = InventoryItem::create([
+        'name' => 'Piece',
+        'sku' => 'PC-001',
+        'item_type' => 'cut_template_piece',
+        'unit_of_measure' => 'each',
+    ]);
+
+    $createRes = $this->actingAs($this->owner)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson('/api/v1/cutter-work-orders', [
+            'order_number' => 'CW-TEST-NO-BLK-GUARD',
+        ]);
+    $orderId = $createRes->json('id');
+    $order = CutterWorkOrder::findOrFail($orderId);
+
+    $order->lines()->create([
+        'requested_spec' => 'Cushion',
+        'quantity' => 1,
+        'output_inventory_item_id' => $pieceItem->id,
+        'template_length_m' => 1.0,
+        'template_width_m' => 1.0,
+        'template_height_m' => 1.0,
+    ]);
+
+    $this->actingAs($this->owner)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson("/api/v1/cutter-work-orders/{$orderId}/transition", ['status' => 'confirmed'])
+        ->assertOk();
+
+    // Advancing to in_production without a block should fail
+    $transRes = $this->actingAs($this->owner)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson("/api/v1/cutter-work-orders/{$orderId}/transition", ['status' => 'in_production']);
+
+    $transRes->assertStatus(422)
+        ->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
+});
+

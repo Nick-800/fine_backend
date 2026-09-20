@@ -221,6 +221,8 @@ Route::prefix('v1')->group(function () {
                 Route::post('/cutter-work-orders/{id}/weigh-in', [CutterWorkOrderController::class, 'recordWeighIn']);
                 Route::get('/cutter-work-orders/{id}/byproduct-yields', [CutterWorkOrderController::class, 'byproductYields']);
                 Route::get('/cutter-work-orders/available-foam-blocks', [CutterWorkOrderController::class, 'availableFoamBlocks']);
+                Route::post('/cutter-work-orders/{id}/attach-block', [CutterWorkOrderController::class, 'attachBlock']);
+                Route::delete('/cutter-work-orders/{id}/detach-block', [CutterWorkOrderController::class, 'detachBlock']);
                 Route::put('/cutter-work-order-lines/{lineId}/assign-template', [CutterWorkOrderController::class, 'assignTemplate']);
                 Route::get('/cutter-work-order-lines/{lineId}/available-blocks', [CutterWorkOrderController::class, 'availableBlocks']);
                 Route::post('/cutter-work-order-lines/{lineId}/select-block', [CutterWorkOrderController::class, 'selectBlock']);

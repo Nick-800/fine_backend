@@ -96,6 +96,144 @@ class CutterWorkOrderService
     }
 
     /**
+     * Attach or change the precut foam block for an existing cutter order.
+     * Allowed as long as the order is in 'requested' or 'confirmed' status
+     * (acceptsBlockSelection), before physical cutting starts.
+     */
+    public function attachBlock(CutterWorkOrder $order, StockLot $block): CutterWorkOrder
+    {
+        return DB::transaction(function () use ($order, $block): CutterWorkOrder {
+            $lockedOrder = CutterWorkOrder::whereKey($order->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! $lockedOrder->status->acceptsBlockSelection()) {
+                throw new InvalidStateTransitionException(
+                    "Blocks cannot be selected or changed while order {$lockedOrder->order_number} is {$lockedOrder->status->value}."
+                );
+            }
+
+            // If a block was already attached and it's different, release it first
+            if ($lockedOrder->stock_lot_id) {
+                if ($lockedOrder->stock_lot_id === $block->id) {
+                    return $lockedOrder->fresh(['stockLot', 'lines', 'client']);
+                }
+                $this->detachBlockInternal($lockedOrder);
+            }
+
+            $lockedBlock = StockLot::whereKey($block->getKey())->lockForUpdate()->firstOrFail();
+
+            if ($lockedBlock->status !== 'available') {
+                throw new InvalidArgumentException(
+                    "Block {$lockedBlock->lot_number} is {$lockedBlock->status} and cannot be reserved."
+                );
+            }
+
+            $lockedBlock->status = 'reserved';
+            $lockedBlock->save();
+
+            $unitCost = (float) $lockedBlock->unit_cost;
+
+            $lockedOrder->stock_lot_id = $lockedBlock->id;
+            $lockedOrder->block_unit_cost_snapshot = $unitCost;
+            $lockedOrder->block_length_m_snapshot = $lockedBlock->length_m;
+            $lockedOrder->block_width_m_snapshot = $lockedBlock->width_m;
+            $lockedOrder->block_height_m_snapshot = $lockedBlock->height_m;
+            $lockedOrder->block_volume_m3_snapshot = $lockedBlock->volume_m3;
+            $lockedOrder->wip_cost = round($unitCost, 4);
+            $lockedOrder->save();
+
+            $this->accountingService->postJournal(
+                "Block {$lockedBlock->lot_number} reserved for cutter order {$lockedOrder->order_number}",
+                [
+                    [
+                        'account_code' => '1122',
+                        'debit' => $unitCost,
+                        'operating_unit_id' => $lockedOrder->operating_unit_id,
+                    ],
+                    [
+                        'account_code' => '1131',
+                        'credit' => $unitCost,
+                        'operating_unit_id' => $lockedOrder->operating_unit_id,
+                    ],
+                ],
+                'CutterWorkOrder',
+                $lockedOrder->id,
+                $lockedOrder->operatingUnit?->company_id,
+            );
+
+            return $lockedOrder->fresh(['stockLot', 'lines', 'client']);
+        });
+    }
+
+    /**
+     * Detach the attached foam block from a cutter order before cutting starts.
+     */
+    public function detachBlock(CutterWorkOrder $order): CutterWorkOrder
+    {
+        return DB::transaction(function () use ($order): CutterWorkOrder {
+            $lockedOrder = CutterWorkOrder::whereKey($order->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! $lockedOrder->status->acceptsBlockSelection()) {
+                throw new InvalidStateTransitionException(
+                    "Block cannot be detached while order {$lockedOrder->order_number} is {$lockedOrder->status->value}."
+                );
+            }
+
+            if ($lockedOrder->stock_lot_id === null) {
+                return $lockedOrder->fresh(['stockLot', 'lines', 'client']);
+            }
+
+            $this->detachBlockInternal($lockedOrder);
+
+            return $lockedOrder->fresh(['stockLot', 'lines', 'client']);
+        });
+    }
+
+    private function detachBlockInternal(CutterWorkOrder $order): void
+    {
+        $prevBlockId = $order->stock_lot_id;
+        if (! $prevBlockId) {
+            return;
+        }
+
+        $prevBlock = StockLot::whereKey($prevBlockId)->lockForUpdate()->first();
+        if ($prevBlock && $prevBlock->status === 'reserved') {
+            $prevBlock->status = 'available';
+            $prevBlock->save();
+        }
+
+        $prevCost = (float) $order->wip_cost;
+        if ($prevCost > 0) {
+            $this->accountingService->postJournal(
+                "Reversal: Block reservation removed from cutter order {$order->order_number}",
+                [
+                    [
+                        'account_code' => '1131',
+                        'debit' => $prevCost,
+                        'operating_unit_id' => $order->operating_unit_id,
+                    ],
+                    [
+                        'account_code' => '1122',
+                        'credit' => $prevCost,
+                        'operating_unit_id' => $order->operating_unit_id,
+                    ],
+                ],
+                'CutterWorkOrder',
+                $order->id,
+                $order->operatingUnit?->company_id,
+            );
+        }
+
+        $order->stock_lot_id = null;
+        $order->block_unit_cost_snapshot = null;
+        $order->block_length_m_snapshot = null;
+        $order->block_width_m_snapshot = null;
+        $order->block_height_m_snapshot = null;
+        $order->block_volume_m3_snapshot = null;
+        $order->wip_cost = 0;
+        $order->save();
+    }
+
+    /**
      * Blocks a cutter manager may choose from for a line.
      *
      * CUT-02: this filters and presents. It deliberately does not score, rank by
@@ -431,6 +569,12 @@ class CutterWorkOrderService
             if ($untemplated->isNotEmpty()) {
                 throw new InvalidStateTransitionException(
                     "Order {$order->order_number} has {$untemplated->count()} line(s) with no template shape assigned."
+                );
+            }
+
+            if ($order->stock_lot_id === null && $order->consumptions()->count() === 0) {
+                throw new InvalidStateTransitionException(
+                    "Order {$order->order_number} has no foam block assigned; select a block to cut before starting production."
                 );
             }
         }

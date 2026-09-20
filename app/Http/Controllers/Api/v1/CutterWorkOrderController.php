@@ -218,4 +218,36 @@ class CutterWorkOrderController extends Controller
             $this->cutterService->availableFoamBlocks($request->integer('per_page', 50))
         );
     }
+
+    public function attachBlock(Request $request, string $id): JsonResponse
+    {
+        $order = CutterWorkOrder::findOrFail($id);
+
+        $validated = $request->validate([
+            'stock_lot_id' => ['required', 'uuid', new ExistsInCurrentUnit(StockLot::class, 'stock lot')],
+        ]);
+
+        $block = StockLot::with('inventoryItem')->findOrFail($validated['stock_lot_id']);
+
+        try {
+            $updated = $this->cutterService->attachBlock($order, $block);
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_BLOCK_STATE',
+            ], 422);
+        }
+
+        return response()->json($updated);
+    }
+
+    public function detachBlock(string $id): JsonResponse
+    {
+        $order = CutterWorkOrder::findOrFail($id);
+
+        $updated = $this->cutterService->detachBlock($order);
+
+        return response()->json($updated);
+    }
 }
+
