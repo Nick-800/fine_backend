@@ -39,6 +39,7 @@ final class ItemCategory extends Model
         'operating_unit_id',
         'name',
         'code',
+        'item_type',
         'description',
     ];
 

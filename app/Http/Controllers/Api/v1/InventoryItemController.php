@@ -38,6 +38,13 @@ class InventoryItemController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        if (empty($request->input('item_type')) && $request->filled('category_id')) {
+            $category = ItemCategory::find($request->input('category_id'));
+            if ($category && ! empty($category->item_type)) {
+                $request->merge(['item_type' => $category->item_type]);
+            }
+        }
+
         $validated = $request->validate([
             'category_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(ItemCategory::class, 'category')],
             'name' => ['required', 'string', 'max:255'],

@@ -236,3 +236,43 @@ test('can define and update inventory item with container capacity and dual UOMs
         ->and($item->tracksContainers())->toBeFalse();
 });
 
+test('item category supports item_type and auto-defaults into inventory items', function () {
+    // 1. Create a category with a designated item_type
+    $catResponse = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/item-categories', [
+            'name' => 'Raw Chemicals',
+            'code' => 'CAT-CHEM-RAW',
+            'item_type' => 'raw_material',
+            'description' => 'Chemical raw materials',
+        ]);
+
+    $catResponse->assertStatus(201)
+        ->assertJsonPath('item_type', 'raw_material');
+
+    $categoryId = $catResponse->json('id');
+
+    // 2. Create inventory item referencing this category without specifying item_type
+    $itemResponse = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/inventory-items', [
+            'category_id' => $categoryId,
+            'name' => 'TDI Chemical',
+            'sku' => 'CHEM-TDI-001',
+            'unit_of_measure' => 'kg',
+        ]);
+
+    $itemResponse->assertStatus(201)
+        ->assertJsonPath('item_type', 'raw_material')
+        ->assertJsonPath('category.item_type', 'raw_material');
+
+    // 3. Update category item_type
+    $updateCatResponse = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->putJson("/api/v1/item-categories/{$categoryId}", [
+            'item_type' => 'barrel',
+        ]);
+
+    $updateCatResponse->assertStatus(200)
+        ->assertJsonPath('item_type', 'barrel');
+});

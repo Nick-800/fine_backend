@@ -32,6 +32,7 @@ final class ItemCategoryController extends Controller
             // Unit comes from the role-validated request context, not the body.
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:50', 'unique:item_categories,code'],
+            'item_type' => ['nullable', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
             'description' => ['nullable', 'string'],
         ]);
 
@@ -54,6 +55,7 @@ final class ItemCategoryController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'code' => ['sometimes', 'string', 'max:50', "unique:item_categories,code,{$id}"],
+            'item_type' => ['nullable', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
             'description' => ['nullable', 'string'],
         ]);
 
