@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\ImportOrderStatus;
 use App\Enums\PaymentRoute;
+use App\Http\Resources\v1\PaymentRequestResource;
 use App\Models\Company;
 use App\Models\FxRate;
 use App\Models\ImportOrder;
@@ -444,4 +445,100 @@ test('the API allows Market route execution with only LYD input', function () {
 
     $pr = PaymentRequest::find($requestId);
     expect((float) $pr->fx_rate_used)->toBe(5.000005);
+});
+
+// -----------------------------------------------------------------------------
+// Phase 3 — PaymentRequestResource: read-back fields
+// -----------------------------------------------------------------------------
+
+test('resource exposes effective_settled_lyd when exact_amount_used is set', function () {
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1000,
+        'quantity' => 1,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
+    $pr = $order->paymentRequests()->sole();
+    $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5150.0);
+
+    $payload = (new PaymentRequestResource($pr->fresh()->load('bankHold')))
+        ->toArray(request());
+
+    expect($payload['effective_settled_lyd'])->toBe(5150.0)
+        ->and($payload['effective_rate'])->toBe(5.15)
+        ->and($payload['variance_vs_booked_lyd'])->toBe(150.0)
+        ->and($payload['variance_within_tolerance'])->toBeFalse()
+        ->and($payload['variance_exceeds_hard_cap'])->toBeFalse()
+        ->and($payload['fx_tolerance_lyd'])->toBe(0.01);
+});
+
+test('resource derives effective_rate when only exact_amount_used is stored', function () {
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1000,
+        'quantity' => 1,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
+    $pr = $order->paymentRequests()->sole();
+    $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5150.0);
+
+    // Inspect the persisted PR directly: fx_rate_used is the effective rate
+    // (Phase 1 P2 decision — single source of truth in the column).
+    $fresh = $pr->fresh();
+    expect((float) $fresh->fx_rate_used)->toBe(5.15);
+});
+
+test('resource variance_vs_booked_lyd matches the actual settled-to-booked LYD delta', function () {
+    // booked 5.0, no exact_used, rate 5.10 → settled = 5100 → variance 100.
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1000,
+        'quantity' => 1,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $pr = $order->paymentRequests()->sole();
+    $this->stateService->executePayment($pr, fxRateUsed: 5.10);
+
+    $payload = (new PaymentRequestResource($pr->fresh()->load('bankHold')))
+        ->toArray(request());
+
+    expect($payload['effective_settled_lyd'])->toBe(5100.0)
+        ->and($payload['variance_vs_booked_lyd'])->toBe(100.0);
+});
+
+test('resource flags variance_exceeds_hard_cap for spreads above 5% of settled', function () {
+    // booked 5.0, settled 5200 → variance 200 / 5200 = 3.85% (within cap).
+    // To exceed 5%: settled 6000 → variance 1000 / 6000 = 16.7% (exceeds).
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1000,
+        'quantity' => 1,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $pr = $order->paymentRequests()->sole();
+    $this->stateService->executePayment($pr, fxRateUsed: 6.00);
+
+    $payload = (new PaymentRequestResource($pr->fresh()->load('bankHold')))
+        ->toArray(request());
+
+    expect($payload['variance_vs_booked_lyd'])->toBe(1000.0)
+        ->and($payload['variance_exceeds_hard_cap'])->toBeTrue();
 });
