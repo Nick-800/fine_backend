@@ -72,6 +72,17 @@ final class ImportOrderStateService
                     'status' => PaymentRequestStatus::Pending,
                 ]);
             } else {
+                // FX-09: once a hold exists on this request, the route is
+                // locked. Switching from Bank to Market would leave the
+                // BankHold row stranded while the request is relabeled, and
+                // executePayment would still apply the bank-branch math
+                // because the guard reads `route === Bank && bankHold`.
+                if ($paymentRequest->bankHold && $paymentRequest->route !== $route) {
+                    throw new InvalidArgumentException(
+                        'Cannot change payment route after a bank hold is established.',
+                    );
+                }
+
                 $paymentRequest->update([
                     'route' => $route,
                     'invoice_ref' => $invoiceRef,
@@ -84,12 +95,17 @@ final class ImportOrderStateService
                     throw new InvalidArgumentException('Held amount in LYD is required for bank payment route.');
                 }
 
-                BankHold::create([
-                    'payment_request_id' => $paymentRequest->id,
-                    'held_amount_lyd' => $heldAmountLyd,
-                    'exact_amount_used' => 0,
-                    'released_amount' => 0,
-                ]);
+                // FX-01: updateOrCreate keyed on the request id so a repeated
+                // select_route call overwrites the held amount rather than
+                // producing a second orphan row.
+                BankHold::updateOrCreate(
+                    ['payment_request_id' => $paymentRequest->id],
+                    [
+                        'held_amount_lyd' => $heldAmountLyd,
+                        'exact_amount_used' => 0,
+                        'released_amount' => 0,
+                    ],
+                );
 
                 $order->update(['status' => ImportOrderStatus::AwaitingBankApproval]);
             } else {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\ImportOrderStatus;
 use App\Enums\PaymentRoute;
+use App\Models\BankHold;
 use App\Models\Company;
 use App\Models\FxRate;
 use App\Models\GoodsReceipt;
@@ -20,6 +21,7 @@ use App\Models\Warehouse;
 use App\Services\ImportOrderStateService;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -547,4 +549,62 @@ test('payment-requests index filters by route=market', function () {
 
     expect(collect($market['data'])->pluck('route')->unique()->values()->all())->toBe(['market'])
         ->and(collect($bank['data'])->pluck('route')->unique()->values()->all())->toBe(['bank']);
+});
+
+test('a select_route call repeated on the same order does not create a duplicate BankHold', function () {
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 100,
+        'quantity' => 10,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $pr = $order->fresh()->paymentRequests()->sole();
+
+    // FX-01: even when the order is forced back to pending_payment (bypassing
+    // the state guard for this defensive test), a repeated Bank call updates
+    // the existing hold via updateOrCreate rather than inserting a duplicate.
+    DB::table('import_orders')->where('id', $order->id)->update(['status' => 'pending_payment']);
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00, 'BNK-1');
+    expect(BankHold::where('payment_request_id', $pr->id)->count())->toBe(1);
+
+    DB::table('import_orders')->where('id', $order->id)->update(['status' => 'pending_payment']);
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5800.00, 'BNK-2');
+
+    $holds = BankHold::where('payment_request_id', $pr->id)->get();
+    expect($holds)->toHaveCount(1)
+        ->and((float) $holds->sole()->held_amount_lyd)->toBe(5800.0);
+});
+
+test('a select_route call that switches from Bank to Market after a hold is refused at the service level', function () {
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 100,
+        'quantity' => 10,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00, 'BNK-1');
+
+    // FX-09 (defense in depth): the service-level route-mutation guard fires
+    // before the bank branch could orphan the hold. Force the order back to
+    // pending_payment to exercise this path.
+    DB::table('import_orders')->where('id', $order->id)->update(['status' => 'pending_payment']);
+
+    expect(fn () => $this->stateService->selectPaymentRoute(
+        $order->fresh(),
+        PaymentRoute::Market,
+        1000,
+    ))->toThrow(InvalidArgumentException::class, 'Cannot change payment route after a bank hold is established.');
+
+    // The request still says bank; the hold is intact.
+    $fresh = $order->fresh();
+    expect($fresh->paymentRequests()->sole()->route)->toBe(PaymentRoute::Bank)
+        ->and($fresh->paymentRequests()->sole()->bankHold)->not->toBeNull();
 });
