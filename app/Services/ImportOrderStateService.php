@@ -20,9 +20,84 @@ use InvalidArgumentException;
 
 final class ImportOrderStateService
 {
+    /**
+     * Tolerance band for the LYD-grounded variance between actual settled and
+     * booked expectation. Deviations within this band do not require an
+     * `extra_allocation_note`. Configurable via `config('fine.fx.tolerance_lyd')`.
+     */
+    public const FX_TOLERANCE_LYD = 0.01;
+
+    /**
+     * Hard cap, expressed as a percent of settled, above which the variance
+     * surface turns red and a confirm chip is required before submit. Beyond
+     * the tolerance but within the hard cap, the variance is amber and the
+     * note alone suffices.
+     */
+    public const FX_HARD_CAP_PERCENT = 5.0;
+
     public function __construct(
         private readonly AccountingService $accountingService,
     ) {}
+
+    /**
+     * Single source of truth for the FX values that actually move through
+     * the books. Given the two optional inputs (`fxRateUsed` and
+     * `exactAmountUsedLyd`), returns both derived values consistently:
+     *
+     *   - If LYD was supplied, the rate is derived (LYD is the truth — what
+     *     the bank statement shows).
+     *   - If only the rate was supplied, settled is derived.
+     *   - If both are supplied, settled wins and the rate is reconciled to
+     *     it (the bank's number, not the operator's typing).
+     *
+     * This is what `payment_requests.fx_rate_used` is persisted as from
+     * Phase 1 onward — the effective realized rate, not the user-entered one.
+     *
+     * @return array{effective_settled: float, effective_rate: float}
+     */
+    public function deriveEffectiveValues(
+        PaymentRequest $paymentRequest,
+        ?float $fxRateUsed,
+        ?float $exactAmountUsedLyd,
+    ): array {
+        $amount = (float) $paymentRequest->amount_requested;
+
+        if ($exactAmountUsedLyd !== null && $exactAmountUsedLyd > 0) {
+            $settled = round($exactAmountUsedLyd, 4);
+            $rate = $amount > 0 ? round($settled / $amount, 6) : (float) ($fxRateUsed ?? 0);
+
+            return ['effective_settled' => $settled, 'effective_rate' => $rate];
+        }
+
+        if ($fxRateUsed !== null && $fxRateUsed > 0) {
+            $rate = (float) $fxRateUsed;
+            $settled = round($amount * $rate, 4);
+
+            return ['effective_settled' => $settled, 'effective_rate' => $rate];
+        }
+
+        throw new InvalidArgumentException('Either fx_rate_used or exact_amount_used_lyd is required.');
+    }
+
+    /**
+     * Variance between actual settled LYD and what the booked FX snapshot
+     * predicted. Returns null when there is no booked snapshot to compare
+     * against (the completion journal then treats booked = settled).
+     */
+    public function varianceVsBooked(
+        ImportOrder $order,
+        float $effectiveSettled,
+        string $functionalCurrency,
+    ): ?float {
+        $bookedRate = $this->bookedFxRate($order, $functionalCurrency);
+        if ($bookedRate === null) {
+            return null;
+        }
+
+        $expected = round((float) $order->totalCost() * $bookedRate, 4);
+
+        return round($effectiveSettled - $expected, 4);
+    }
 
     public function transitionToPendingPayment(ImportOrder $order): ImportOrder
     {
@@ -118,7 +193,7 @@ final class ImportOrderStateService
 
     public function executePayment(
         PaymentRequest $paymentRequest,
-        float $fxRateUsed,
+        ?float $fxRateUsed = null,
         ?float $exactAmountUsedLyd = null,
         ?string $bankReference = null,
         ?string $extraAllocationNote = null
@@ -128,19 +203,27 @@ final class ImportOrderStateService
                 throw new InvalidStateTransitionException('Payment request is not pending.');
             }
 
+            // FX-02 / FX-24 / FX-15: derive the single source of truth. The
+            // persisted `fx_rate_used` is the *effective* realized rate —
+            // derived from the LYD amount when LYD is supplied, from the
+            // operator-entered rate otherwise. Both inputs are now accepted
+            // on Bank and Market routes; the LYD amount is what actually
+            // moves the books.
+            ['effective_settled' => $settled, 'effective_rate' => $effectiveRate] =
+                $this->deriveEffectiveValues($paymentRequest, $fxRateUsed, $exactAmountUsedLyd);
+
             $paymentRequest->update([
-                'fx_rate_used' => $fxRateUsed,
+                'fx_rate_used' => $effectiveRate,
                 'extra_allocation_note' => $extraAllocationNote,
                 'status' => PaymentRequestStatus::Paid,
             ]);
 
             if ($paymentRequest->route === PaymentRoute::Bank && $paymentRequest->bankHold) {
-                $exactUsed = $exactAmountUsedLyd ?? ((float) $paymentRequest->amount_requested * $fxRateUsed);
                 $held = (float) $paymentRequest->bankHold->held_amount_lyd;
-                $released = max(0, $held - $exactUsed);
+                $released = max(0, $held - $settled);
 
                 $paymentRequest->bankHold->update([
-                    'exact_amount_used' => $exactUsed,
+                    'exact_amount_used' => $settled,
                     'released_amount' => $released,
                     'bank_reference' => $bankReference,
                 ]);
@@ -152,7 +235,6 @@ final class ImportOrderStateService
             // supplier until the goods complete (the completion journal
             // clears 1500 with the same settled amount, so it nets exactly).
             $functionalCurrency = $order->operatingUnit?->company?->default_currency ?? 'LYD';
-            $settled = $this->settledLyd($order, $functionalCurrency);
 
             if ($settled > 0) {
                 $this->accountingService->postJournal(
