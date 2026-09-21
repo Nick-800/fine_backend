@@ -251,7 +251,7 @@ final class ImportOrderController extends Controller
             'amount_requested' => 'required_if:action,select_route|numeric|min:0.0001',
             'held_amount_lyd' => 'required_if:route,bank|nullable|numeric|min:0.0001',
             'invoice_ref' => 'nullable|string',
-            'fx_rate_used' => 'required_if:action,execute_payment|nullable|numeric|min:0.000001',
+            'fx_rate_used' => 'required_if:action,execute_payment,required_without:exact_amount_used_lyd|nullable|numeric|min:0.000001',
             'exact_amount_used_lyd' => 'nullable|numeric|min:0',
             'bank_reference' => 'nullable|string',
             'extra_allocation_note' => 'nullable|string|max:500',
@@ -346,21 +346,33 @@ final class ImportOrderController extends Controller
             throw new InvalidArgumentException('No pending payment request found for this import order.');
         }
 
-        $bookedRate = (float) ($order->booked_fx_rate ?? 0);
-        $fxRateUsed = (float) $request->input('fx_rate_used');
-        $amountRequested = (float) $paymentRequest->amount_requested;
-        $extraAllocationLyd = ($fxRateUsed - $bookedRate) * $amountRequested;
+        // FX-04 / FX-24: variance is measured in LYD against the booked
+        // expectation using the effective settled (LYD wins if supplied),
+        // not the rate difference. The note is required when actual settled
+        // deviates from booked by more than the tolerance band.
+        $fxRateUsed = $request->filled('fx_rate_used') ? (float) $request->input('fx_rate_used') : null;
+        $exactUsed = $request->filled('exact_amount_used_lyd') ? (float) $request->input('exact_amount_used_lyd') : null;
 
-        if (abs($extraAllocationLyd) > 0 && blank($request->input('extra_allocation_note'))) {
+        ['effective_settled' => $effectiveSettled] =
+            $this->stateService->deriveEffectiveValues($paymentRequest, $fxRateUsed, $exactUsed);
+
+        $functionalCurrency = $order->operatingUnit?->company?->default_currency ?? 'LYD';
+        $varianceLyd = $this->stateService->varianceVsBooked($order, $effectiveSettled, $functionalCurrency);
+        $tolerance = ImportOrderStateService::FX_TOLERANCE_LYD;
+
+        if ($varianceLyd !== null && abs($varianceLyd) > $tolerance && blank($request->input('extra_allocation_note'))) {
             throw ValidationException::withMessages([
-                'extra_allocation_note' => 'سبب التكلفة الإضافية مطلوب عند وجود فرق في سعر الصرف.',
+                'extra_allocation_note' => sprintf(
+                    'سبب التكلفة الإضافية مطلوب عند فرق %.2f دينار عن السعر المرجعي.',
+                    $varianceLyd,
+                ),
             ]);
         }
 
         $this->stateService->executePayment(
             $paymentRequest,
             $fxRateUsed,
-            $request->filled('exact_amount_used_lyd') ? (float) $request->input('exact_amount_used_lyd') : null,
+            $exactUsed,
             $request->input('bank_reference'),
             $request->input('extra_allocation_note')
         );

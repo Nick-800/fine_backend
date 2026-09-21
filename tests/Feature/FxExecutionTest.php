@@ -10,6 +10,7 @@ use App\Models\ImportOrder;
 use App\Models\JournalEntry;
 use App\Models\LandedCostLine;
 use App\Models\OperatingUnit;
+use App\Models\PaymentRequest;
 use App\Models\Role;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
@@ -51,10 +52,16 @@ beforeEach(function () {
     ]);
 
     $this->user = User::factory()->create(['must_change_password' => false]);
-    $role = Role::create(['name' => 'PM', 'slug' => 'procurement_manager']);
+    $pmRole = Role::create(['name' => 'PM', 'slug' => 'procurement_manager']);
+    $accountantRole = Role::create(['name' => 'AM', 'slug' => 'accounting-manager']);
     UserRole::create([
         'user_id' => $this->user->id,
-        'role_id' => $role->id,
+        'role_id' => $pmRole->id,
+        'operating_unit_id' => $this->unit->id,
+    ]);
+    UserRole::create([
+        'user_id' => $this->user->id,
+        'role_id' => $accountantRole->id,
         'operating_unit_id' => $this->unit->id,
     ]);
 
@@ -324,4 +331,117 @@ test('FX-TEST-08: executePayment without exact_amount_used_lyd defaults to amoun
     $hold = $pr->fresh()->bankHold;
     expect((float) $hold->exact_amount_used)->toBe(5200.0)
         ->and((float) $hold->released_amount)->toBe(300.0);
+});
+
+// -----------------------------------------------------------------------------
+// Phase 2 — validation: LYD-grounded variance + tolerance gate
+// -----------------------------------------------------------------------------
+
+test('the API requires a note when settled LYD deviates from booked by more than tolerance', function () {
+    // booked 5.0, settled 5.20 → 200 LYD variance; tolerance 0.01.
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1000,
+        'quantity' => 1,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $requestId = $order->paymentRequests()->sole()->id;
+
+    $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson("/api/v1/payment-requests/{$requestId}/execute", [
+            'fx_rate_used' => 5.2,
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['extra_allocation_note']);
+});
+
+test('the API does not require a note when variance is within tolerance', function () {
+    // booked 5.0, settled 5.000001 → 0.001 LYD variance, within 0.01 tolerance.
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1000,
+        'quantity' => 1,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $requestId = $order->paymentRequests()->sole()->id;
+
+    $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson("/api/v1/payment-requests/{$requestId}/execute", [
+            'fx_rate_used' => 5.000001,
+        ])
+        ->assertStatus(200);
+});
+
+test('the API requires a note when exact_amount_used_lyd deviates even at the booked rate (FX-24)', function () {
+    // booked 5.0, fx_rate_used=5.0 (no rate move), exact_amount_used_lyd=5100.
+    // The rate check passes (diff=0), but the LYD truth is 5100 → 100 LYD
+    // variance, note required.
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1000,
+        'quantity' => 1,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
+    $requestId = $order->paymentRequests()->sole()->id;
+
+    $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson("/api/v1/payment-requests/{$requestId}/execute", [
+            'fx_rate_used' => 5.0,
+            'exact_amount_used_lyd' => 5100,
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['extra_allocation_note']);
+
+    // With a note, the same payload succeeds.
+    $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson("/api/v1/payment-requests/{$requestId}/execute", [
+            'fx_rate_used' => 5.0,
+            'exact_amount_used_lyd' => 5100,
+            'extra_allocation_note' => 'فرق سعر بسبب العمولة البنكية.',
+        ])
+        ->assertStatus(200);
+});
+
+test('the API allows Market route execution with only LYD input', function () {
+    $order = ImportOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 1000,
+        'quantity' => 1,
+        'booked_fx_rate' => 5.0,
+        'status' => ImportOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
+    $requestId = $order->paymentRequests()->sole()->id;
+
+    // FX-02: Market route accepts LYD-only input. Variance is within the
+    // 0.01 LYD tolerance band so no note is required.
+    $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson("/api/v1/payment-requests/{$requestId}/execute", [
+            'exact_amount_used_lyd' => 5000.005,
+        ])
+        ->assertStatus(200);
+
+    $pr = PaymentRequest::find($requestId);
+    expect((float) $pr->fx_rate_used)->toBe(5.000005);
 });
