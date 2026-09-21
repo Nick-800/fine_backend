@@ -35,8 +35,8 @@ final class PaymentRequestResource extends JsonResource
             ? round($effectiveSettled - $bookedRate * $amount, 4)
             : null;
 
-        $tolerance = ImportOrderStateService::FX_TOLERANCE_LYD;
-        $hardCapPercent = ImportOrderStateService::FX_HARD_CAP_PERCENT;
+        $tolerance = ImportOrderStateService::fxToleranceLyd();
+        $hardCapPercent = ImportOrderStateService::fxHardCapPercent();
 
         $varianceWithinTolerance = $varianceLyd === null
             || abs($varianceLyd) <= $tolerance;

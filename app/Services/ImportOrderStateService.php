@@ -21,19 +21,31 @@ use InvalidArgumentException;
 final class ImportOrderStateService
 {
     /**
+     * Defensive defaults — config('fine.fx.tolerance_lyd') wins when present.
      * Tolerance band for the LYD-grounded variance between actual settled and
      * booked expectation. Deviations within this band do not require an
-     * `extra_allocation_note`. Configurable via `config('fine.fx.tolerance_lyd')`.
+     * `extra_allocation_note`.
      */
     public const FX_TOLERANCE_LYD = 0.01;
 
     /**
+     * Defensive default — config('fine.fx.hard_cap_percent') wins when present.
      * Hard cap, expressed as a percent of settled, above which the variance
      * surface turns red and a confirm chip is required before submit. Beyond
      * the tolerance but within the hard cap, the variance is amber and the
      * note alone suffices.
      */
     public const FX_HARD_CAP_PERCENT = 5.0;
+
+    public static function fxToleranceLyd(): float
+    {
+        return (float) config('fine.fx.tolerance_lyd', self::FX_TOLERANCE_LYD);
+    }
+
+    public static function fxHardCapPercent(): float
+    {
+        return (float) config('fine.fx.hard_cap_percent', self::FX_HARD_CAP_PERCENT);
+    }
 
     public function __construct(
         private readonly AccountingService $accountingService,

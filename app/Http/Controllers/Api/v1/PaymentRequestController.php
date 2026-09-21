@@ -140,7 +140,7 @@ final class PaymentRequestController extends Controller
             $effectiveSettled,
             $functionalCurrency,
         );
-        $tolerance = ImportOrderStateService::FX_TOLERANCE_LYD;
+        $tolerance = ImportOrderStateService::fxToleranceLyd();
 
         if ($varianceLyd !== null && abs($varianceLyd) > $tolerance && blank($request->input('extra_allocation_note'))) {
             throw ValidationException::withMessages([

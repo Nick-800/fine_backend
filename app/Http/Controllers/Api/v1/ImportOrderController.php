@@ -358,7 +358,7 @@ final class ImportOrderController extends Controller
 
         $functionalCurrency = $order->operatingUnit?->company?->default_currency ?? 'LYD';
         $varianceLyd = $this->stateService->varianceVsBooked($order, $effectiveSettled, $functionalCurrency);
-        $tolerance = ImportOrderStateService::FX_TOLERANCE_LYD;
+        $tolerance = ImportOrderStateService::fxToleranceLyd();
 
         if ($varianceLyd !== null && abs($varianceLyd) > $tolerance && blank($request->input('extra_allocation_note'))) {
             throw ValidationException::withMessages([
