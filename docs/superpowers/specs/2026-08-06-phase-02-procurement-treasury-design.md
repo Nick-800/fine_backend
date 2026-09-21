@@ -108,13 +108,16 @@ Controls all state transitions inside `DB::transaction()` blocks:
    - Creates a pending `PaymentRequest`.
 
 2. **`selectPaymentRoute(ImportOrder $order, string $route, float $amountRequested, ?float $heldAmountLyd)`**:
-   - `route = 'bank'`: Transitions to `awaiting_bank_approval`, creates `BankHold` with `held_amount_lyd` buffer.
+   - `route = 'bank'`: Transitions to `awaiting_bank_approval`, creates or updates `BankHold` (keyed on `payment_request_id`, so repeated calls overwrite rather than duplicate) with `held_amount_lyd` buffer. Once a hold exists, the route is locked — switching routes throws `InvalidArgumentException` (422 `INVALID_IMPORT_ORDER_OPERATION` at the API layer).
    - `route = 'market'`: Transitions to `awaiting_transfer`.
 
-3. **`executePayment(PaymentRequest $paymentRequest, float $fxRateUsed, ?float $exactAmountUsedLyd)`**:
-   - Sets `fx_rate_used`.
-   - If bank route: calculates `released_amount = held_amount_lyd - exact_amount_used` and releases buffer.
-   - Posts FX gain/loss calculation variance if realized rate differs from estimate.
+3. **`executePayment(PaymentRequest $paymentRequest, ?float $fxRateUsed = null, ?float $exactAmountUsedLyd = null, ?string $bankReference = null, ?string $extraAllocationNote = null)`**:
+   - **Derives single source of truth** via `deriveEffectiveValues()`: when `exact_amount_used_lyd` is supplied (Bank or صرّاف), it wins and the rate is reconciled to `lyd / amount`. When only the rate is supplied, settled is derived as `amount × rate`. Either input alone is sufficient.
+   - Persists the **effective rate** (the reconciled one) into `payment_requests.fx_rate_used` — the column is always the realized rate, never the user-typed one.
+   - Bank route: writes `bank_holds.exact_amount_used = settled`, `released_amount = max(0, held − settled)`, attaches `bank_reference`.
+   - Posts `DR 1500 / CR 1200` journal for the settled amount.
+   - Variance against the booked snapshot is measured in LYD against `booked_fx_rate × total_cost`. The validation gate (`PaymentRequestController::runExecution`, `ImportOrderController::executePaymentForOrder`) requires `extra_allocation_note` when `|variance_lyd| > config('fine.fx.tolerance_lyd', 0.01)`.
+   - FX gain/loss for the booked-vs-realized gap is posted by `completeOrder` (not here) using the same `settledLyd()` value so the 1500 advance nets to zero.
    - Transitions `ImportOrder` status to `paid`.
 
 4. **`confirmShipment(ImportOrder $order)`**: Transitions `paid` → `in_transit`.
@@ -149,6 +152,13 @@ Controls all state transitions inside `DB::transaction()` blocks:
 
 ## 5. Verification & Testing
 
-- Pest Feature Tests (`tests/Feature/ImportOrderLifecycleTest.php`, `tests/Feature/TreasuryPaymentTest.php`, `tests/Feature/LandedCostAllocationTest.php`).
+- Pest Feature Tests (`tests/Feature/ImportOrderLifecycleTest.php`, `tests/Feature/TreasuryPaymentTest.php`, `tests/Feature/LandedCostAllocationTest.php`, `tests/Feature/FxExecutionTest.php`).
 - Form validation tests (`PROC-01` through `PROC-10`).
 - Code style verification via Laravel Pint (`vendor/bin/pint --format agent`).
+
+---
+
+## 6. Supersession Notes
+
+- **§3.3 (`executePayment`) — Wave 2 fix (2026-09-21)**: The original spec described `executePayment` as a single rate input. The Wave 2 FX audit (`HANDOFF.md` Wave 2) found that bank spreads and صرّاف commissions were silently absorbed as FX loss when only the rate was supplied. `executePayment` now accepts both `fx_rate_used` and `exact_amount_used_lyd`, derives the missing value, persists the effective rate, and gates `extra_allocation_note` on a LYD-grounded variance (tolerance `config('fine.fx.tolerance_lyd', 0.01)`; hard cap `config('fine.fx.hard_cap_percent', 5.0)`).
+- **§3.2 (`selectPaymentRoute`) — Wave 2 fix (2026-09-21)**: `BankHold` is now created via `updateOrCreate` (no orphan rows) and the route is locked once a hold exists.
