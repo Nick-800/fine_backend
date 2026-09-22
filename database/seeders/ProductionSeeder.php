@@ -41,11 +41,23 @@ use Illuminate\Support\Str;
  */
 final class ProductionSeeder extends Seeder
 {
-    private const OWNER_EMAIL = 'owner@erp.com';
-
-    private const OWNER_PASSWORD = 'password';
-
-    private const OWNER_NAME = 'Nick Owner';
+    /**
+     * List of initial company-wide owner users.
+     *
+     * @var array<int, array{name: string, email: string, password: string}>
+     */
+    private const OWNER_USERS = [
+        [
+            'name' => 'Nick Owner',
+            'email' => 'owner@erp.com',
+            'password' => 'password',
+        ],
+        [
+            'name' => 'حازم',
+            'email' => 'hazemfast@gmail.com',
+            'password' => 'password',
+        ],
+    ];
 
     /**
      * Map of array-key → [blueprint_name, operating_unit_name].
@@ -68,7 +80,7 @@ final class ProductionSeeder extends Seeder
         $this->seedBlueprints();
         $this->seedOperatingUnits();
         $this->seedChartOfAccounts();
-        $this->seedOwnerUser();
+        $this->seedOwnerUsers();
     }
 
     private function seedCompany(): void
@@ -124,31 +136,38 @@ final class ProductionSeeder extends Seeder
         return $resolved;
     }
 
-    private function seedOwnerUser(): void
+    private function seedOwnerUsers(): void
     {
-        $user = User::firstOrCreate(
-            ['email' => self::OWNER_EMAIL],
-            [
-                'id' => (string) Str::uuid(),
-                'name' => self::OWNER_NAME,
-                'password' => Hash::make(self::OWNER_PASSWORD),
-                'is_active' => true,
-                'must_change_password' => false,
-            ],
-        );
-
         $ownerRole = Role::where('slug', 'owner')->first();
         if ($ownerRole === null) {
             return;
         }
 
-        UserRole::firstOrCreate(
-            [
-                'user_id' => $user->id,
-                'role_id' => $ownerRole->id,
-                'operating_unit_id' => null,
-            ],
-            ['id' => (string) Str::uuid()],
-        );
+        foreach (self::OWNER_USERS as $ownerData) {
+            $user = User::withTrashed()->firstOrNew(['email' => $ownerData['email']]);
+
+            if ($user->trashed()) {
+                $user->restore();
+            }
+
+            if (! $user->exists) {
+                $user->id = (string) Str::uuid();
+            }
+
+            $user->name = $ownerData['name'];
+            $user->password = $ownerData['password'];
+            $user->is_active = true;
+            $user->must_change_password = false;
+            $user->save();
+
+            UserRole::firstOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'role_id' => $ownerRole->id,
+                    'operating_unit_id' => null,
+                ],
+                ['id' => (string) Str::uuid()],
+            );
+        }
     }
 }

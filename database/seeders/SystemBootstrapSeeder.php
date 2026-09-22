@@ -634,6 +634,7 @@ class SystemBootstrapSeeder extends Seeder
 
         $standardUsers = [
             ['name' => 'Nick Owner', 'email' => 'owner@erp.com', 'role_slug' => 'owner', 'unit_id' => null],
+            ['name' => 'حازم', 'email' => 'hazemfast@gmail.com', 'role_slug' => 'owner', 'unit_id' => null],
             ['name' => 'Accounting Manager', 'email' => 'accounting@erp.com', 'role_slug' => 'accounting-manager', 'unit_id' => null],
             ['name' => 'HR Manager', 'email' => 'hr@erp.com', 'role_slug' => 'hr-manager', 'unit_id' => null],
             ['name' => 'Procurement Manager', 'email' => 'procurement@erp.com', 'role_slug' => 'procurement-manager', 'unit_id' => $units['procurement']->id],
@@ -649,16 +650,21 @@ class SystemBootstrapSeeder extends Seeder
         ];
 
         foreach ($standardUsers as $row) {
-            $user = User::firstOrCreate(
-                ['email' => $row['email']],
-                [
-                    'id' => (string) Str::uuid(),
-                    'name' => $row['name'],
-                    'password' => Hash::make('password'),
-                    'is_active' => true,
-                    'must_change_password' => false,
-                ],
-            );
+            $user = User::withTrashed()->firstOrNew(['email' => $row['email']]);
+
+            if ($user->trashed()) {
+                $user->restore();
+            }
+
+            if (! $user->exists) {
+                $user->id = (string) Str::uuid();
+            }
+
+            $user->name = $row['name'];
+            $user->password = 'password';
+            $user->is_active = true;
+            $user->must_change_password = false;
+            $user->save();
 
             $role = $row['role_slug'] === 'owner' ? $ownerRole : Role::where('slug', $row['role_slug'])->first();
             if ($role === null) {
