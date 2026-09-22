@@ -26,62 +26,66 @@ class ChartOfAccountsSeeder extends Seeder
             return;
         }
 
-        $coa = ChartOfAccounts::create([
-            'company_id' => $company->id,
-            'name' => 'Main Chart of Accounts',
-        ]);
+        $coa = ChartOfAccounts::firstOrCreate(
+            ['company_id' => $company->id],
+            ['name' => 'دليل الحسابات الرئيسي'],
+        );
+
+        if ($coa->name !== 'دليل الحسابات الرئيسي') {
+            $coa->update(['name' => 'دليل الحسابات الرئيسي']);
+        }
 
         // code, name, type, parent code
         $accounts = [
-            ['1000', 'Assets', 'asset', null],
-            ['1100', 'Inventory', 'asset', '1000'],
-            ['1110', 'Raw Material Inventory', 'asset', '1100'],
-            ['1120', 'Work In Process', 'asset', '1100'],
-            ['1121', 'WIP — Foam Production', 'asset', '1120'],
-            ['1122', 'WIP — Cutter Production', 'asset', '1120'],
-            ['1123', 'WIP — Furniture Production', 'asset', '1120'],
-            ['1130', 'Finished Goods Inventory', 'asset', '1100'],
-            ['1131', 'Finished Goods — Foam Blocks', 'asset', '1130'],
-            ['1132', 'Finished Goods — Cut Pieces', 'asset', '1130'],
-            ['1133', 'Finished Goods — Byproduct Fill', 'asset', '1130'],
-            ['1134', 'Finished Goods — Furniture', 'asset', '1130'],
-            ['1200', 'Cash and Bank', 'asset', '1000'],
-            ['1300', 'Accounts Receivable', 'asset', '1000'],
-            ['1400', 'Fixed Assets', 'asset', '1000'],
+            ['1000', 'الأصول', 'asset', null],
+            ['1100', 'المخزون', 'asset', '1000'],
+            ['1110', 'مخزون المواد الخام', 'asset', '1100'],
+            ['1120', 'إنتاج تحت التشغيل', 'asset', '1100'],
+            ['1121', 'إنتاج تحت التشغيل — مصنع الإسفنج', 'asset', '1120'],
+            ['1122', 'إنتاج تحت التشغيل — قسم القص', 'asset', '1120'],
+            ['1123', 'إنتاج تحت التشغيل — قسم الأثاث', 'asset', '1120'],
+            ['1130', 'مخزون الإنتاج التام', 'asset', '1100'],
+            ['1131', 'إنتاج تام — قوالب الإسفنج', 'asset', '1130'],
+            ['1132', 'إنتاج تام — القطع المقصوصة', 'asset', '1130'],
+            ['1133', 'إنتاج تام — حشوات وبقايا الإنتاج', 'asset', '1130'],
+            ['1134', 'إنتاج تام — الأثاث والمفروشات', 'asset', '1130'],
+            ['1200', 'النقدية وما في حكمها', 'asset', '1000'],
+            ['1300', 'المدينون والعملاء', 'asset', '1000'],
+            ['1400', 'الأصول الثابتة', 'asset', '1000'],
             // Import payments precede receipt: cash out sits here until the
             // order completes and moves the value into inventory.
-            ['1500', 'Advances to Suppliers', 'asset', '1000'],
+            ['1500', 'دفعات مقدمة للموردين', 'asset', '1000'],
             // Contra-asset: carries a credit balance against 1400.
-            ['1450', 'Accumulated Depreciation', 'asset', '1000'],
+            ['1450', 'مجمع الإهلاك المتراكم', 'asset', '1000'],
 
-            ['2000', 'Liabilities', 'liability', null],
-            ['2100', 'Accounts Payable', 'liability', '2000'],
-            ['2200', 'Wages Payable', 'liability', '2000'],
-            ['2210', 'Payroll Deductions Payable', 'liability', '2000'],
-            ['2300', 'Landed Cost Clearing', 'liability', '2000'],
+            ['2000', 'الالتزامات', 'liability', null],
+            ['2100', 'الدائنون والموردون', 'liability', '2000'],
+            ['2200', 'الأجور والرواتب المستحقة', 'liability', '2000'],
+            ['2210', 'استقطاعات الرواتب المستحقة', 'liability', '2000'],
+            ['2300', 'وسيط تكاليف الاستيراد', 'liability', '2000'],
 
-            ['3000', 'Equity', 'equity', null],
-            ['3100', 'Retained Earnings', 'equity', '3000'],
+            ['3000', 'حقوق الملكية', 'equity', null],
+            ['3100', 'الأرباح المحتجزة', 'equity', '3000'],
 
-            ['4000', 'Revenue', 'revenue', null],
-            ['4100', 'Sales Revenue', 'revenue', '4000'],
-            ['4200', 'FX Gain', 'revenue', '4000'],
-            ['4300', 'Gain on Asset Disposal', 'revenue', '4000'],
+            ['4000', 'الإيرادات', 'revenue', null],
+            ['4100', 'إيرادات المبيعات', 'revenue', '4000'],
+            ['4200', 'أرباح فروق أسعار الصرف', 'revenue', '4000'],
+            ['4300', 'أرباح بيع واستبعاد أصول ثابتة', 'revenue', '4000'],
 
-            ['5000', 'Expenses', 'expense', null],
-            ['5100', 'Cost of Goods Sold', 'expense', '5000'],
-            ['5200', 'Inventory & Production Variance', 'expense', '5000'],
-            ['5300', 'FX Loss', 'expense', '5000'],
-            ['5400', 'Overhead Expense', 'expense', '5000'],
-            ['5500', 'Depreciation Expense', 'expense', '5000'],
-            ['5600', 'Loss on Asset Disposal', 'expense', '5000'],
-            ['5700', 'Wage Expense', 'expense', '5000'],
+            ['5000', 'المصروفات والتكاليف', 'expense', null],
+            ['5100', 'تكلفة البضاعة المباعة', 'expense', '5000'],
+            ['5200', 'فروقات المخزون والتصنيع', 'expense', '5000'],
+            ['5300', 'خسائر فروق أسعار الصرف', 'expense', '5000'],
+            ['5400', 'المصروفات العامة والصناعية', 'expense', '5000'],
+            ['5500', 'مصروف الإهلاك', 'expense', '5000'],
+            ['5600', 'خسائر بيع واستبعاد أصول ثابتة', 'expense', '5000'],
+            ['5700', 'مصروف الرواتب والأجور', 'expense', '5000'],
         ];
 
         $created = [];
 
         foreach ($accounts as [$code, $name, $type, $parentCode]) {
-            $created[$code] = Account::firstOrCreate(
+            $created[$code] = Account::updateOrCreate(
                 ['account_code' => $code],
                 [
                     'chart_of_accounts_id' => $coa->id,
