@@ -49,6 +49,7 @@ use App\Http\Controllers\Api\v1\SalesOrderController;
 use App\Http\Controllers\Api\v1\StockAdjustmentRequestController;
 use App\Http\Controllers\Api\v1\StockLotController;
 use App\Http\Controllers\Api\v1\SupplierController;
+use App\Http\Controllers\Api\v1\SystemVersionController;
 use App\Http\Controllers\Api\v1\TankStockController;
 use App\Http\Controllers\Api\v1\UnitBlueprintController;
 use App\Http\Controllers\Api\v1\UserController;
@@ -59,6 +60,8 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
     // Public guest routes
     Route::post('/auth/login', [AuthController::class, 'login']);
+    Route::post('/system/version', [SystemVersionController::class, 'record']);
+    Route::get('/system/version', [SystemVersionController::class, 'current']);
 
     // Routes requiring authentication
     Route::middleware('auth:sanctum')->group(function () {
@@ -100,6 +103,7 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/users/{id}/roles/{roleId}', [UserController::class, 'removeRole']);
                 Route::get('/audit-logs', [AuditLogController::class, 'index']);
                 Route::get('/audit-logs/{tableName}/{recordId}', [AuditLogController::class, 'show']);
+                Route::get('/system/versions', [SystemVersionController::class, 'index']);
                 Route::post('/admin/entities/{id}/provision-user', [ProvisionUserController::class]);
             });
 
