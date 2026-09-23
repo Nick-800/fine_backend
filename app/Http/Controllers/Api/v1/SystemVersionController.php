@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AppVersion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 final class SystemVersionController extends Controller
 {
@@ -35,22 +36,48 @@ final class SystemVersionController extends Controller
             'platform' => $validated['platform'] ?? null,
         ]);
 
+        // If auto-enforcing latest build is enabled, bump required version when a higher version reports
+        if (config('app.auto_enforce_latest_build')) {
+            $currentEnforced = (string) (Cache::get('app:min_desktop_version') ?? config('app.min_desktop_version') ?? '');
+            if ($currentEnforced === '' || version_compare($validated['desktop_version'], $currentEnforced, '>')) {
+                Cache::forever('app:min_desktop_version', $validated['desktop_version']);
+                Cache::forever('app:latest_desktop_version', $validated['desktop_version']);
+            }
+        }
+
+        $minVersion = (string) (Cache::get('app:min_desktop_version') ?? config('app.min_desktop_version') ?? '');
+        $latestVersion = (string) (Cache::get('app:latest_desktop_version') ?? config('app.latest_desktop_version') ?? $minVersion);
+        $isUpdateRequired = $minVersion !== '' && version_compare($validated['desktop_version'], $minVersion, '<');
+
         return response()->json([
             'id' => $record->id,
             'desktop_version' => $record->desktop_version,
             'backend_version' => $record->backend_version,
             'platform' => $record->platform,
             'recorded_at' => $record->created_at?->toIso8601String(),
+            'min_desktop_version' => $minVersion ?: null,
+            'latest_desktop_version' => $latestVersion ?: null,
+            'is_update_required' => $isUpdateRequired,
+            'update_url' => config('app.desktop_update_url', 'https://github.com/NoraldenElhouni/fine-desktop/releases/latest'),
         ], 201);
     }
 
     /**
-     * Get the current backend version without recording a new log entry.
+     * Get the current backend and required desktop versions without recording a new log entry.
      */
-    public function current(): JsonResponse
+    public function current(Request $request): JsonResponse
     {
+        $clientVersion = $request->header('X-Desktop-Version') ?? $request->query('client_version');
+        $minVersion = (string) (Cache::get('app:min_desktop_version') ?? config('app.min_desktop_version') ?? '');
+        $latestVersion = (string) (Cache::get('app:latest_desktop_version') ?? config('app.latest_desktop_version') ?? $minVersion);
+        $isUpdateRequired = $minVersion !== '' && $clientVersion && version_compare((string) $clientVersion, $minVersion, '<');
+
         return response()->json([
             'backend_version' => (string) config('app.version', '1.0.0'),
+            'min_desktop_version' => $minVersion ?: null,
+            'latest_desktop_version' => $latestVersion ?: null,
+            'is_update_required' => (bool) $isUpdateRequired,
+            'update_url' => config('app.desktop_update_url', 'https://github.com/NoraldenElhouni/fine-desktop/releases/latest'),
         ]);
     }
 

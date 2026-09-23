@@ -17,6 +17,14 @@ return [
 
     'version' => env('APP_VERSION', '1.0.0'),
 
+    'min_desktop_version' => env('APP_MIN_DESKTOP_VERSION', null),
+
+    'latest_desktop_version' => env('APP_LATEST_DESKTOP_VERSION', null),
+
+    'auto_enforce_latest_build' => (bool) env('APP_AUTO_ENFORCE_LATEST_BUILD', false),
+
+    'desktop_update_url' => env('APP_DESKTOP_UPDATE_URL', 'https://github.com/NoraldenElhouni/fine-desktop/releases/latest'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

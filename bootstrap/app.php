@@ -23,11 +23,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->api(prepend: [
+            \App\Http\Middleware\EnforceDesktopAppVersion::class,
+        ]);
+
         $middleware->alias([
             'scope.unit' => ScopeOperatingUnit::class,
             'ensure.password.updated' => EnsurePasswordIsUpdated::class,
             'require.role' => \App\Http\Middleware\RequireRole::class,
             'require.permission' => \App\Http\Middleware\RequirePermission::class,
+            'enforce.desktop.version' => \App\Http\Middleware\EnforceDesktopAppVersion::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
