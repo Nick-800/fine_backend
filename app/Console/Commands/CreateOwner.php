@@ -35,7 +35,7 @@ final class CreateOwner extends Command
         $name = (string) ($this->argument('name') ?: $this->option('name'));
         if (trim($name) === '') {
             if ($this->input->isInteractive()) {
-                $name = (string) $this->ask('Owner display name (e.g. حازم or John Doe)');
+                $name = (string) $this->ask('Owner display name');
                 while (trim($name) === '') {
                     $this->error('Display name cannot be empty.');
                     $name = (string) $this->ask('Owner display name');
