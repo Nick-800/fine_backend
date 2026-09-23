@@ -96,3 +96,77 @@ it('can enforce version via artisan command and immediately block older versions
             'required_version' => '2.0.0',
         ]);
 });
+
+it('automatically enforces newly reported build version without running any commands', function (): void {
+    config(['app.auto_enforce_latest_build' => true]);
+
+    // Initial state: 1.0.25 is recorded
+    $this->postJson('/api/v1/system/version', [
+        'desktop_version' => '1.0.25',
+    ])->assertStatus(201);
+
+    // Verify 1.0.25 is now automatically enforced
+    expect(Cache::get('app:min_desktop_version'))->toBe('1.0.25');
+
+    // A client running 1.0.24 is now blocked
+    $this->withHeader('X-Desktop-Version', '1.0.24')
+        ->postJson('/api/v1/auth/login', [
+            'email' => 'test@example.com',
+            'password' => 'secret',
+        ])
+        ->assertStatus(426)
+        ->assertJson([
+            'code' => 'FORCE_UPDATE_REQUIRED',
+            'required_version' => '1.0.25',
+            'current_version' => '1.0.24',
+        ]);
+
+    // Next: New build 1.0.26 is launched and calls /system/version
+    $this->postJson('/api/v1/system/version', [
+        'desktop_version' => '1.0.26',
+    ])->assertStatus(201);
+
+    // Verify 1.0.26 is automatically promoted without any command
+    expect(Cache::get('app:min_desktop_version'))->toBe('1.0.26');
+
+    // Client running 1.0.25 is now blocked
+    $this->withHeader('X-Desktop-Version', '1.0.25')
+        ->postJson('/api/v1/auth/login', [
+            'email' => 'test@example.com',
+            'password' => 'secret',
+        ])
+        ->assertStatus(426)
+        ->assertJson([
+            'code' => 'FORCE_UPDATE_REQUIRED',
+            'required_version' => '1.0.26',
+            'current_version' => '1.0.25',
+        ]);
+});
+
+it('recovers enforced version from database after cache is cleared', function (): void {
+    config(['app.auto_enforce_latest_build' => true]);
+
+    // Record build in database
+    $this->postJson('/api/v1/system/version', [
+        'desktop_version' => '1.0.30',
+    ])->assertStatus(201);
+
+    // Clear cache completely (simulating server restart or cache:clear)
+    Cache::flush();
+    expect(Cache::get('app:min_desktop_version'))->toBeNull();
+
+    // Any incoming request automatically queries AppVersion, restores cache, and enforces 1.0.30
+    $this->withHeader('X-Desktop-Version', '1.0.25')
+        ->postJson('/api/v1/auth/login', [
+            'email' => 'test@example.com',
+            'password' => 'secret',
+        ])
+        ->assertStatus(426)
+        ->assertJson([
+            'code' => 'FORCE_UPDATE_REQUIRED',
+            'required_version' => '1.0.30',
+        ]);
+
+    expect(Cache::get('app:min_desktop_version'))->toBe('1.0.30');
+});
+

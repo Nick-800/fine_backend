@@ -69,6 +69,16 @@ final class SystemVersionController extends Controller
     {
         $clientVersion = $request->header('X-Desktop-Version') ?? $request->query('client_version');
         $minVersion = (string) (Cache::get('app:min_desktop_version') ?? config('app.min_desktop_version') ?? '');
+
+        if ($minVersion === '' && config('app.auto_enforce_latest_build')) {
+            $latestDb = AppVersion::latest()->value('desktop_version');
+            if ($latestDb) {
+                $minVersion = (string) $latestDb;
+                Cache::forever('app:min_desktop_version', $minVersion);
+                Cache::forever('app:latest_desktop_version', $minVersion);
+            }
+        }
+
         $latestVersion = (string) (Cache::get('app:latest_desktop_version') ?? config('app.latest_desktop_version') ?? $minVersion);
         $isUpdateRequired = $minVersion !== '' && $clientVersion && version_compare((string) $clientVersion, $minVersion, '<');
 

@@ -21,7 +21,7 @@ return [
 
     'latest_desktop_version' => env('APP_LATEST_DESKTOP_VERSION', null),
 
-    'auto_enforce_latest_build' => (bool) env('APP_AUTO_ENFORCE_LATEST_BUILD', false),
+    'auto_enforce_latest_build' => (bool) env('APP_AUTO_ENFORCE_LATEST_BUILD', true),
 
     'desktop_update_url' => env('APP_DESKTOP_UPDATE_URL', 'https://github.com/NoraldenElhouni/fine-desktop/releases/latest'),
 

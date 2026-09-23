@@ -23,6 +23,15 @@ final class EnforceDesktopAppVersion
 
         $minVersion = (string) (Cache::get('app:min_desktop_version') ?? config('app.min_desktop_version') ?? '');
 
+        if ($minVersion === '' && config('app.auto_enforce_latest_build')) {
+            $latestDb = \App\Models\AppVersion::latest()->value('desktop_version');
+            if ($latestDb) {
+                $minVersion = (string) $latestDb;
+                Cache::forever('app:min_desktop_version', $minVersion);
+                Cache::forever('app:latest_desktop_version', $minVersion);
+            }
+        }
+
         if ($minVersion === '') {
             return $next($request);
         }
