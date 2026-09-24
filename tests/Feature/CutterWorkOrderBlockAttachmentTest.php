@@ -13,7 +13,7 @@ use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
-use Database\Seeders\ChartOfAccountsSeeder;
+use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -29,7 +29,7 @@ beforeEach(function () {
 
     // The chart-of-accounts seeder bails out if no Company exists, so it
     // must run after the company is created.
-    $this->seed(ChartOfAccountsSeeder::class);
+    $this->seed(ChartOfAccountsTestSeeder::class);
 
     $this->blueprint = UnitBlueprint::create([
         'name' => 'General Blueprint',

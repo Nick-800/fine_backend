@@ -7,6 +7,7 @@ use App\Models\OperatingUnit;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\UserRole;
+use Database\Seeders\ChartOfAccountsTestSeeder;
 use Database\Seeders\SystemBootstrapSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -47,6 +48,7 @@ it('allows guests to fetch current backend version', function (): void {
 });
 
 it('records authenticated user and operating unit when provided', function (): void {
+    $this->seed(ChartOfAccountsTestSeeder::class);
     $this->seed(SystemBootstrapSeeder::class);
     config(['app.version' => '1.0.0']);
 
@@ -72,6 +74,7 @@ it('records authenticated user and operating unit when provided', function (): v
 });
 
 it('restricts listing version records to owner role', function (): void {
+    $this->seed(ChartOfAccountsTestSeeder::class);
     $this->seed(SystemBootstrapSeeder::class);
 
     $unit = OperatingUnit::firstOrFail();

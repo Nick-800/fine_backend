@@ -19,7 +19,7 @@ use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
 use App\Services\ImportOrderStateService;
-use Database\Seeders\ChartOfAccountsSeeder;
+use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -27,7 +27,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->company = Company::create(['name' => 'Fine Foam Mfg', 'default_currency' => 'LYD']);
-    $this->seed(ChartOfAccountsSeeder::class);
+    $this->seed(ChartOfAccountsTestSeeder::class);
 
     $this->blueprint = UnitBlueprint::create([
         'name' => 'Blueprint', 'workflow_set' => [], 'default_role_template' => [], 'default_inventory_config' => [],

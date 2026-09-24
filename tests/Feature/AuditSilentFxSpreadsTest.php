@@ -10,7 +10,7 @@ use App\Models\OperatingUnit;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Services\ImportOrderStateService;
-use Database\Seeders\ChartOfAccountsSeeder;
+use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 
@@ -18,7 +18,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->company = Company::create(['name' => 'Fine Audit Co', 'default_currency' => 'LYD']);
-    $this->seed(ChartOfAccountsSeeder::class);
+    $this->seed(ChartOfAccountsTestSeeder::class);
 
     $this->blueprint = UnitBlueprint::create([
         'name' => 'Blueprint',

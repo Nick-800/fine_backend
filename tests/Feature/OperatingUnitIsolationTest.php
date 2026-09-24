@@ -23,7 +23,7 @@ use App\Models\UserRole;
 use App\Models\Warehouse;
 use App\Services\AccountingService;
 use App\Support\CurrentUnitContext;
-use Database\Seeders\ChartOfAccountsSeeder;
+use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -37,7 +37,7 @@ beforeEach(function () {
     app(CurrentUnitContext::class)->clear();
 
     $this->company = Company::create(['name' => 'Fine Foam Mfg']);
-    $this->seed(ChartOfAccountsSeeder::class);
+    $this->seed(ChartOfAccountsTestSeeder::class);
     $this->blueprint = UnitBlueprint::create([
         'name' => 'Blueprint',
         'workflow_set' => [],

@@ -9,14 +9,14 @@ use App\Models\Role;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
-use Database\Seeders\ChartOfAccountsSeeder;
+use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->company = Company::create(['name' => 'Fine Foam Mfg', 'default_currency' => 'LYD']);
-    $this->seed(ChartOfAccountsSeeder::class);
+    $this->seed(ChartOfAccountsTestSeeder::class);
 
     $this->blueprint = UnitBlueprint::create([
         'name' => 'Blueprint', 'workflow_set' => [], 'default_role_template' => [], 'default_inventory_config' => [],

@@ -16,14 +16,14 @@ use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
-use Database\Seeders\ChartOfAccountsSeeder;
+use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->company = Company::create(['name' => 'Fine Foam Mfg']);
-    $this->seed(ChartOfAccountsSeeder::class);
+    $this->seed(ChartOfAccountsTestSeeder::class);
 
     $blueprint = UnitBlueprint::create([
         'name' => 'Foam Blueprint', 'workflow_set' => ['production_batch' => []],

@@ -14,7 +14,7 @@ use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Services\OverheadService;
-use Database\Seeders\ChartOfAccountsSeeder;
+use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -23,7 +23,7 @@ beforeEach(function () {
     $this->company = Company::create([
         'name' => 'Fine Foam Mfg', 'default_currency' => 'LYD', 'overhead_absorption_enabled' => false,
     ]);
-    $this->seed(ChartOfAccountsSeeder::class);
+    $this->seed(ChartOfAccountsTestSeeder::class);
 
     // Blueprints carry the production workflow that decides WIP absorption.
     $foamBlueprint = UnitBlueprint::create([
