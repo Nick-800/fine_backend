@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Exceptions\MissingAccountException;
 use App\Exceptions\UnbalancedJournalException;
+use App\Models\Account;
 use App\Models\Company;
 use App\Models\InventoryItem;
 use App\Models\JournalEntry;
@@ -157,7 +158,7 @@ test('closing a foam batch posts finished goods against work in process', functi
 test('the trial balance stays in balance after a batch closes', function () {
     $this->accounting->postJournal('Opening', [
         ['account_code' => '1121', 'debit' => 2000.0, 'operating_unit_id' => $this->unit->id],
-        ['account_code' => '2100', 'credit' => 2000.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '21', 'credit' => 2000.0, 'operating_unit_id' => $this->unit->id],
     ]);
 
     $this->accounting->postJournal('Close', [
@@ -206,7 +207,7 @@ test('foam consumption moves value from raw materials into WIP and the close net
     $lines = $consumption->lines()->with('account')->get();
 
     expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1121')->debit)->toBe(1500.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1110')->credit)->toBe(1500.0);
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '111')->credit)->toBe(1500.0);
 
     // Walk to close and confirm WIP round-trips to exactly zero.
     foreach (['consumed', 'curing', 'ready_for_grading'] as $status) {
@@ -242,14 +243,14 @@ test('a manual tank charge reaches the ledger as an opening balance', function (
     $entry = JournalEntry::where('source_document_type', 'TankStock')->sole();
     $lines = $entry->lines()->with('account')->get();
 
-    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1110')->debit)->toBe(450.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '3100')->credit)->toBe(450.0);
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '111')->debit)->toBe(450.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '31')->credit)->toBe(450.0);
 });
 
 test('the chart of accounts lists every account with signed balances', function () {
     $this->accounting->postJournal('Purchase', [
-        ['account_code' => '1110', 'debit' => 800.0, 'operating_unit_id' => $this->unit->id],
-        ['account_code' => '2100', 'credit' => 800.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '111', 'debit' => 800.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '21', 'credit' => 800.0, 'operating_unit_id' => $this->unit->id],
     ]);
 
     $accounts = ($this->api)()->getJson('/api/v1/accounts')
@@ -259,23 +260,23 @@ test('the chart of accounts lists every account with signed balances', function 
     $byCode = collect($accounts)->keyBy('account_code');
 
     // Both sides carry a positive balance in their natural sign.
-    expect((float) $byCode['1110']['balance'])->toBe(800.0)
-        ->and((float) $byCode['2100']['balance'])->toBe(800.0)
-        ->and($byCode['1110']['parent_account_id'])->toBe($byCode['1100']['id']);
+    expect((float) $byCode['111']['balance'])->toBe(800.0)
+        ->and((float) $byCode['21']['balance'])->toBe(800.0)
+        ->and($byCode['111']['parent_account_id'])->toBe($byCode['11']['id']);
 });
 
 test('an account ledger lists its lines newest first with entry context', function () {
     $this->accounting->postJournal('First', [
-        ['account_code' => '1110', 'debit' => 100.0, 'operating_unit_id' => $this->unit->id],
-        ['account_code' => '2100', 'credit' => 100.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '111', 'debit' => 100.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '21', 'credit' => 100.0, 'operating_unit_id' => $this->unit->id],
     ], entryDate: '2026-08-01');
     $this->accounting->postJournal('Second', [
-        ['account_code' => '1110', 'debit' => 200.0, 'operating_unit_id' => $this->unit->id],
-        ['account_code' => '2100', 'credit' => 200.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '111', 'debit' => 200.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '21', 'credit' => 200.0, 'operating_unit_id' => $this->unit->id],
     ], entryDate: '2026-08-10');
 
     $accountId = collect(($this->api)()->getJson('/api/v1/accounts')->json('data'))
-        ->firstWhere('account_code', '1110')['id'];
+        ->firstWhere('account_code', '111')['id'];
 
     $ledger = ($this->api)()->getJson("/api/v1/accounts/{$accountId}/ledger")
         ->assertStatus(200)
@@ -334,11 +335,11 @@ test('duplicate account code is rejected', function () {
 
     // 1000 already seeded by ChartOfAccountsSeeder
     $this->actingAs($accountant)->postJson('/api/v1/accounts', [
-        'account_code' => '1000',
+        'account_code' => '1',
         'name' => 'Duplicate Assets',
         'type' => 'asset',
     ])->assertStatus(422)
-      ->assertJsonValidationErrors(['account_code']);
+        ->assertJsonValidationErrors(['account_code']);
 });
 
 test('child account must match parent account type', function () {
@@ -346,7 +347,7 @@ test('child account must match parent account type', function () {
     $role = Role::firstOrCreate(['slug' => 'accounting-manager'], ['name' => 'Accounting Manager']);
     UserRole::create(['user_id' => $accountant->id, 'role_id' => $role->id, 'operating_unit_id' => null]);
 
-    $parent = \App\Models\Account::where('account_code', '5000')->firstOrFail(); // Expense
+    $parent = Account::where('account_code', '5')->firstOrFail(); // Expense
 
     $this->actingAs($accountant)->postJson('/api/v1/accounts', [
         'account_code' => '5999',
@@ -366,8 +367,8 @@ test('unauthorized users cannot create accounts', function () {
 });
 
 test('user can view account details with computed balances and parent', function () {
-    $parent = \App\Models\Account::where('account_code', '1000')->firstOrFail();
-    $child = \App\Models\Account::where('account_code', '1131')->firstOrFail();
+    $parent = Account::where('account_code', '1')->firstOrFail();
+    $child = Account::where('account_code', '1131')->firstOrFail();
 
     $this->accounting->postJournal('Material purchase test', [
         ['account_code' => '1131', 'debit' => 1200.0, 'operating_unit_id' => $this->unit->id],
@@ -401,7 +402,7 @@ test('user can view account details with computed balances and parent', function
 });
 
 test('account ledger supports date range and text search filtering', function () {
-    $account = \App\Models\Account::where('account_code', '1131')->firstOrFail();
+    $account = Account::where('account_code', '1131')->firstOrFail();
 
     $entry1 = $this->accounting->postJournal('Alpha batch chemicals', [
         ['account_code' => '1131', 'debit' => 300.0, 'operating_unit_id' => $this->unit->id, 'memo' => 'Polyol drums'],
@@ -437,4 +438,3 @@ test('account ledger supports date range and text search filtering', function ()
     expect($resSearchMemo->json('total'))->toBe(1)
         ->and($resSearchMemo->json('data.0.journal_entry.reference'))->toBe($entry1->reference);
 });
-

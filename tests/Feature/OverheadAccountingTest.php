@@ -77,10 +77,10 @@ test('recording a unit expense posts overhead against cash tagged to the unit', 
     $debit = $lines->firstWhere(fn ($l) => (float) $l->debit > 0);
     $credit = $lines->firstWhere(fn ($l) => (float) $l->credit > 0);
 
-    expect($debit->account->account_code)->toBe('5400')
+    expect($debit->account->account_code)->toBe('54')
         ->and((float) $debit->debit)->toBe(350.0)
         ->and($debit->operating_unit_id)->toBe($this->foamUnit->id)
-        ->and($credit->account->account_code)->toBe('1200')
+        ->and($credit->account->account_code)->toBe('12')
         ->and($credit->operating_unit_id)->toBe($this->foamUnit->id);
 });
 
@@ -98,7 +98,7 @@ test('a company-wide payable expense credits accounts payable with no unit tag',
     $entry = JournalEntry::where('source_document_id', $response->json('id'))->sole();
     $credit = $entry->lines()->with('account')->get()->firstWhere(fn ($l) => (float) $l->credit > 0);
 
-    expect($credit->account->account_code)->toBe('2100')
+    expect($credit->account->account_code)->toBe('21')
         ->and($credit->operating_unit_id)->toBeNull();
 });
 

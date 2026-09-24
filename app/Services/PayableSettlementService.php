@@ -24,7 +24,7 @@ use InvalidArgumentException;
  */
 final class PayableSettlementService
 {
-    private const SETTLEABLE = ['2100', '2210', '2300'];
+    private const SETTLEABLE = ['21', '221', '23'];
 
     public function __construct(
         private readonly AccountingService $accountingService,
@@ -41,7 +41,7 @@ final class PayableSettlementService
 
         if (! in_array($accountCode, self::SETTLEABLE, true)) {
             throw new InvalidArgumentException(
-                "Account {$accountCode} is not a settleable payable (2100, 2210 or 2300)."
+                "Account {$accountCode} is not a settleable payable (21, 221 or 23)."
             );
         }
 
@@ -84,7 +84,7 @@ final class PayableSettlementService
                         'memo' => $data['reference'] ?? null,
                     ],
                     [
-                        'account_code' => '1200', // Cash and Bank
+                        'account_code' => '12', // Cash and Bank
                         'credit' => $amount,
                         'operating_unit_id' => $unitId,
                     ],

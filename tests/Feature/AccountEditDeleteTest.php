@@ -59,8 +59,8 @@ beforeEach(function () {
     $this->api = fn () => $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
 
-    $this->main = Account::where('account_code', '1000')->sole();
-    $this->sub = Account::where('account_code', '1110')->sole();
+    $this->main = Account::where('account_code', '1')->sole();
+    $this->sub = Account::where('account_code', '111')->sole();
 });
 
 test('a main account can be renamed', function () {
@@ -77,7 +77,7 @@ test('a main account cannot have its code changed', function () {
         'account_code' => '9999',
     ])->assertStatus(422)->assertJsonPath('code', 'MAIN_ACCOUNT_CODE_LOCKED');
 
-    expect($this->main->fresh()->account_code)->toBe('1000');
+    expect($this->main->fresh()->account_code)->toBe('1');
 });
 
 test('a sub-account can be renamed', function () {
@@ -100,10 +100,10 @@ test('a sub-account can have its code changed', function () {
 });
 
 test('a sub-account code change rejects a duplicate code', function () {
-    $other = Account::where('account_code', '1120')->sole();
+    $other = Account::where('account_code', '112')->sole();
     ($this->api)()->putJson("/api/v1/accounts/{$this->sub->id}", [
         'name' => 'Whatever',
-        'account_code' => '1120',
+        'account_code' => '112',
     ])->assertStatus(422)->assertJsonValidationErrors(['account_code']);
 });
 
@@ -141,7 +141,7 @@ test('a sub-account with journal lines cannot be deleted', function () {
     $pr = $order->paymentRequests()->sole();
     $svc->executePayment($pr, null, exactAmountUsedLyd: 5000.0);
 
-    $advance = Account::where('account_code', '1500')->sole();
+    $advance = Account::where('account_code', '15')->sole();
     expect($advance->journalLines()->exists())->toBeTrue();
 
     ($this->api)()->deleteJson("/api/v1/accounts/{$advance->id}")
@@ -154,7 +154,7 @@ test('a sub-account with journal lines cannot be deleted', function () {
 test('a sub-account with children cannot be deleted', function () {
     // 1100 (Inventory) has 1110, 1120, 1130, 1200, 1300, 1400, 1450, 1500
     // as direct children in the standard seed.
-    $parent = Account::where('account_code', '1100')->sole();
+    $parent = Account::where('account_code', '11')->sole();
     expect($parent->children()->exists())->toBeTrue();
 
     ($this->api)()->deleteJson("/api/v1/accounts/{$parent->id}")

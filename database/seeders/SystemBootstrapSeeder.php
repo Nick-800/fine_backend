@@ -47,7 +47,6 @@ use App\Services\ConsumptionReportService;
 use App\Services\OperatingUnitService;
 use App\Services\ProductionBatchService;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
@@ -188,13 +187,13 @@ class SystemBootstrapSeeder extends Seeder
             ]);
         }
 
-        if (Account::where('account_code', '1200')->exists() && ! $this->openingBalanceAlreadyPosted($unit)) {
+        if (Account::where('account_code', '12')->exists() && ! $this->openingBalanceAlreadyPosted($unit)) {
             $openingValue = 1_500_000 + 250_000 * 5.20;
             app(AccountingService::class)->postJournal(
                 'Opening treasury cash (bootstrap)',
                 [
-                    ['account_code' => '1200', 'debit' => $openingValue, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury + USD clearing safe at 5.20'],
-                    ['account_code' => '3100', 'credit' => $openingValue, 'operating_unit_id' => $unit->id],
+                    ['account_code' => '12', 'debit' => $openingValue, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury + USD clearing safe at 5.20'],
+                    ['account_code' => '31', 'credit' => $openingValue, 'operating_unit_id' => $unit->id],
                 ],
             );
         }
@@ -368,7 +367,7 @@ class SystemBootstrapSeeder extends Seeder
         }
 
         // Opening inventory journal so GL agrees with stock ledger.
-        if (Account::where('account_code', '1110')->exists() && ! $this->openingInventoryAlreadyPosted($foamUnit)) {
+        if (Account::where('account_code', '111')->exists() && ! $this->openingInventoryAlreadyPosted($foamUnit)) {
             $lotValue = (float) StockLot::query()->selectRaw('COALESCE(SUM(quantity * unit_cost), 0) as v')->value('v');
             $tankValue = (float) TankStock::query()->selectRaw('COALESCE(SUM(quantity_on_hand * weighted_avg_unit_cost), 0) as v')->value('v');
             $openingValue = round($lotValue + $tankValue, 4);
@@ -377,8 +376,8 @@ class SystemBootstrapSeeder extends Seeder
                 app(AccountingService::class)->postJournal(
                     'Opening inventory balances (bootstrap)',
                     [
-                        ['account_code' => '1110', 'debit' => $openingValue, 'operating_unit_id' => $foamUnit->id, 'memo' => 'seeded chemical lots + tank charges'],
-                        ['account_code' => '3100', 'credit' => $openingValue, 'operating_unit_id' => $foamUnit->id],
+                        ['account_code' => '111', 'debit' => $openingValue, 'operating_unit_id' => $foamUnit->id, 'memo' => 'seeded chemical lots + tank charges'],
+                        ['account_code' => '31', 'credit' => $openingValue, 'operating_unit_id' => $foamUnit->id],
                     ],
                 );
             }
@@ -522,12 +521,12 @@ class SystemBootstrapSeeder extends Seeder
                 'bank_reference' => 'BNK-REF-TRIPOLI-901',
             ]);
 
-            if (Account::where('account_code', '1500')->exists() && ! $this->paymentAlreadyPosted($paymentReq->id)) {
+            if (Account::where('account_code', '15')->exists() && ! $this->paymentAlreadyPosted($paymentReq->id)) {
                 app(AccountingService::class)->postJournal(
                     "Import payment executed — {$supplier->name} (bootstrap)",
                     [
-                        ['account_code' => '1500', 'debit' => 650_000, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
-                        ['account_code' => '1200', 'credit' => 650_000, 'operating_unit_id' => $unit->id],
+                        ['account_code' => '15', 'debit' => 650_000, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
+                        ['account_code' => '12', 'credit' => 650_000, 'operating_unit_id' => $unit->id],
                     ],
                     'PaymentRequest',
                     $paymentReq->id,
@@ -586,12 +585,12 @@ class SystemBootstrapSeeder extends Seeder
                 'fx_rate_used' => 5.15,
             ]);
 
-            if (Account::where('account_code', '1500')->exists() && ! $this->paymentAlreadyPosted($paymentReq2->id)) {
+            if (Account::where('account_code', '15')->exists() && ! $this->paymentAlreadyPosted($paymentReq2->id)) {
                 app(AccountingService::class)->postJournal(
                     "Import payment executed — {$supplier->name} (bootstrap)",
                     [
-                        ['account_code' => '1500', 'debit' => 218_875, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
-                        ['account_code' => '1200', 'credit' => 218_875, 'operating_unit_id' => $unit->id],
+                        ['account_code' => '15', 'debit' => 218_875, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
+                        ['account_code' => '12', 'credit' => 218_875, 'operating_unit_id' => $unit->id],
                     ],
                     'PaymentRequest',
                     $paymentReq2->id,

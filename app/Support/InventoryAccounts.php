@@ -20,7 +20,7 @@ final class InventoryAccounts
             'cut_template_piece', 'slice' => '1132',
             'byproduct_fill' => '1133',
             'furniture_finished_good', 'finished_good' => '1134',
-            default => '1110', // raw materials, chemicals, containers, fabric…
+            default => '111', // raw materials, chemicals, containers, fabric…
         };
     }
 }

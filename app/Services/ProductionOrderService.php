@@ -143,7 +143,7 @@ class ProductionOrderService
             // Cutter outputs sit in finished goods; everything else is credited
             // out of raw materials.
             $itemType = $lot->inventoryItem?->item_type;
-            $account = in_array($itemType, ['cut_template_piece', 'slice'], true) ? '1132' : '1110';
+            $account = in_array($itemType, ['cut_template_piece', 'slice'], true) ? '1132' : '111';
             $creditByAccount[$account] = round(($creditByAccount[$account] ?? 0) + $lineCost, 4);
         }
 
@@ -237,7 +237,7 @@ class ProductionOrderService
 
         if ($laborCost > 0) {
             // Wages Payable: the workshop is owed for the hours built in.
-            $lines[] = ['account_code' => '2200', 'credit' => $laborCost, 'operating_unit_id' => $order->operating_unit_id];
+            $lines[] = ['account_code' => '22', 'credit' => $laborCost, 'operating_unit_id' => $order->operating_unit_id];
         }
 
         $this->accountingService->postJournal(
@@ -288,7 +288,7 @@ class ProductionOrderService
         $this->accountingService->postJournal(
             "Furniture order {$order->order_number} collected",
             [
-                ['account_code' => '5100', 'debit' => $value, 'operating_unit_id' => $order->operating_unit_id],
+                ['account_code' => '51', 'debit' => $value, 'operating_unit_id' => $order->operating_unit_id],
                 ['account_code' => '1134', 'credit' => $value, 'operating_unit_id' => $order->operating_unit_id],
             ],
             'ProductionOrder',

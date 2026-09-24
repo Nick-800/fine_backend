@@ -125,9 +125,9 @@ class StockLotService
 
             if (! $isImportReceipt && $value > 0) {
                 $creditAccount = match ($data['source']) {
-                    'opening_balance' => '3100', // Retained Earnings
-                    'purchase_cash' => '1200',   // Cash and Bank
-                    'purchase_credit' => '2100', // Accounts Payable
+                    'opening_balance' => '31', // Retained Earnings
+                    'purchase_cash' => '12',   // Cash and Bank
+                    'purchase_credit' => '21', // Accounts Payable
                     default => throw new InvalidArgumentException("Unknown intake source \"{$data['source']}\"."),
                 };
 

@@ -12,8 +12,8 @@ enum OverheadPaymentSource: string
     public function accountCode(): string
     {
         return match ($this) {
-            self::Cash => '1200',    // Cash and Bank
-            self::Payable => '2100', // Accounts Payable
+            self::Cash => '12',    // Cash and Bank
+            self::Payable => '21', // Accounts Payable
         };
     }
 }

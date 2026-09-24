@@ -52,7 +52,7 @@ final class OverheadService
                 "Overhead: {$expense->category->value} ({$label})",
                 [
                     [
-                        'account_code' => '5400', // Overhead Expense
+                        'account_code' => '54', // Overhead Expense
                         'debit' => (float) $expense->amount,
                         'operating_unit_id' => $expense->operating_unit_id,
                         'memo' => $expense->description,
@@ -152,7 +152,7 @@ final class OverheadService
                 $absorbed = $absorb && $wipAccount !== null;
 
                 $reclassLines[] = [
-                    'account_code' => '5400',
+                    'account_code' => '54',
                     'debit' => $share,
                     'operating_unit_id' => $unitId,
                     'memo' => $method->value,
@@ -166,7 +166,7 @@ final class OverheadService
                         'memo' => "absorbed {$expense->category->value}",
                     ];
                     $absorptionLines[] = [
-                        'account_code' => '5400',
+                        'account_code' => '54',
                         'credit' => $share,
                         'operating_unit_id' => $unitId,
                     ];
@@ -181,7 +181,7 @@ final class OverheadService
             }
 
             $reclassLines[] = [
-                'account_code' => '5400',
+                'account_code' => '54',
                 'credit' => round(array_sum(array_column($reclassLines, 'debit')), 4),
                 'operating_unit_id' => null,
                 'memo' => 'moved to units',

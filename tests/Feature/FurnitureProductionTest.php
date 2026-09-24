@@ -300,7 +300,7 @@ test('the finished good carries material plus labor and the ledger balances', fu
     // WIP nets to zero; FG-Furniture holds 144; wages owed 30.
     expect((float) $byCode['1123']['balance'])->toBe(0.0)
         ->and((float) $byCode['1134']['debit'])->toBe(144.0)
-        ->and((float) $byCode['2200']['credit'])->toBe(30.0);
+        ->and((float) $byCode['22']['credit'])->toBe(30.0);
 });
 
 test('collection issues the finished good and recognises cogs', function () {
@@ -322,7 +322,7 @@ test('collection issues the finished good and recognises cogs', function () {
     // FG emptied back out; the value sits in COGS awaiting Phase 07's revenue.
     expect($tb['balanced'])->toBeTrue()
         ->and((float) $byCode['1134']['balance'])->toBe(0.0)
-        ->and((float) $byCode['5100']['debit'])->toBe(114.0);
+        ->and((float) $byCode['51']['debit'])->toBe(114.0);
 });
 
 test('cloning a bom copies everything and leaves the original active', function () {

@@ -231,13 +231,13 @@ class InventorySeeder extends Seeder
                 'Opening inventory balances (seed)',
                 [
                     [
-                        'account_code' => '1110',
+                        'account_code' => '111',
                         'debit' => $openingValue,
                         'operating_unit_id' => $foamUnit->id,
                         'memo' => 'seeded chemical lots + tank charges',
                     ],
                     [
-                        'account_code' => '3100',
+                        'account_code' => '31',
                         'credit' => $openingValue,
                         'operating_unit_id' => $foamUnit->id,
                     ],

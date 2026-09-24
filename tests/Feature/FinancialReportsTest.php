@@ -42,36 +42,36 @@ beforeEach(function () {
 
     // Old revenue in unit A, before the current period.
     $accounting->postJournal('Old sale', [
-        ['account_code' => '1300', 'debit' => 300.0, 'operating_unit_id' => $this->unitA->id],
-        ['account_code' => '4100', 'credit' => 300.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '13', 'debit' => 300.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '41', 'credit' => 300.0, 'operating_unit_id' => $this->unitA->id],
     ], entryDate: '2026-07-01');
 
     // Old purchase, assets and liabilities only.
     $accounting->postJournal('Old purchase', [
-        ['account_code' => '1110', 'debit' => 2000.0, 'operating_unit_id' => $this->unitA->id],
-        ['account_code' => '2100', 'credit' => 2000.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '111', 'debit' => 2000.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '21', 'credit' => 2000.0, 'operating_unit_id' => $this->unitA->id],
     ], entryDate: '2026-07-01');
 
     // Current period: unit A sells on credit and books its cost.
     $accounting->postJournal('Sale A', [
-        ['account_code' => '1300', 'debit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
-        ['account_code' => '4100', 'credit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '13', 'debit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '41', 'credit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
     ]);
     $accounting->postJournal('COGS A', [
-        ['account_code' => '5100', 'debit' => 600.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '51', 'debit' => 600.0, 'operating_unit_id' => $this->unitA->id],
         ['account_code' => '1131', 'credit' => 600.0, 'operating_unit_id' => $this->unitA->id],
     ]);
 
     // Unit B cash sale.
     $accounting->postJournal('Sale B', [
-        ['account_code' => '1200', 'debit' => 500.0, 'operating_unit_id' => $this->unitB->id],
-        ['account_code' => '4100', 'credit' => 500.0, 'operating_unit_id' => $this->unitB->id],
+        ['account_code' => '12', 'debit' => 500.0, 'operating_unit_id' => $this->unitB->id],
+        ['account_code' => '41', 'credit' => 500.0, 'operating_unit_id' => $this->unitB->id],
     ]);
 
     // Company-level expense carried by no unit.
     $accounting->postJournal('FX settlement loss', [
-        ['account_code' => '5300', 'debit' => 50.0],
-        ['account_code' => '2100', 'credit' => 50.0],
+        ['account_code' => '53', 'debit' => 50.0],
+        ['account_code' => '21', 'credit' => 50.0],
     ]);
 
     $this->asOwner = fn () => $this->actingAs($this->owner);
@@ -86,7 +86,7 @@ test('the income statement aggregates revenue and expenses into net income', fun
         ->and((float) $report['expenses']['total'])->toBe(650.0)
         ->and((float) $report['net_income'])->toBe(1150.0);
 
-    $sales = collect($report['revenue']['rows'])->firstWhere('account_code', '4100');
+    $sales = collect($report['revenue']['rows'])->firstWhere('account_code', '41');
     expect((float) $sales['balance'])->toBe(1800.0);
 });
 

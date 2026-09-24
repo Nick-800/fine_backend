@@ -149,9 +149,9 @@ test('fulfillment issues stock, raises the client balance, and posts AR and COGS
 
     // AR 800, revenue 800, COGS 2×150=300 out of FG-Furniture.
     expect($tb['balanced'])->toBeTrue()
-        ->and((float) $byCode['1300']['debit'])->toBe(800.0)
-        ->and((float) $byCode['4100']['credit'])->toBe(800.0)
-        ->and((float) $byCode['5100']['debit'])->toBe(300.0)
+        ->and((float) $byCode['13']['debit'])->toBe(800.0)
+        ->and((float) $byCode['41']['credit'])->toBe(800.0)
+        ->and((float) $byCode['51']['debit'])->toBe(300.0)
         ->and((float) $byCode['1134']['credit'])->toBe(300.0);
 });
 
@@ -204,8 +204,8 @@ test('an internal transfer skips credit, moves stock between units, and posts at
     $byCode = collect($tb['rows'])->keyBy('account_code');
 
     expect($tb['balanced'])->toBeTrue()
-        ->and($byCode->has('1300'))->toBeFalse()
-        ->and($byCode->has('4100'))->toBeFalse()
+        ->and($byCode->has('13'))->toBeFalse()
+        ->and($byCode->has('41'))->toBeFalse()
         ->and((float) $byCode['1134']['balance'])->toBe(0.0);
 
     // And no balance moved on any client.
@@ -234,8 +234,8 @@ test('pos checkout is one atomic step and the drawer report sees it', function (
     $byCode = collect($tb['rows'])->keyBy('account_code');
 
     expect($tb['balanced'])->toBeTrue()
-        ->and((float) $byCode['1200']['debit'])->toBe(450.0)
-        ->and((float) $byCode['4100']['credit'])->toBe(450.0);
+        ->and((float) $byCode['12']['debit'])->toBe(450.0)
+        ->and((float) $byCode['41']['credit'])->toBe(450.0);
 
     $report = ($this->api)()->getJson('/api/v1/pos/daily-report')->assertStatus(200)->json();
 
@@ -275,8 +275,8 @@ test('a finished_good item leaves stock from the same account intake put it into
     expect($tb['balanced'])->toBeTrue()
         ->and((float) $byCode['1134']['debit'])->toBe(400.0)
         ->and((float) $byCode['1134']['credit'])->toBe(200.0)
-        ->and((float) ($byCode['1110']['debit'] ?? 0))->toBe(0.0)
-        ->and((float) ($byCode['1110']['credit'] ?? 0))->toBe(0.0);
+        ->and((float) ($byCode['111']['debit'] ?? 0))->toBe(0.0)
+        ->and((float) ($byCode['111']['credit'] ?? 0))->toBe(0.0);
 });
 
 test('closing the register records the drawer count against system cash', function () {

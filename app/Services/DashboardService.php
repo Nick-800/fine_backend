@@ -42,7 +42,7 @@ final class DashboardService
         $income = $this->reports->incomeStatement($monthStart, $today);
 
         $revenue = (float) $income['revenue']['total'];
-        $cogsRow = collect($income['expenses']['rows'])->firstWhere('account_code', '5100');
+        $cogsRow = collect($income['expenses']['rows'])->firstWhere('account_code', '51');
         $cogs = (float) ($cogsRow['balance'] ?? 0.0);
 
         // FX exposure: foreign-currency commitments still in flight, per
@@ -63,7 +63,7 @@ final class DashboardService
             'cogs_mtd' => round($cogs, 4),
             'gross_margin_pct' => $revenue > 0 ? round(($revenue - $cogs) / $revenue * 100, 2) : null,
             'net_profit_mtd' => (float) $income['net_income'],
-            'cash_position' => $this->accountBalance('1200'),
+            'cash_position' => $this->accountBalance('12'),
             'fx_exposure' => $exposure,
             'pending_approvals' => $this->pendingCounts(),
         ];

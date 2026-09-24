@@ -273,7 +273,7 @@ final class PayrollService
 
             if ($laborPortion > 0) {
                 $lines[] = [
-                    'account_code' => '2200', // Wages Payable — accrued at production close
+                    'account_code' => '22', // Wages Payable — accrued at production close
                     'debit' => $laborPortion,
                     'operating_unit_id' => $unitId,
                     'memo' => 'production labor settled',
@@ -282,7 +282,7 @@ final class PayrollService
 
             if ($expensePortion > 0) {
                 $lines[] = [
-                    'account_code' => '5700', // Wage Expense
+                    'account_code' => '57', // Wage Expense
                     'debit' => $expensePortion,
                     'operating_unit_id' => $unitId,
                 ];
@@ -290,7 +290,7 @@ final class PayrollService
 
             if ($net > 0) {
                 $lines[] = [
-                    'account_code' => '1200', // Cash and Bank
+                    'account_code' => '12', // Cash and Bank
                     'credit' => $net,
                     'operating_unit_id' => $unitId,
                     'memo' => 'net pay disbursed',
@@ -299,7 +299,7 @@ final class PayrollService
 
             if ($deductions > 0) {
                 $lines[] = [
-                    'account_code' => '2210', // Payroll Deductions Payable
+                    'account_code' => '221', // Payroll Deductions Payable
                     'credit' => $deductions,
                     'operating_unit_id' => $unitId,
                 ];

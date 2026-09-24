@@ -169,7 +169,7 @@ class ProcurementTreasurySeeder extends Seeder
                     'id' => (string) Str::uuid(),
                     'company_id' => $company?->id,
                     'operating_unit_id' => $procurement->id,
-                    'account_code' => '2100',
+                    'account_code' => '21',
                     'amount' => fake()->randomFloat(4, 1000, 25_000),
                     'settled_by_user_id' => $treasuryOfficer?->id,
                     'settled_at' => fake()->dateTimeBetween('-30 days', 'now')->format('Y-m-d'),

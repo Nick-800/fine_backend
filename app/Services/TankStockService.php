@@ -135,13 +135,13 @@ class TankStockService
                     "Tank opening balance / correction — {$tank->chemicalItem?->sku}",
                     [
                         [
-                            'account_code' => '1110', // Raw Material Inventory
+                            'account_code' => '111', // Raw Material Inventory
                             'debit' => $value,
                             'operating_unit_id' => $operatingUnitId,
                             'memo' => "{$refillQty} @ {$refillUnitCost}",
                         ],
                         [
-                            'account_code' => '3100', // Retained Earnings
+                            'account_code' => '31', // Retained Earnings
                             'credit' => $value,
                             'operating_unit_id' => $operatingUnitId,
                         ],

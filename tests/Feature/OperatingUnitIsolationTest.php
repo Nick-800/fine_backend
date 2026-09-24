@@ -493,8 +493,8 @@ test('the unit drill-down does not resurface soft-deleted employees', function (
 test('the report unit filter cannot read another unit ledger', function () {
     app(CurrentUnitContext::class)->clear();
     app(AccountingService::class)->postJournal('Unit B opening', [
-        ['account_code' => '1110', 'debit' => 750.0, 'operating_unit_id' => $this->unitB->id],
-        ['account_code' => '3100', 'credit' => 750.0, 'operating_unit_id' => $this->unitB->id],
+        ['account_code' => '111', 'debit' => 750.0, 'operating_unit_id' => $this->unitB->id],
+        ['account_code' => '31', 'credit' => 750.0, 'operating_unit_id' => $this->unitB->id],
     ]);
 
     // A unit-A caller asking for unit B's trial balance gets their own (empty) books.

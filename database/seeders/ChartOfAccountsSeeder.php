@@ -42,11 +42,11 @@ class ChartOfAccountsSeeder extends Seeder
 
         // code, name, type, parent code
         $accounts = [
-            ['1000', 'الأصول', 'asset', null],
-            ['2000', 'الالتزامات', 'liability', null],
-            ['3000', 'حقوق الملكية', 'equity', null],
-            ['4000', 'الإيرادات', 'revenue', null],
-            ['5000', 'المصروفات والتكاليف', 'expense', null],
+            ['1', 'الأصول', 'asset', null],
+            ['2', 'الالتزامات', 'liability', null],
+            ['3', 'حقوق الملكية', 'equity', null],
+            ['4', 'الإيرادات', 'revenue', null],
+            ['5', 'المصروفات والتكاليف', 'expense', null],
         ];
 
         $created = [];

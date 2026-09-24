@@ -36,7 +36,7 @@ final class PayableSettlementController extends Controller
     public function outstanding(): JsonResponse
     {
         return response()->json([
-            'data' => collect(['2100', '2210', '2300'])->map(fn (string $code) => [
+            'data' => collect(['21', '221', '23'])->map(fn (string $code) => [
                 'account_code' => $code,
                 'outstanding' => $this->settlementService->outstanding($code),
             ]),
@@ -57,7 +57,7 @@ final class PayableSettlementController extends Controller
         }
 
         $validated = $request->validate([
-            'account_code' => 'required|string|in:2100,2210,2300',
+            'account_code' => 'required|string|in:21,221,23',
             'amount' => 'required|numeric|min:0.0001',
             'reference' => 'nullable|string|max:255',
             'operating_unit_id' => 'sometimes|nullable|uuid|exists:operating_units,id',

@@ -227,12 +227,12 @@ test('FX-TEST-02: a bank hold where exact_used exceeds held books the spread as 
 
     $advance = JournalEntry::where('source_document_type', 'PaymentRequest')->sole();
     expect((float) $advance->lines()->with('account')->get()
-        ->firstWhere(fn ($l) => $l->account->account_code === '1200')->credit)->toBe(5150.0);
+        ->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(5150.0);
 
     $completion = JournalEntry::where('source_document_type', 'ImportOrder')->sole();
     $lines = $completion->lines()->with('account')->get();
-    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '5300')->debit)->toBe(150.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1500')->credit)->toBe(5150.0);
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '53')->debit)->toBe(150.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '15')->credit)->toBe(5150.0);
 });
 
 test('FX-TEST-03: a USD order with no booked_fx_rate falls back to the most recent historical FxRate', function () {
@@ -270,7 +270,7 @@ test('FX-TEST-03: a USD order with no booked_fx_rate falls back to the most rece
 
     $completion = JournalEntry::where('source_document_type', 'ImportOrder')->sole();
     $lines = $completion->lines()->with('account')->get();
-    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '5300')->debit)->toBe(200.0);
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '53')->debit)->toBe(200.0);
 });
 
 test('FX-TEST-07: a landed cost line in the order currency converts at the realized rate', function () {
@@ -308,8 +308,8 @@ test('FX-TEST-07: a landed cost line in the order currency converts at the reali
     $completion = JournalEntry::where('source_document_type', 'ImportOrder')->sole();
     $lines = $completion->lines()->with('account')->get();
     // Inventory: booked 5000 + freight 520 = 5520
-    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1110')->debit)->toBe(5520.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '2300')->credit)->toBe(520.0);
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '111')->debit)->toBe(5520.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '23')->credit)->toBe(520.0);
 });
 
 test('FX-TEST-08: executePayment without exact_amount_used_lyd defaults to amount_requested * fx_rate_used for the bank branch', function () {

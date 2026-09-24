@@ -57,7 +57,7 @@ final class FixedAssetService
                 "Asset acquired: {$asset->name} ({$asset->asset_code})",
                 [
                     [
-                        'account_code' => '1400', // Fixed Assets
+                        'account_code' => '14', // Fixed Assets
                         'debit' => (float) $asset->acquisition_cost,
                         'operating_unit_id' => $asset->operating_unit_id,
                         'memo' => $asset->name,
@@ -129,13 +129,13 @@ final class FixedAssetService
                 "Depreciation {$period}: {$asset->name}",
                 [
                     [
-                        'account_code' => '5500', // Depreciation Expense
+                        'account_code' => '55', // Depreciation Expense
                         'debit' => $amount,
                         'operating_unit_id' => $asset->operating_unit_id,
                         'memo' => $asset->asset_code,
                     ],
                     [
-                        'account_code' => '1450', // Accumulated Depreciation
+                        'account_code' => '145', // Accumulated Depreciation
                         'credit' => $amount,
                         'operating_unit_id' => $asset->operating_unit_id,
                     ],
@@ -172,7 +172,7 @@ final class FixedAssetService
 
             if ($proceeds > 0) {
                 $lines[] = [
-                    'account_code' => '1200', // Cash and Bank
+                    'account_code' => '12', // Cash and Bank
                     'debit' => round($proceeds, 4),
                     'operating_unit_id' => $asset->operating_unit_id,
                     'memo' => 'disposal proceeds',
@@ -181,7 +181,7 @@ final class FixedAssetService
 
             if ((float) $asset->accumulated_depreciation > 0) {
                 $lines[] = [
-                    'account_code' => '1450', // Accumulated Depreciation
+                    'account_code' => '145', // Accumulated Depreciation
                     'debit' => (float) $asset->accumulated_depreciation,
                     'operating_unit_id' => $asset->operating_unit_id,
                 ];
@@ -189,7 +189,7 @@ final class FixedAssetService
 
             if ($result < 0) {
                 $lines[] = [
-                    'account_code' => '5600', // Loss on Asset Disposal
+                    'account_code' => '56', // Loss on Asset Disposal
                     'debit' => -$result,
                     'operating_unit_id' => $asset->operating_unit_id,
                     'memo' => $asset->asset_code,
@@ -197,7 +197,7 @@ final class FixedAssetService
             }
 
             $lines[] = [
-                'account_code' => '1400', // Fixed Assets (original cost out)
+                'account_code' => '14', // Fixed Assets (original cost out)
                 'credit' => (float) $asset->acquisition_cost,
                 'operating_unit_id' => $asset->operating_unit_id,
                 'memo' => $asset->name,
@@ -205,7 +205,7 @@ final class FixedAssetService
 
             if ($result > 0) {
                 $lines[] = [
-                    'account_code' => '4300', // Gain on Asset Disposal
+                    'account_code' => '43', // Gain on Asset Disposal
                     'credit' => $result,
                     'operating_unit_id' => $asset->operating_unit_id,
                     'memo' => $asset->asset_code,

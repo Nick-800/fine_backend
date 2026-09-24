@@ -41,23 +41,23 @@ beforeEach(function () {
     // Accumulate the three payables the way the flows do: a credit purchase,
     // payroll withholdings, and landed costs awaiting their providers.
     $accounting->postJournal('Credit purchase', [
-        ['account_code' => '1110', 'debit' => 500.0],
-        ['account_code' => '2100', 'credit' => 500.0],
+        ['account_code' => '111', 'debit' => 500.0],
+        ['account_code' => '21', 'credit' => 500.0],
     ]);
     $accounting->postJournal('Payroll withholdings', [
-        ['account_code' => '5700', 'debit' => 80.0],
-        ['account_code' => '2210', 'credit' => 80.0],
+        ['account_code' => '57', 'debit' => 80.0],
+        ['account_code' => '221', 'credit' => 80.0],
     ]);
     $accounting->postJournal('Landed costs', [
-        ['account_code' => '1110', 'debit' => 300.0],
-        ['account_code' => '2300', 'credit' => 300.0],
+        ['account_code' => '111', 'debit' => 300.0],
+        ['account_code' => '23', 'credit' => 300.0],
     ]);
 
     $this->asOwner = fn () => $this->actingAs($this->owner);
 
     $this->settle = fn (array $overrides = []) => ($this->asOwner)()
         ->postJson('/api/v1/payable-settlements', array_merge([
-            'account_code' => '2100',
+            'account_code' => '21',
             'amount' => 200,
             'reference' => 'CHK-001',
         ], $overrides));
@@ -74,15 +74,15 @@ test('settling a payable pays cash and reduces the outstanding balance', functio
         ->where('source_document_id', $settlement->id)->sole();
     $lines = $entry->lines()->with('account')->get();
 
-    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '2100')->debit)->toBe(200.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1200')->credit)->toBe(200.0);
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '21')->debit)->toBe(200.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(200.0);
 
     $outstanding = ($this->asOwner)()->getJson('/api/v1/payable-settlements/outstanding')
         ->assertStatus(200)->json('data');
 
-    expect((float) collect($outstanding)->firstWhere('account_code', '2100')['outstanding'])->toBe(300.0)
-        ->and((float) collect($outstanding)->firstWhere('account_code', '2210')['outstanding'])->toBe(80.0)
-        ->and((float) collect($outstanding)->firstWhere('account_code', '2300')['outstanding'])->toBe(300.0);
+    expect((float) collect($outstanding)->firstWhere('account_code', '21')['outstanding'])->toBe(300.0)
+        ->and((float) collect($outstanding)->firstWhere('account_code', '221')['outstanding'])->toBe(80.0)
+        ->and((float) collect($outstanding)->firstWhere('account_code', '23')['outstanding'])->toBe(300.0);
 });
 
 test('a settlement can never exceed what the ledger says is owed', function () {
@@ -100,14 +100,14 @@ test('a settlement can never exceed what the ledger says is owed', function () {
 });
 
 test('each payable settles independently and the books stay balanced', function () {
-    ($this->settle)(['account_code' => '2210', 'amount' => 80, 'reference' => 'tax remittance'])->assertStatus(201);
-    ($this->settle)(['account_code' => '2300', 'amount' => 300, 'reference' => 'customs broker'])->assertStatus(201);
+    ($this->settle)(['account_code' => '221', 'amount' => 80, 'reference' => 'tax remittance'])->assertStatus(201);
+    ($this->settle)(['account_code' => '23', 'amount' => 300, 'reference' => 'customs broker'])->assertStatus(201);
 
     $outstanding = collect(($this->asOwner)()->getJson('/api/v1/payable-settlements/outstanding')->json('data'));
 
-    expect((float) $outstanding->firstWhere('account_code', '2210')['outstanding'])->toBe(0.0)
-        ->and((float) $outstanding->firstWhere('account_code', '2300')['outstanding'])->toBe(0.0)
-        ->and((float) $outstanding->firstWhere('account_code', '2100')['outstanding'])->toBe(500.0);
+    expect((float) $outstanding->firstWhere('account_code', '221')['outstanding'])->toBe(0.0)
+        ->and((float) $outstanding->firstWhere('account_code', '23')['outstanding'])->toBe(0.0)
+        ->and((float) $outstanding->firstWhere('account_code', '21')['outstanding'])->toBe(500.0);
 
     $tb = ($this->asOwner)()->getJson('/api/v1/reports/trial-balance')->assertStatus(200)->json();
     expect($tb['balanced'])->toBeTrue();
@@ -116,8 +116,8 @@ test('each payable settles independently and the books stay balanced', function 
 test('a unit-tagged settlement is capped by that unit\'s own subledger', function () {
     // 100 of AP belongs to the foam unit; the 500 above is company-level.
     app(AccountingService::class)->postJournal('Unit credit purchase', [
-        ['account_code' => '1110', 'debit' => 100.0, 'operating_unit_id' => $this->unit->id],
-        ['account_code' => '2100', 'credit' => 100.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '111', 'debit' => 100.0, 'operating_unit_id' => $this->unit->id],
+        ['account_code' => '21', 'credit' => 100.0, 'operating_unit_id' => $this->unit->id],
     ]);
 
     ($this->settle)(['amount' => 100, 'operating_unit_id' => $this->unit->id])->assertStatus(201);
@@ -132,12 +132,12 @@ test('a unit-tagged settlement is capped by that unit\'s own subledger', functio
 test('only accounting-level roles can settle and accounts are whitelisted', function () {
     $this->actingAs($this->manager)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
-        ->postJson('/api/v1/payable-settlements', ['account_code' => '2100', 'amount' => 10])
+        ->postJson('/api/v1/payable-settlements', ['account_code' => '21', 'amount' => 10])
         ->assertStatus(403)
         ->assertJsonPath('code', 'SETTLEMENT_FORBIDDEN');
 
     // 1200 is cash, not a payable — the whitelist refuses it outright.
-    ($this->settle)(['account_code' => '1200'])->assertStatus(422);
+    ($this->settle)(['account_code' => '12'])->assertStatus(422);
 
     expect(PayableSettlement::count())->toBe(0);
 });
@@ -149,7 +149,7 @@ test('settlements are listed with their audit trail', function () {
         ->assertStatus(200)->json('data');
 
     expect($listed)->toHaveCount(1)
-        ->and($listed[0]['account_code'])->toBe('2100')
+        ->and($listed[0]['account_code'])->toBe('21')
         ->and($listed[0]['reference'])->toBe('CHK-001')
         ->and($listed[0]['settled_by']['id'])->toBe($this->owner->id);
 });

@@ -72,8 +72,8 @@ final class ProcurementTreasurySeeder extends Seeder
         app(AccountingService::class)->postJournal(
             'Opening treasury cash (seed)',
             [
-                ['account_code' => '1200', 'debit' => 2800000.00, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury + USD clearing safe at 5.20'],
-                ['account_code' => '3100', 'credit' => 2800000.00, 'operating_unit_id' => $unit->id],
+                ['account_code' => '12', 'debit' => 2800000.00, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury + USD clearing safe at 5.20'],
+                ['account_code' => '31', 'credit' => 2800000.00, 'operating_unit_id' => $unit->id],
             ],
         );
 
@@ -125,8 +125,8 @@ final class ProcurementTreasurySeeder extends Seeder
         app(AccountingService::class)->postJournal(
             "Import payment executed — {$supplier->name} (seed)",
             [
-                ['account_code' => '1500', 'debit' => 650000.00, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
-                ['account_code' => '1200', 'credit' => 650000.00, 'operating_unit_id' => $unit->id],
+                ['account_code' => '15', 'debit' => 650000.00, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
+                ['account_code' => '12', 'credit' => 650000.00, 'operating_unit_id' => $unit->id],
             ],
             'PaymentRequest',
             $paymentReq->id,
@@ -183,8 +183,8 @@ final class ProcurementTreasurySeeder extends Seeder
         app(AccountingService::class)->postJournal(
             "Import payment executed — {$supplier->name} (seed)",
             [
-                ['account_code' => '1500', 'debit' => 218875.00, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
-                ['account_code' => '1200', 'credit' => 218875.00, 'operating_unit_id' => $unit->id],
+                ['account_code' => '15', 'debit' => 218875.00, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
+                ['account_code' => '12', 'credit' => 218875.00, 'operating_unit_id' => $unit->id],
             ],
             'PaymentRequest',
             $paymentReq2->id,

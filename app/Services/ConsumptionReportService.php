@@ -152,7 +152,7 @@ class ConsumptionReportService
                             'memo' => count($required).' chemical(s) drawn from tanks',
                         ],
                         [
-                            'account_code' => '1110', // Raw Material Inventory
+                            'account_code' => '111', // Raw Material Inventory
                             'credit' => (float) $batch->material_cost,
                             'operating_unit_id' => $unitId,
                         ],

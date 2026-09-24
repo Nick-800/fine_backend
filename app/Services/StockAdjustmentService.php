@@ -104,12 +104,12 @@ class StockAdjustmentService
 
                 $lines = $request->quantity_delta < 0
                     ? [
-                        ['account_code' => '5200', 'debit' => $value, 'operating_unit_id' => $unitId, 'memo' => $request->reason_code],
+                        ['account_code' => '52', 'debit' => $value, 'operating_unit_id' => $unitId, 'memo' => $request->reason_code],
                         ['account_code' => $inventoryAccount, 'credit' => $value, 'operating_unit_id' => $unitId],
                     ]
                     : [
                         ['account_code' => $inventoryAccount, 'debit' => $value, 'operating_unit_id' => $unitId],
-                        ['account_code' => '5200', 'credit' => $value, 'operating_unit_id' => $unitId, 'memo' => $request->reason_code],
+                        ['account_code' => '52', 'credit' => $value, 'operating_unit_id' => $unitId, 'memo' => $request->reason_code],
                     ];
 
                 $this->accountingService->postJournal(

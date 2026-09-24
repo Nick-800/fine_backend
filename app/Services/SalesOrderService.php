@@ -186,8 +186,8 @@ class SalesOrderService
             $this->accountingService->postJournal(
                 "Payment on sales order {$locked->order_number}",
                 [
-                    ['account_code' => '1200', 'debit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
-                    ['account_code' => '1300', 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
+                    ['account_code' => '12', 'debit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
+                    ['account_code' => '13', 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
                 ],
                 'SalesOrder',
                 $locked->id,
@@ -261,12 +261,12 @@ class SalesOrderService
 
             // Cash against revenue, cost out of stock — one balanced entry.
             $lines = [
-                ['account_code' => '1200', 'debit' => $total, 'operating_unit_id' => $operatingUnitId],
-                ['account_code' => '4100', 'credit' => $total, 'operating_unit_id' => $operatingUnitId],
+                ['account_code' => '12', 'debit' => $total, 'operating_unit_id' => $operatingUnitId],
+                ['account_code' => '41', 'credit' => $total, 'operating_unit_id' => $operatingUnitId],
             ];
 
             if ($totalCost > 0) {
-                $lines[] = ['account_code' => '5100', 'debit' => $totalCost, 'operating_unit_id' => $operatingUnitId];
+                $lines[] = ['account_code' => '51', 'debit' => $totalCost, 'operating_unit_id' => $operatingUnitId];
                 foreach ($costByAccount as $account => $amount) {
                     $lines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $operatingUnitId];
                 }
@@ -603,12 +603,12 @@ class SalesOrderService
         // Revenue is owed by the buyer; cost leaves stock. Both sides in one
         // balanced entry (SALE-07).
         $lines = [
-            ['account_code' => '1300', 'debit' => $price, 'operating_unit_id' => $order->operating_unit_id],
-            ['account_code' => '4100', 'credit' => $price, 'operating_unit_id' => $order->operating_unit_id],
+            ['account_code' => '13', 'debit' => $price, 'operating_unit_id' => $order->operating_unit_id],
+            ['account_code' => '41', 'credit' => $price, 'operating_unit_id' => $order->operating_unit_id],
         ];
 
         if ($totalCost > 0) {
-            $lines[] = ['account_code' => '5100', 'debit' => $totalCost, 'operating_unit_id' => $order->operating_unit_id];
+            $lines[] = ['account_code' => '51', 'debit' => $totalCost, 'operating_unit_id' => $order->operating_unit_id];
             foreach ($costByAccount as $account => $amount) {
                 $lines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $order->operating_unit_id];
             }

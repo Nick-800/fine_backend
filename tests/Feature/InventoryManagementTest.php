@@ -197,8 +197,8 @@ test('manual stock adjustment requires unit manager approval and posts movement'
     $entry = JournalEntry::where('source_document_type', 'StockAdjustmentRequest')->sole();
     $lines = $entry->lines()->with('account')->get();
 
-    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '5200')->debit)->toBe(50.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1110')->credit)->toBe(50.0);
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '52')->debit)->toBe(50.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '111')->credit)->toBe(50.0);
 });
 
 test('an upward audit adjustment recovers value through the variance account', function () {
@@ -237,7 +237,7 @@ test('an upward audit adjustment recovers value through the variance account', f
     $lines = $entry->lines()->with('account')->get();
 
     expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1132')->debit)->toBe(400.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '5200')->credit)->toBe(400.0);
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '52')->credit)->toBe(400.0);
 });
 
 test('adjusting a zero-cost scrap lot moves quantity but posts nothing', function () {
@@ -438,4 +438,3 @@ test('updating inventory item with duplicate SKU is rejected', function () {
         ->assertStatus(422)
         ->assertJsonValidationErrors(['sku']);
 });
-

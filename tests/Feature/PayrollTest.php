@@ -215,15 +215,15 @@ test('the run walks the full lifecycle and posting reaches the ledger split by a
 
     // Unit A: 60 settles the production accrual, 3000 is fresh wage expense,
     // 2960 cash out, 100 withheld.
-    expect((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '2200')->debit)->toBe(60.0)
-        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '5700')->debit)->toBe(3000.0)
-        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '1200')->credit)->toBe(2960.0)
-        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '2210')->credit)->toBe(100.0);
+    expect((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '22')->debit)->toBe(60.0)
+        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(3000.0)
+        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(2960.0)
+        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '221')->credit)->toBe(100.0);
 
     // Unit B: pure attendance pay, no accrual, no deductions.
-    expect((float) $unitB->firstWhere(fn ($l) => $l->account->account_code === '5700')->debit)->toBe(160.0)
-        ->and((float) $unitB->firstWhere(fn ($l) => $l->account->account_code === '1200')->credit)->toBe(160.0)
-        ->and($unitB->first(fn ($l) => $l->account->account_code === '2200'))->toBeNull();
+    expect((float) $unitB->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(160.0)
+        ->and((float) $unitB->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(160.0)
+        ->and($unitB->first(fn ($l) => $l->account->account_code === '22'))->toBeNull();
 
     expect($entry->isBalanced())->toBeTrue();
 
@@ -304,4 +304,3 @@ test('payroll runs index can be filtered by period', function () {
     expect($responseFiltered['total'])->toBe(1);
     expect($responseFiltered['data'][0]['period'])->toBe('2026-07');
 });
-

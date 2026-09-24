@@ -74,8 +74,8 @@ test('intake creates the lot, the movement and the journal in one stroke', funct
         ->where('source_document_id', $lot->id)->sole();
     $lines = $entry->lines()->with('account')->get();
 
-    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '1110')->debit)->toBe(850.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '2100')->credit)->toBe(850.0);
+    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '111')->debit)->toBe(850.0)
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '21')->credit)->toBe(850.0);
 });
 
 test('an opening balance lands against retained earnings and cash purchases against cash', function () {
@@ -86,9 +86,9 @@ test('an opening balance lands against retained earnings and cash purchases agai
     $cashEntry = JournalEntry::where('source_document_id', $cash->json('id'))->sole();
 
     expect($openingEntry->lines()->with('account')->get()
-        ->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('3100')
+        ->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('31')
         ->and($cashEntry->lines()->with('account')->get()
-            ->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('1200');
+            ->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('12');
 
     $tb = ($this->api)()->getJson('/api/v1/reports/trial-balance')->assertStatus(200)->json();
     expect($tb['balanced'])->toBeTrue();
@@ -212,4 +212,3 @@ test('stock intake auto-derives container_quantity when container_quantity is om
     expect((float) $lot->quantity)->toBe(1500.0)
         ->and((float) $lot->container_quantity)->toBe(6.0); // 1500 / 250 = 6
 });
-

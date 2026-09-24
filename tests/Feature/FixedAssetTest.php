@@ -62,9 +62,9 @@ test('acquiring an asset capitalises it against cash', function () {
     $debit = $lines->firstWhere(fn ($l) => (float) $l->debit > 0);
     $credit = $lines->firstWhere(fn ($l) => (float) $l->credit > 0);
 
-    expect($debit->account->account_code)->toBe('1400')
+    expect($debit->account->account_code)->toBe('14')
         ->and((float) $debit->debit)->toBe(13000.0)
-        ->and($credit->account->account_code)->toBe('1200')
+        ->and($credit->account->account_code)->toBe('12')
         ->and($asset->status)->toBe(FixedAssetStatus::Active)
         ->and($asset->bookValue())->toBe(13000.0);
 });
@@ -87,8 +87,8 @@ test('straight line depreciation posts a constant monthly amount', function () {
         ->where('source_document_id', $entry->id)->sole();
     $lines = $journal->lines()->with('account')->get();
 
-    expect($lines->firstWhere(fn ($l) => (float) $l->debit > 0)->account->account_code)->toBe('5500')
-        ->and($lines->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('1450');
+    expect($lines->firstWhere(fn ($l) => (float) $l->debit > 0)->account->account_code)->toBe('55')
+        ->and($lines->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('145');
 });
 
 test('a period never posts twice', function () {
@@ -163,10 +163,10 @@ test('disposal above book value posts a gain', function () {
     $entry = JournalEntry::where('description', 'like', 'Asset disposed%')->sole();
     $byCode = $entry->lines()->with('account')->get()->groupBy(fn ($l) => $l->account->account_code);
 
-    expect((float) $byCode['1200']->sole()->debit)->toBe(13500.0)
-        ->and((float) $byCode['1450']->sole()->debit)->toBe(200.0)
-        ->and((float) $byCode['1400']->sole()->credit)->toBe(13000.0)
-        ->and((float) $byCode['4300']->sole()->credit)->toBe(700.0)
+    expect((float) $byCode['12']->sole()->debit)->toBe(13500.0)
+        ->and((float) $byCode['145']->sole()->debit)->toBe(200.0)
+        ->and((float) $byCode['14']->sole()->credit)->toBe(13000.0)
+        ->and((float) $byCode['43']->sole()->credit)->toBe(700.0)
         ->and($entry->isBalanced())->toBeTrue();
 });
 
@@ -178,7 +178,7 @@ test('disposal below book value posts a loss and a disposed asset stays disposed
     $entry = JournalEntry::where('description', 'like', 'Asset disposed%')->sole();
     $byCode = $entry->lines()->with('account')->get()->groupBy(fn ($l) => $l->account->account_code);
 
-    expect((float) $byCode['5600']->sole()->debit)->toBe(2000.0)
+    expect((float) $byCode['56']->sole()->debit)->toBe(2000.0)
         ->and($entry->isBalanced())->toBeTrue();
 
     expect(fn () => $this->assets->dispose($asset->refresh(), 1.0))

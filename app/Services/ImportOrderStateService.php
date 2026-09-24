@@ -253,13 +253,13 @@ final class ImportOrderStateService
                     "Import payment executed — {$order->supplier?->name}",
                     [
                         [
-                            'account_code' => '1500', // Advances to Suppliers
+                            'account_code' => '15', // Advances to Suppliers
                             'debit' => $settled,
                             'operating_unit_id' => $order->operating_unit_id,
                             'memo' => $order->supplier?->name,
                         ],
                         [
-                            'account_code' => '1200', // Cash and Bank
+                            'account_code' => '12', // Cash and Bank
                             'credit' => $settled,
                             'operating_unit_id' => $order->operating_unit_id,
                             'memo' => $paymentRequest->route->value.' route',
@@ -480,7 +480,7 @@ final class ImportOrderStateService
 
             $landedCostTotal = round($landedCostTotal + $amount, 4);
             $clearingLines[] = [
-                'account_code' => '2300', // Landed Cost Clearing
+                'account_code' => '23', // Landed Cost Clearing
                 'credit' => $amount,
                 'operating_unit_id' => $order->operating_unit_id,
                 'memo' => $line->type->value,
@@ -492,7 +492,7 @@ final class ImportOrderStateService
         $perUnit = $receivedQty > 0.0 ? round($inventoryValue / $receivedQty, 4) : 0.0;
 
         $lines = [[
-            'account_code' => '1110', // Raw Material Inventory
+            'account_code' => '111', // Raw Material Inventory
             'debit' => $inventoryValue,
             'operating_unit_id' => $order->operating_unit_id,
             'memo' => "{$receivedQty} received at {$perUnit}/unit landed",
@@ -500,7 +500,7 @@ final class ImportOrderStateService
 
         if ($fxDifference > 0) {
             $lines[] = [
-                'account_code' => '5300', // FX Loss
+                'account_code' => '53', // FX Loss
                 'debit' => $fxDifference,
                 'operating_unit_id' => $order->operating_unit_id,
                 'memo' => "booked {$bookedCost}, settled {$settled}",
@@ -508,7 +508,7 @@ final class ImportOrderStateService
         }
 
         $lines[] = [
-            'account_code' => '1500', // Advances to Suppliers — cleared
+            'account_code' => '15', // Advances to Suppliers — cleared
             'credit' => $settled,
             'operating_unit_id' => $order->operating_unit_id,
             'memo' => $order->supplier?->name,
@@ -516,7 +516,7 @@ final class ImportOrderStateService
 
         if ($fxDifference < 0) {
             $lines[] = [
-                'account_code' => '4200', // FX Gain
+                'account_code' => '42', // FX Gain
                 'credit' => -$fxDifference,
                 'operating_unit_id' => $order->operating_unit_id,
                 'memo' => "booked {$bookedCost}, settled {$settled}",

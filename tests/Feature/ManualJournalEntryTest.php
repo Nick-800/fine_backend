@@ -39,8 +39,8 @@ beforeEach(function () {
     $this->balancedPayload = fn (array $overrides = []) => array_merge([
         'description' => 'Correct mispriced freight on operation 191',
         'lines' => [
-            ['account_code' => '5100', 'debit' => 250.0, 'operating_unit_id' => $this->unit->id, 'memo' => 'reclass'],
-            ['account_code' => '1110', 'credit' => 250.0, 'operating_unit_id' => $this->unit->id],
+            ['account_code' => '51', 'debit' => 250.0, 'operating_unit_id' => $this->unit->id, 'memo' => 'reclass'],
+            ['account_code' => '111', 'credit' => 250.0, 'operating_unit_id' => $this->unit->id],
         ],
     ], $overrides);
 });
@@ -82,8 +82,8 @@ test('an unbalanced manual entry is refused with nothing written', function () {
     $this->actingAs($this->owner)
         ->postJson('/api/v1/journal-entries', ($this->balancedPayload)([
             'lines' => [
-                ['account_code' => '5100', 'debit' => 250.0],
-                ['account_code' => '1110', 'credit' => 100.0],
+                ['account_code' => '51', 'debit' => 250.0],
+                ['account_code' => '111', 'credit' => 100.0],
             ],
         ]))
         ->assertStatus(422)
@@ -97,7 +97,7 @@ test('an unknown account in a manual entry is refused', function () {
         ->postJson('/api/v1/journal-entries', ($this->balancedPayload)([
             'lines' => [
                 ['account_code' => '9999', 'debit' => 250.0],
-                ['account_code' => '1110', 'credit' => 250.0],
+                ['account_code' => '111', 'credit' => 250.0],
             ],
         ]))
         ->assertStatus(422)
@@ -108,8 +108,8 @@ test('a line carrying both a debit and a credit is refused', function () {
     $this->actingAs($this->owner)
         ->postJson('/api/v1/journal-entries', ($this->balancedPayload)([
             'lines' => [
-                ['account_code' => '5100', 'debit' => 250.0, 'credit' => 250.0],
-                ['account_code' => '1110', 'credit' => 0],
+                ['account_code' => '51', 'debit' => 250.0, 'credit' => 250.0],
+                ['account_code' => '111', 'credit' => 0],
             ],
         ]))
         ->assertStatus(422)
