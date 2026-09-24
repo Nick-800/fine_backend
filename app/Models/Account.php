@@ -16,9 +16,11 @@ final class Account extends Model
 
     protected $fillable = [
         'chart_of_accounts_id',
+        'unit_id',
         'account_code',
         'name',
         'type',
+        'section',
         'currency',
         'parent_account_id',
     ];
