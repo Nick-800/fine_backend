@@ -44,6 +44,7 @@ final class AccountController extends Controller
                     'type' => $account->type,
                     'currency' => $account->currency,
                     'parent_account_id' => $account->parent_account_id,
+                    'is_main' => $account->parent_account_id === null,
                     'total_debit' => $debit,
                     'total_credit' => $credit,
                     'balance' => $balance,
@@ -79,6 +80,7 @@ final class AccountController extends Controller
                 'type' => $account->type,
                 'currency' => $account->currency,
                 'parent_account_id' => $account->parent_account_id,
+                'is_main' => $account->parent_account_id === null,
                 'parent' => $account->parent,
                 'total_debit' => $debit,
                 'total_credit' => $credit,
@@ -119,7 +121,7 @@ final class AccountController extends Controller
         }
 
         if ($search = $request->query('search')) {
-            $term = '%' . trim((string) $search) . '%';
+            $term = '%'.trim((string) $search).'%';
             $query->where(function ($q) use ($term) {
                 $q->where('journal_entries.reference', 'like', $term)
                     ->orWhere('journal_entries.description', 'like', $term)
@@ -141,13 +143,13 @@ final class AccountController extends Controller
         ]);
 
         $parent = null;
-        if (!empty($validated['parent_account_id'])) {
+        if (! empty($validated['parent_account_id'])) {
             $parent = Account::findOrFail($validated['parent_account_id']);
             if ($parent->type !== $validated['type']) {
                 return response()->json([
                     'message' => 'Account type must match parent account type.',
                     'errors' => [
-                        'type' => ['The account type must match parent account type (' . $parent->type . ').'],
+                        'type' => ['The account type must match parent account type ('.$parent->type.').'],
                     ],
                 ], 422);
             }
@@ -188,5 +190,91 @@ final class AccountController extends Controller
             ],
         ], 201);
     }
-}
 
+    /**
+     * ACC-02: a main account (parent_account_id IS NULL) has its code locked
+     * and only its name (and currency) is mutable. Sub-accounts are fully
+     * editable across code, name, and currency.
+     */
+    public function update(Request $request, string $id): JsonResponse
+    {
+        $account = Account::findOrFail($id);
+        $isMain = $account->parent_account_id === null;
+
+        $rules = [
+            'name' => 'required|string|max:255',
+        ];
+        if (! $isMain) {
+            // Sub-accounts may update code, but only when the operator
+            // explicitly provides one (rename-only updates skip the field).
+            $rules['account_code'] = 'sometimes|required|string|max:50|unique:accounts,account_code,'.$account->id;
+        }
+
+        $validated = $request->validate($rules);
+
+        if ($isMain && $request->filled('account_code') && $request->input('account_code') !== $account->account_code) {
+            return response()->json([
+                'message' => 'Cannot change account code on a main account.',
+                'code' => 'MAIN_ACCOUNT_CODE_LOCKED',
+            ], 422);
+        }
+
+        $payload = ['name' => $validated['name']];
+        if (! $isMain && isset($validated['account_code'])) {
+            $payload['account_code'] = $validated['account_code'];
+        }
+        if ($request->filled('currency')) {
+            $payload['currency'] = strtoupper((string) $request->input('currency'));
+        }
+
+        $account->update($payload);
+
+        return response()->json([
+            'message' => 'Account updated successfully.',
+            'data' => [
+                'id' => $account->id,
+                'account_code' => $account->account_code,
+                'name' => $account->name,
+                'type' => $account->type,
+                'currency' => $account->currency,
+                'parent_account_id' => $account->parent_account_id,
+                'is_main' => $isMain,
+            ],
+        ]);
+    }
+
+    /**
+     * ACC-02: delete is allowed only for sub-accounts that have no journal
+     * lines and no children. Main accounts can never be deleted.
+     */
+    public function destroy(string $id): JsonResponse
+    {
+        $account = Account::findOrFail($id);
+        $isMain = $account->parent_account_id === null;
+
+        if ($isMain) {
+            return response()->json([
+                'message' => 'Main accounts cannot be deleted.',
+                'code' => 'MAIN_ACCOUNT_NOT_DELETABLE',
+            ], 422);
+        }
+
+        if ($account->journalLines()->exists()) {
+            return response()->json([
+                'message' => 'Account has journal lines and cannot be deleted.',
+                'code' => 'ACCOUNT_HAS_TRANSACTIONS',
+            ], 422);
+        }
+
+        if ($account->children()->exists()) {
+            return response()->json([
+                'message' => 'Account has child accounts and cannot be deleted.',
+                'code' => 'ACCOUNT_HAS_CHILDREN',
+            ], 422);
+        }
+
+        $account->delete();
+
+        return response()->json(['message' => 'Account deleted successfully.'], 200);
+    }
+}
