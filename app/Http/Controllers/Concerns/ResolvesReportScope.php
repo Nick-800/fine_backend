@@ -34,6 +34,6 @@ trait ResolvesReportScope
 
     private function hasCompanyWideRole(Request $request): bool
     {
-        return $request->user()->hasCompanyWideRole();
+        return (bool) $request->user()?->hasCompanyWideRole();
     }
 }

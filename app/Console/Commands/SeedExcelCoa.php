@@ -83,12 +83,13 @@ final class SeedExcelCoa extends Command
         $tableRows = [];
 
         foreach ($chartsToLoad as $key => $rows) {
-            $unitName = self::UNIT_NAMES[$key] ?? null;
-            $unit = $unitName !== null ? OperatingUnit::where('name', $unitName)->first() : null;
+            $unit = $this->findOperatingUnit($key);
 
             if ($unit === null) {
-                $this->warn("Operating unit '{$unitName}' ({$key}) not found. Skipping.");
-                $tableRows[] = [$key, $unitName ?? 'N/A', count($rows), 0, 0, 'SKIPPED (Unit Missing)'];
+                $expected = self::UNIT_NAMES[$key] ?? $key;
+                $available = OperatingUnit::pluck('name')->implode(', ');
+                $this->warn("Operating unit for '{$key}' ('{$expected}') not found. (Available in DB: {$available}). Skipping.");
+                $tableRows[] = [$key, $expected, count($rows), 0, 0, 'SKIPPED (Unit Missing)'];
 
                 continue;
             }
@@ -231,5 +232,39 @@ final class SeedExcelCoa extends Command
         }
 
         return 'expense';
+    }
+
+    private function findOperatingUnit(string $key): ?OperatingUnit
+    {
+        $exactName = self::UNIT_NAMES[$key] ?? null;
+        if ($exactName !== null) {
+            $unit = OperatingUnit::where('name', $exactName)->first();
+            if ($unit !== null) {
+                return $unit;
+            }
+        }
+
+        if ($key === 'foam') {
+            return OperatingUnit::query()
+                ->where(function ($q) {
+                    $q->where('name', 'LIKE', '%إسفنج%')
+                        ->orWhere('name', 'LIKE', '%اسفنج%')
+                        ->orWhere('name', 'LIKE', '%foam%')
+                        ->orWhere('code', 'LIKE', '%FOAM%');
+                })
+                ->first();
+        }
+
+        if ($key === 'cutter') {
+            return OperatingUnit::query()
+                ->where(function ($q) {
+                    $q->where('name', 'LIKE', '%قص%')
+                        ->orWhere('name', 'LIKE', '%cutter%')
+                        ->orWhere('code', 'LIKE', '%CUT%');
+                })
+                ->first();
+        }
+
+        return null;
     }
 }
