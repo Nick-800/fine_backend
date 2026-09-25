@@ -76,12 +76,6 @@ class SystemBootstrapSeeder extends Seeder
         $this->seedFxRates();
         $this->seedCashAccountsAndOpeningBalance($units['procurement']);
 
-        // ACC-03: per-unit chart seeding follows unit provisioning so the
-        // unit IDs in the seeded rows resolve correctly. Opt out with
-        // OPERATING_UNIT_CHART_SEEDER=false for manual-control installs.
-        if (env('OPERATING_UNIT_CHART_SEEDER', true)) {
-            $this->call(OperatingUnitChartSeeder::class);
-        }
         $this->seedInventoryMasterData($units['foam']);
         $this->seedEntityBackedClient($units['procurement']);
         $this->seedEntityBackedEmployee($units['procurement']);
@@ -124,7 +118,9 @@ class SystemBootstrapSeeder extends Seeder
 
     private function seedChartOfAccounts(): void
     {
-        $this->call(ChartOfAccountsSeeder::class);
+        if (Account::count() === 0) {
+            $this->call(ChartOfAccountsSeeder::class);
+        }
     }
 
     private function seedBlueprints(): void
@@ -702,6 +698,10 @@ class SystemBootstrapSeeder extends Seeder
         $scrapItem = InventoryItem::where('sku', 'SCRAP-FILL')->first();
 
         if ($warehouse === null || $blockItem === null || $scrapItem === null) {
+            return;
+        }
+
+        if (! Account::where('account_code', '1121')->exists() || ! Account::where('account_code', '1131')->exists()) {
             return;
         }
 
