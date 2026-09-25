@@ -19,7 +19,7 @@ final class MaterialRequestResource extends JsonResource
                 return [
                     'id' => $this->inventoryItem->id,
                     'name' => $this->inventoryItem->name,
-                    'sku' => $this->inventoryItem->sku,
+                    'sku' => $this->inventoryItem->code,
                     'item_type' => $this->inventoryItem->item_type,
                     'unit_of_measure' => $this->inventoryItem->unit_of_measure,
                 ];

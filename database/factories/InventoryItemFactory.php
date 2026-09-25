@@ -22,7 +22,7 @@ class InventoryItemFactory extends Factory
 
         return [
             'name' => fake()->words(3, true).' '.fake()->randomElement(['Foam', 'Block', 'Slice', 'Component']),
-            'sku' => strtoupper(Str::random(3)).'-'.fake()->numberBetween(1000, 9999),
+            'code' => strtoupper(Str::random(3)).'-'.fake()->numberBetween(1000, 9999),
             'item_type' => $type,
             'unit_of_measure' => fake()->randomElement(['liter', 'kg', 'm3', 'each']),
         ];

@@ -35,10 +35,15 @@ final class ItemCategory extends Model
             }
         });
 
-        // The full code is never entered directly — it's always the parent's
-        // code plus this category's own segment, recomputed on every save.
+        // The full code is derived from the parent's code plus this category's
+        // own segment — but only for categories that opt into the segment
+        // system. Pre-existing flat categories (no code_segment, e.g. the
+        // ones SystemBootstrapSeeder creates with a manual 'CAT-FOAM' code)
+        // keep whatever `code` was set directly.
         self::saving(function (ItemCategory $category): void {
-            $category->code = self::buildCode($category->parent_id, $category->code_segment);
+            if ($category->code_segment !== null) {
+                $category->code = self::buildCode($category->parent_id, $category->code_segment);
+            }
         });
 
         // Re-parenting or re-segmenting a category invalidates every

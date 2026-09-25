@@ -38,7 +38,7 @@ beforeEach(function () {
     $this->warehouseB = Warehouse::create(['operating_unit_id' => $this->unitB->id, 'name' => 'WH-B', 'code' => 'WH-B']);
 
     $this->item = InventoryItem::create([
-        'name' => 'Foam Block', 'sku' => 'BLOCK-TEST', 'item_type' => 'foam_block', 'unit_of_measure' => 'each',
+        'name' => 'Foam Block', 'code' => 'BLOCK-TEST', 'item_type' => 'foam_block', 'unit_of_measure' => 'each',
     ]);
 
     // Lots in two units; one foam_block lot per warehouse.

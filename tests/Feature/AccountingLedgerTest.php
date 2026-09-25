@@ -100,7 +100,7 @@ test('an unknown account code is refused rather than skipped', function () {
 
 test('closing a foam batch posts finished goods against work in process', function () {
     $blockItem = InventoryItem::create([
-        'name' => 'Foam Block', 'sku' => 'BLOCK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
+        'name' => 'Foam Block', 'code' => 'BLOCK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
     ]);
 
     // material_cost is seeded directly here (in place of a chemical

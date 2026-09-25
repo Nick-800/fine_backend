@@ -64,7 +64,7 @@ beforeEach(function () {
 
     $this->foamBlockItem = InventoryItem::create([
         'name' => 'Foam Block',
-        'sku' => 'FOAM-BLK-001',
+        'code' => 'FOAM-BLK-001',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
     ]);

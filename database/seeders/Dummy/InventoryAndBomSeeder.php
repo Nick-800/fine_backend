@@ -41,20 +41,20 @@ class InventoryAndBomSeeder extends Seeder
         // Cut-piece inventory items in the cutter warehouse
         $cutPieceWarehouse = Warehouse::where('operating_unit_id', $cutterUnit->id)->first();
         $cutPieces = [
-            ['name' => 'Cut Piece — Standard 100x60x10', 'sku' => 'CUT-100-60-10', 'item_type' => 'cut_piece', 'unit_of_measure' => 'each'],
-            ['name' => 'Cut Piece — Premium 120x60x12', 'sku' => 'CUT-120-60-12', 'item_type' => 'cut_piece', 'unit_of_measure' => 'each'],
-            ['name' => 'Cut Piece — Round 80 Diameter', 'sku' => 'CUT-ROUND-80', 'item_type' => 'cut_piece', 'unit_of_measure' => 'each'],
-            ['name' => 'Cut Piece — Bolster 50x20', 'sku' => 'CUT-BOLSTER-5020', 'item_type' => 'cut_piece', 'unit_of_measure' => 'each'],
+            ['name' => 'Cut Piece — Standard 100x60x10', 'code' => 'CUT-100-60-10', 'item_type' => 'cut_piece', 'unit_of_measure' => 'each'],
+            ['name' => 'Cut Piece — Premium 120x60x12', 'code' => 'CUT-120-60-12', 'item_type' => 'cut_piece', 'unit_of_measure' => 'each'],
+            ['name' => 'Cut Piece — Round 80 Diameter', 'code' => 'CUT-ROUND-80', 'item_type' => 'cut_piece', 'unit_of_measure' => 'each'],
+            ['name' => 'Cut Piece — Bolster 50x20', 'code' => 'CUT-BOLSTER-5020', 'item_type' => 'cut_piece', 'unit_of_measure' => 'each'],
         ];
         foreach ($cutPieces as $c) {
             $item = InventoryItem::firstOrCreate(
-                ['sku' => $c['sku']],
+                ['code' => $c['code']],
                 $c + ['category_id' => $foamCategoryId],
             );
 
             for ($lot = 1; $lot <= 2; $lot++) {
                 StockLot::firstOrCreate(
-                    ['lot_number' => 'LOT-'.$c['sku'].'-'.$lot],
+                    ['lot_number' => 'LOT-'.$c['code'].'-'.$lot],
                     [
                         'id' => (string) Str::uuid(),
                         'inventory_item_id' => $item->id,
@@ -72,21 +72,21 @@ class InventoryAndBomSeeder extends Seeder
             ?? Warehouse::where('operating_unit_id', $furnitureUnit->id)->first();
 
         $finishedGoods = [
-            ['name' => 'Foam Mattress — Queen', 'sku' => 'FG-MATTRESS-Q', 'item_type' => 'finished_good', 'unit_of_measure' => 'each'],
-            ['name' => 'Foam Mattress — King', 'sku' => 'FG-MATTRESS-K', 'item_type' => 'finished_good', 'unit_of_measure' => 'each'],
-            ['name' => 'Cushion Set — Standard', 'sku' => 'FG-CUSHION-SET', 'item_type' => 'finished_good', 'unit_of_measure' => 'set'],
-            ['name' => 'Sofa Section — Left', 'sku' => 'FG-SOFA-LEFT', 'item_type' => 'finished_good', 'unit_of_measure' => 'each'],
-            ['name' => 'Bolster Pillow', 'sku' => 'FG-BOLSTER', 'item_type' => 'finished_good', 'unit_of_measure' => 'each'],
-            ['name' => 'Bed Base — Queen', 'sku' => 'FG-BASE-Q', 'item_type' => 'finished_good', 'unit_of_measure' => 'each'],
+            ['name' => 'Foam Mattress — Queen', 'code' => 'FG-MATTRESS-Q', 'item_type' => 'finished_good', 'unit_of_measure' => 'each'],
+            ['name' => 'Foam Mattress — King', 'code' => 'FG-MATTRESS-K', 'item_type' => 'finished_good', 'unit_of_measure' => 'each'],
+            ['name' => 'Cushion Set — Standard', 'code' => 'FG-CUSHION-SET', 'item_type' => 'finished_good', 'unit_of_measure' => 'set'],
+            ['name' => 'Sofa Section — Left', 'code' => 'FG-SOFA-LEFT', 'item_type' => 'finished_good', 'unit_of_measure' => 'each'],
+            ['name' => 'Bolster Pillow', 'code' => 'FG-BOLSTER', 'item_type' => 'finished_good', 'unit_of_measure' => 'each'],
+            ['name' => 'Bed Base — Queen', 'code' => 'FG-BASE-Q', 'item_type' => 'finished_good', 'unit_of_measure' => 'each'],
         ];
         foreach ($finishedGoods as $g) {
             $item = InventoryItem::firstOrCreate(
-                ['sku' => $g['sku']],
+                ['code' => $g['code']],
                 $g + ['category_id' => $furnitureCategoryId],
             );
 
             StockLot::firstOrCreate(
-                ['lot_number' => 'LOT-'.$g['sku'].'-A'],
+                ['lot_number' => 'LOT-'.$g['code'].'-A'],
                 [
                     'id' => (string) Str::uuid(),
                     'inventory_item_id' => $item->id,
@@ -99,7 +99,7 @@ class InventoryAndBomSeeder extends Seeder
         }
 
         // Products in the furniture unit
-        $sliceItem = InventoryItem::where('sku', 'SLICE-STD')->first();
+        $sliceItem = InventoryItem::where('code', 'SLICE-STD')->first();
 
         if ($sliceItem === null) {
             return;
@@ -116,8 +116,8 @@ class InventoryAndBomSeeder extends Seeder
 
         foreach ($productSpecs as $spec) {
             $finishedSku = 'FG-'.str_replace('PROD-', '', $spec['sku']);
-            $inventoryItem = InventoryItem::where('sku', 'FG-'.str_replace('PROD-', '', $spec['sku']))->first()
-                ?? InventoryItem::where('sku', $spec['sku'])->first()
+            $inventoryItem = InventoryItem::where('code', 'FG-'.str_replace('PROD-', '', $spec['sku']))->first()
+                ?? InventoryItem::where('code', $spec['sku'])->first()
                 ?? $sliceItem;
 
             Product::firstOrCreate(

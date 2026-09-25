@@ -57,7 +57,7 @@ beforeEach(function () {
     ]);
 
     $this->sofa = InventoryItem::create([
-        'name' => 'Sofa', 'sku' => 'SOFA-1', 'item_type' => 'furniture_finished_good', 'unit_of_measure' => 'each',
+        'name' => 'Sofa', 'code' => 'SOFA-1', 'item_type' => 'furniture_finished_good', 'unit_of_measure' => 'each',
     ]);
 
     // Store holds 5 sofas at 150 cost each.
@@ -249,7 +249,7 @@ test('a finished_good item leaves stock from the same account intake put it into
     // sale used to credit the 1110 default — value entered one account and
     // left another. Both sides must agree on 1134.
     $good = InventoryItem::create([
-        'name' => 'Mattress', 'sku' => 'MATT-1', 'item_type' => 'finished_good', 'unit_of_measure' => 'each',
+        'name' => 'Mattress', 'code' => 'MATT-1', 'item_type' => 'finished_good', 'unit_of_measure' => 'each',
     ]);
 
     ($this->api)()->postJson('/api/v1/stock-lots/intake', [

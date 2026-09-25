@@ -112,7 +112,7 @@ class StockLotService
                 'operating_unit_id' => $warehouse->operating_unit_id,
                 'stock_lot_id' => $lot->id,
                 'to_warehouse_id' => $warehouse->id,
-                'sku' => $item->sku,
+                'sku' => $item->code,
                 'movement_type' => 'intake',
                 'quantity_delta' => round((float) $data['quantity'], 4),
                 'unit_cost' => round((float) $data['unit_cost'], 4),
@@ -136,7 +136,7 @@ class StockLotService
                     : "{$data['quantity']} × {$data['unit_cost']}";
 
                 $this->accountingService->postJournal(
-                    "Stock intake: {$item->sku} lot {$lotNumber} ({$data['source']})",
+                    "Stock intake: {$item->code} lot {$lotNumber} ({$data['source']})",
                     [
                         [
                             'account_code' => $this->inventoryAccountFor($item),
@@ -305,7 +305,7 @@ class StockLotService
                 'operating_unit_id' => $unitId,
                 'stock_lot_id' => $locked->id,
                 'from_warehouse_id' => $locked->warehouse_id,
-                'sku' => $item?->sku ?? 'ITEM',
+                'sku' => $item?->code ?? 'ITEM',
                 'movement_type' => 'issue',
                 'quantity_delta' => -$drawQuantity,
                 'unit_cost' => (float) $locked->unit_cost,
@@ -332,7 +332,7 @@ class StockLotService
                     'operating_unit_id' => $unitId,
                     'stock_lot_id' => $emptyLot->id,
                     'to_warehouse_id' => $locked->warehouse_id,
-                    'sku' => $item->emptyContainerItem?->sku ?? 'EMPTY-CONTAINER',
+                    'sku' => $item->emptyContainerItem?->code ?? 'EMPTY-CONTAINER',
                     'movement_type' => 'byproduct_yield',
                     'quantity_delta' => $emptied,
                     'unit_cost' => 0,
@@ -426,7 +426,7 @@ class StockLotService
                 'operating_unit_id' => $parentLot->warehouse?->operating_unit_id,
                 'stock_lot_id' => $parentLot->id,
                 'from_warehouse_id' => $parentLot->warehouse_id,
-                'sku' => $parentLot->inventoryItem?->sku ?? 'FOAM-BLOCK',
+                'sku' => $parentLot->inventoryItem?->code ?? 'FOAM-BLOCK',
                 'movement_type' => 'consumption',
                 'quantity_delta' => -1,
                 'unit_cost' => (float) $parentLot->unit_cost,
@@ -470,7 +470,7 @@ class StockLotService
                     'operating_unit_id' => $parentLot->warehouse?->operating_unit_id,
                     'stock_lot_id' => $remnantLot->id,
                     'to_warehouse_id' => $remnantLot->warehouse_id,
-                    'sku' => $parentLot->inventoryItem?->sku ?? 'FOAM-BLOCK',
+                    'sku' => $parentLot->inventoryItem?->code ?? 'FOAM-BLOCK',
                     'movement_type' => 'production_output',
                     'quantity_delta' => 1,
                     'unit_cost' => (float) $remnantLot->unit_cost,
@@ -504,7 +504,7 @@ class StockLotService
 
     public function generateUniqueLotNumber(InventoryItem $item, string $source, ?string $importOrderId = null): string
     {
-        $skuPart = preg_replace('/[^A-Za-z0-9_-]/', '', (string) $item->sku) ?: 'ITEM';
+        $skuPart = preg_replace('/[^A-Za-z0-9_-]/', '', (string) $item->code) ?: 'ITEM';
         $datePart = now()->format('Ymd');
 
         if ($source === 'import_receipt' && $importOrderId) {

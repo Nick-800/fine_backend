@@ -62,26 +62,26 @@ test('can create and list inventory items', function () {
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->postJson('/api/v1/inventory-items', [
             'name' => 'Polyol Standard',
-            'sku' => 'RAW-POLY-01',
+            'code' => 'RAW-POLY-01',
             'item_type' => 'raw_material',
             'unit_of_measure' => 'kg',
         ]);
 
     $response->assertStatus(201)
-        ->assertJsonPath('sku', 'RAW-POLY-01');
+        ->assertJsonPath('code', 'RAW-POLY-01');
 
     $listResponse = $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->getJson('/api/v1/inventory-items');
 
     $listResponse->assertStatus(200)
-        ->assertJsonFragment(['sku' => 'RAW-POLY-01']);
+        ->assertJsonFragment(['code' => 'RAW-POLY-01']);
 });
 
 test('can create stock lots and filter available blocks for cutter selection', function () {
     $item = InventoryItem::create([
         'name' => 'Foam Block 30Density',
-        'sku' => 'BLOCK-30D',
+        'code' => 'BLOCK-30D',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
     ]);
@@ -112,7 +112,7 @@ test('can create stock lots and filter available blocks for cutter selection', f
 test('can retrieve inventory valuation summary and company rollup', function () {
     $item = InventoryItem::create([
         'name' => 'Foam Block Super',
-        'sku' => 'BLOCK-SUPER',
+        'code' => 'BLOCK-SUPER',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
     ]);
@@ -145,7 +145,7 @@ test('can retrieve inventory valuation summary and company rollup', function () 
 test('cutter operator can process cut remnant by restocking remnant block with new dimensions (Option C)', function () {
     $item = InventoryItem::create([
         'name' => 'Foam Block 30D',
-        'sku' => 'BLOCK-30D-CUT',
+        'code' => 'BLOCK-30D-CUT',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
     ]);
@@ -187,7 +187,7 @@ test('cutter operator can process cut remnant by restocking remnant block with n
 test('cutter operator can process cut remnant by converting remaining block to byproduct fill (Option C)', function () {
     $item = InventoryItem::create([
         'name' => 'Foam Block 25D',
-        'sku' => 'BLOCK-25D-BYPROD',
+        'code' => 'BLOCK-25D-BYPROD',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
     ]);
@@ -223,7 +223,7 @@ test('cutter operator can process cut remnant by converting remaining block to b
 test('can update an inventory item', function () {
     $item = InventoryItem::create([
         'name' => 'Original Item',
-        'sku' => 'ITEM-ORIG-01',
+        'code' => 'ITEM-ORIG-01',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
         'primary_uom' => 'barrel',
@@ -234,7 +234,7 @@ test('can update an inventory item', function () {
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->putJson("/api/v1/inventory-items/{$item->id}", [
             'name' => 'Updated Item Name',
-            'sku' => 'ITEM-ORIG-01',
+            'code' => 'ITEM-ORIG-01',
             'unit_of_measure' => 'liter',
             'primary_uom' => 'drum',
             'secondary_uom' => 'liter',
@@ -255,14 +255,14 @@ test('can update an inventory item', function () {
 test('updating inventory item with duplicate SKU is rejected', function () {
     $item1 = InventoryItem::create([
         'name' => 'First Item',
-        'sku' => 'ITEM-SKU-1',
+        'code' => 'ITEM-SKU-1',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
     ]);
 
     $item2 = InventoryItem::create([
         'name' => 'Second Item',
-        'sku' => 'ITEM-SKU-2',
+        'code' => 'ITEM-SKU-2',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
     ]);
@@ -270,8 +270,8 @@ test('updating inventory item with duplicate SKU is rejected', function () {
     $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->putJson("/api/v1/inventory-items/{$item2->id}", [
-            'sku' => 'ITEM-SKU-1',
+            'code' => 'ITEM-SKU-1',
         ])
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['sku']);
+        ->assertJsonValidationErrors(['code']);
 });

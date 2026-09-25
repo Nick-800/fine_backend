@@ -65,7 +65,7 @@ test('can store and query stock lots by dynamic JSON attributes', function () {
     $item = InventoryItem::create([
         'category_id' => $category->id,
         'name' => 'Block 35 Pressure',
-        'sku' => 'BLOCK-35P',
+        'code' => 'BLOCK-35P',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
         'primary_uom' => 'block',
@@ -126,7 +126,7 @@ test('can define and update inventory item with container capacity and dual UOMs
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->postJson('/api/v1/inventory-items', [
             'name' => 'Polyol Special Chemical',
-            'sku' => 'POLY-SPEC-200',
+            'code' => 'POLY-SPEC-200',
             'item_type' => 'raw_material',
             'unit_of_measure' => 'liter',
             'primary_uom' => 'barrel',
@@ -136,7 +136,7 @@ test('can define and update inventory item with container capacity and dual UOMs
 
     $response->assertStatus(201)
         ->assertJsonPath('name', 'Polyol Special Chemical')
-        ->assertJsonPath('sku', 'POLY-SPEC-200')
+        ->assertJsonPath('code', 'POLY-SPEC-200')
         ->assertJsonPath('primary_uom', 'barrel')
         ->assertJsonPath('secondary_uom', 'liter');
 
@@ -194,7 +194,7 @@ test('item category supports item_type and auto-defaults into inventory items', 
         ->postJson('/api/v1/inventory-items', [
             'category_id' => $categoryId,
             'name' => 'TDI Chemical',
-            'sku' => 'CHEM-TDI-001',
+            'code' => 'CHEM-TDI-001',
             'unit_of_measure' => 'kg',
         ]);
 

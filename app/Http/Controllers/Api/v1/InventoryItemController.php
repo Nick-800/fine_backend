@@ -29,7 +29,7 @@ class InventoryItemController extends Controller
             $search = (string) $request->query('search');
             $query->where(function ($q) use ($search): void {
                 $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('sku', 'like', "%{$search}%");
+                    ->orWhere('code', 'like', "%{$search}%");
             });
         }
 
@@ -48,7 +48,7 @@ class InventoryItemController extends Controller
         $validated = $request->validate([
             'category_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(ItemCategory::class, 'category')],
             'name' => ['required', 'string', 'max:255'],
-            'sku' => ['required', 'string', 'max:100', 'unique:inventory_items,sku'],
+            'code' => ['required', 'string', 'max:100', 'unique:inventory_items,code'],
             'item_type' => ['required', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
             'unit_of_measure' => ['required', 'string'],
             'primary_uom' => ['nullable', 'string'],
@@ -79,7 +79,7 @@ class InventoryItemController extends Controller
         $validated = $request->validate([
             'category_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(ItemCategory::class, 'category')],
             'name' => ['sometimes', 'string', 'max:255'],
-            'sku' => ['sometimes', 'string', 'max:100', "unique:inventory_items,sku,{$id}"],
+            'code' => ['sometimes', 'string', 'max:100', "unique:inventory_items,code,{$id}"],
             'item_type' => ['sometimes', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
             'unit_of_measure' => ['sometimes', 'string'],
             'primary_uom' => ['nullable', 'string'],

@@ -37,19 +37,25 @@ final class ItemCategoryController extends Controller
     {
         $validated = $request->validate([
             // Unit comes from the role-validated request context, not the body.
-            // `code` is never accepted from the client — it's always derived
-            // from the parent's code plus `code_segment` (see ItemCategory::buildCode).
+            // Two ways to set the code: pass `code_segment` and it's derived
+            // from the parent's code (see ItemCategory::buildCode) — the path
+            // the hierarchical categories UI uses; or pass a flat `code`
+            // directly for a category that doesn't participate in the
+            // segment system (legacy behaviour, e.g. SystemBootstrapSeeder).
             'parent_id' => ['nullable', 'uuid', 'exists:item_categories,id'],
             'name' => ['required', 'string', 'max:255'],
-            'code_segment' => ['required', 'string', 'max:50'],
+            'code_segment' => ['required_without:code', 'nullable', 'string', 'max:50'],
+            'code' => ['required_without:code_segment', 'nullable', 'string', 'max:50', 'unique:item_categories,code'],
             'item_type' => ['nullable', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
             'child_code_length' => ['nullable', 'integer', 'min:1', 'max:10'],
             'description' => ['nullable', 'string'],
         ]);
 
-        $this->assertCodeAvailable(
-            ItemCategory::buildCode($validated['parent_id'] ?? null, $validated['code_segment']),
-        );
+        if (isset($validated['code_segment'])) {
+            $this->assertCodeAvailable(
+                ItemCategory::buildCode($validated['parent_id'] ?? null, $validated['code_segment']),
+            );
+        }
 
         $category = ItemCategory::create($validated);
 
@@ -71,18 +77,26 @@ final class ItemCategoryController extends Controller
             'parent_id' => ['sometimes', 'nullable', 'uuid', 'exists:item_categories,id', "not_in:{$id}"],
             'name' => ['sometimes', 'string', 'max:255'],
             'code_segment' => ['sometimes', 'required', 'string', 'max:50'],
+            // Only reachable for a category that isn't using the segment
+            // system (its code_segment is null) — otherwise code is derived
+            // and this field is ignored, same as on create.
+            'code' => ['sometimes', 'string', 'max:50', "unique:item_categories,code,{$id}"],
             'item_type' => ['nullable', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
             'child_code_length' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:10'],
             'description' => ['nullable', 'string'],
         ]);
 
-        $nextParentId = array_key_exists('parent_id', $validated) ? $validated['parent_id'] : $category->parent_id;
-        $nextSegment = $validated['code_segment'] ?? $category->code_segment;
+        $usesSegment = array_key_exists('code_segment', $validated) || $category->code_segment !== null;
 
-        $this->assertCodeAvailable(
-            ItemCategory::buildCode($nextParentId, $nextSegment),
-            excludeId: $id,
-        );
+        if ($usesSegment) {
+            $nextParentId = array_key_exists('parent_id', $validated) ? $validated['parent_id'] : $category->parent_id;
+            $nextSegment = $validated['code_segment'] ?? $category->code_segment;
+
+            $this->assertCodeAvailable(
+                ItemCategory::buildCode($nextParentId, $nextSegment),
+                excludeId: $id,
+            );
+        }
 
         $category->update($validated);
 

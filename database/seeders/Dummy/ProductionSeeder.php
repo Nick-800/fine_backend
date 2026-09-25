@@ -52,8 +52,8 @@ class ProductionSeeder extends Seeder
     {
         $batchService = app(ProductionBatchService::class);
         $warehouse = Warehouse::where('operating_unit_id', $foamUnit->id)->first();
-        $blockItem = InventoryItem::where('sku', 'BLOCK-WHITE-1214')->first();
-        $scrapItem = InventoryItem::where('sku', 'SCRAP-FILL')->first();
+        $blockItem = InventoryItem::where('code', 'BLOCK-WHITE-1214')->first();
+        $scrapItem = InventoryItem::where('code', 'SCRAP-FILL')->first();
 
         if ($warehouse === null || $blockItem === null || $scrapItem === null) {
             return;
@@ -159,7 +159,7 @@ class ProductionSeeder extends Seeder
 
     private function seedMaterialRequests(OperatingUnit $furnitureUnit, OperatingUnit $foamUnit): void
     {
-        $sliceItem = InventoryItem::where('sku', 'SLICE-STD')->first();
+        $sliceItem = InventoryItem::where('code', 'SLICE-STD')->first();
         $item = $sliceItem ?? InventoryItem::first();
 
         for ($i = 1; $i <= 6; $i++) {
@@ -178,7 +178,7 @@ class ProductionSeeder extends Seeder
 
     private function seedInternalRestockRequests(OperatingUnit $cutterUnit, OperatingUnit $showroom): void
     {
-        $cutPieceItem = InventoryItem::whereIn('sku', ['CUT-100-60-10', 'CUT-120-60-12'])->first();
+        $cutPieceItem = InventoryItem::whereIn('code', ['CUT-100-60-10', 'CUT-120-60-12'])->first();
 
         for ($i = 1; $i <= 3; $i++) {
             $request = InternalRestockRequest::firstOrCreate(

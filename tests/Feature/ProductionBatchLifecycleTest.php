@@ -33,7 +33,7 @@ beforeEach(function () {
     UserRole::create(['user_id' => $this->user->id, 'role_id' => $role->id, 'operating_unit_id' => $this->unit->id]);
 
     $this->blockItem = InventoryItem::create([
-        'name' => 'Foam Block', 'sku' => 'BLOCK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
+        'name' => 'Foam Block', 'code' => 'BLOCK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
     ]);
 
     $this->api = fn () => $this->actingAs($this->user)

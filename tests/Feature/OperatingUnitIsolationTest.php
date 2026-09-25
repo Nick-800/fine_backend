@@ -71,11 +71,11 @@ beforeEach(function () {
     // Bulk material: these lots exist to test scoping, and carry quantities > 1,
     // which INV-02 would reject on a serialized foam block.
     $this->item = InventoryItem::create([
-        'name' => 'Bulk Filler', 'sku' => 'FILL-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
+        'name' => 'Bulk Filler', 'code' => 'FILL-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
     ]);
 
     $this->blockItem = InventoryItem::create([
-        'name' => 'Foam Block', 'sku' => 'BLOCK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
+        'name' => 'Foam Block', 'code' => 'BLOCK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
     ]);
 
     // One record of each kind in unit B — the unit userA must never reach.
@@ -292,7 +292,7 @@ test('a stock lot cannot be attached to another unit production batch', function
 test('an inventory item cannot be filed under another unit category', function () {
     ($this->asA)()->postJson('/api/v1/inventory-items', [
         'name' => 'Cross Item',
-        'sku' => 'CROSS-1',
+        'code' => 'CROSS-1',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
         'category_id' => $this->categoryB->id,
@@ -305,7 +305,7 @@ test('an inventory item can use a shared category', function () {
 
     ($this->asA)()->postJson('/api/v1/inventory-items', [
         'name' => 'Shared Item',
-        'sku' => 'SHARED-1',
+        'code' => 'SHARED-1',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
         'category_id' => $shared->id,

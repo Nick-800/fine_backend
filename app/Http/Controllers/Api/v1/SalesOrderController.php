@@ -172,7 +172,7 @@ class SalesOrderController extends Controller
             'buyer' => $order->client?->entity?->name ?? $order->buyerUnit?->name ?? 'Walk-in',
             'lines' => $order->lines->map(fn ($l) => [
                 'item' => $l->inventoryItem?->name,
-                'sku' => $l->inventoryItem?->sku,
+                'sku' => $l->inventoryItem?->code,
                 'quantity' => (float) $l->quantity,
                 'unit_price' => (float) $l->unit_price,
                 'line_total' => $l->lineTotal(),

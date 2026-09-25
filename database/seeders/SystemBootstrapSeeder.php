@@ -226,38 +226,38 @@ class SystemBootstrapSeeder extends Seeder
 
         // Container items
         $containers = [
-            ['name' => 'Empty Barrel 40L', 'sku' => 'BARREL-40-EMPTY', 'item_type' => 'barrel', 'unit_of_measure' => 'each'],
-            ['name' => 'Empty Barrel 200L', 'sku' => 'BARREL-200-EMPTY', 'item_type' => 'barrel', 'unit_of_measure' => 'each'],
-            ['name' => 'Pallet', 'sku' => 'PALLET-STD', 'item_type' => 'pallet', 'unit_of_measure' => 'each'],
+            ['name' => 'Empty Barrel 40L', 'code' => 'BARREL-40-EMPTY', 'item_type' => 'barrel', 'unit_of_measure' => 'each'],
+            ['name' => 'Empty Barrel 200L', 'code' => 'BARREL-200-EMPTY', 'item_type' => 'barrel', 'unit_of_measure' => 'each'],
+            ['name' => 'Pallet', 'code' => 'PALLET-STD', 'item_type' => 'pallet', 'unit_of_measure' => 'each'],
         ];
         foreach ($containers as $c) {
             InventoryItem::firstOrCreate(
-                ['sku' => $c['sku']],
+                ['code' => $c['code']],
                 $c + ['category_id' => ItemCategory::where('code', 'CAT-CONT')->value('id')],
             );
         }
 
         $chemicalCategoryId = ItemCategory::where('code', 'CAT-CHEM')->value('id');
-        $emptyBarrel40 = InventoryItem::where('sku', 'BARREL-40-EMPTY')->first();
-        $emptyBarrel200 = InventoryItem::where('sku', 'BARREL-200-EMPTY')->first();
+        $emptyBarrel40 = InventoryItem::where('code', 'BARREL-40-EMPTY')->first();
+        $emptyBarrel200 = InventoryItem::where('code', 'BARREL-200-EMPTY')->first();
         $foamWarehouse = Warehouse::where('operating_unit_id', $foamUnit->id)->first();
 
         // Chemicals + opening lots
         $chemicals = [
-            ['name' => 'Polyol 15%', 'sku' => 'CHEM-POLYOL-15', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 3.10, 'barrels' => 6],
-            ['name' => 'Polyol 45%', 'sku' => 'CHEM-POLYOL-45', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 3.45, 'barrels' => 6],
-            ['name' => 'TDI (Sabec)', 'sku' => 'CHEM-TDI-SABEC', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 5.20, 'barrels' => 8],
-            ['name' => 'Amine A33', 'sku' => 'CHEM-AMINE-A33', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 12.00, 'barrels' => 2],
-            ['name' => 'Catalyst T-9', 'sku' => 'CHEM-T9', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 18.50, 'barrels' => 2],
-            ['name' => 'Silicone JC-7858', 'sku' => 'CHEM-SIL-JC7858', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 9.75, 'barrels' => 3],
-            ['name' => 'Methylene Chloride', 'sku' => 'CHEM-MC', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 2.40, 'barrels' => 3],
+            ['name' => 'Polyol 15%', 'code' => 'CHEM-POLYOL-15', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 3.10, 'barrels' => 6],
+            ['name' => 'Polyol 45%', 'code' => 'CHEM-POLYOL-45', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 3.45, 'barrels' => 6],
+            ['name' => 'TDI (Sabec)', 'code' => 'CHEM-TDI-SABEC', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 5.20, 'barrels' => 8],
+            ['name' => 'Amine A33', 'code' => 'CHEM-AMINE-A33', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 12.00, 'barrels' => 2],
+            ['name' => 'Catalyst T-9', 'code' => 'CHEM-T9', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 18.50, 'barrels' => 2],
+            ['name' => 'Silicone JC-7858', 'code' => 'CHEM-SIL-JC7858', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 9.75, 'barrels' => 3],
+            ['name' => 'Methylene Chloride', 'code' => 'CHEM-MC', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 2.40, 'barrels' => 3],
         ];
 
         foreach ($chemicals as $index => $chemical) {
-            $item = InventoryItem::firstOrCreate(['sku' => $chemical['sku']], [
+            $item = InventoryItem::firstOrCreate(['code' => $chemical['code']], [
                 'category_id' => $chemicalCategoryId,
                 'name' => $chemical['name'],
-                'sku' => $chemical['sku'],
+                'code' => $chemical['code'],
                 'item_type' => 'raw_material',
                 'unit_of_measure' => 'liter',
                 'primary_uom' => 'barrel',
@@ -267,7 +267,7 @@ class SystemBootstrapSeeder extends Seeder
             ]);
 
             StockLot::firstOrCreate(
-                ['lot_number' => sprintf('LOT-%s-%03d', $chemical['sku'], $index + 1)],
+                ['lot_number' => sprintf('LOT-%s-%03d', $chemical['code'], $index + 1)],
                 [
                     'id' => (string) Str::uuid(),
                     'inventory_item_id' => $item->id,
@@ -283,26 +283,26 @@ class SystemBootstrapSeeder extends Seeder
 
         // Foam outputs
         $foamCategoryId = ItemCategory::where('code', 'CAT-FOAM')->value('id');
-        InventoryItem::firstOrCreate(['sku' => 'BLOCK-WHITE-1214'], [
+        InventoryItem::firstOrCreate(['code' => 'BLOCK-WHITE-1214'], [
             'category_id' => $foamCategoryId,
             'name' => 'Foam Block — White 12-14',
-            'sku' => 'BLOCK-WHITE-1214',
+            'code' => 'BLOCK-WHITE-1214',
             'item_type' => 'foam_block',
             'unit_of_measure' => 'm3',
         ]);
 
-        InventoryItem::firstOrCreate(['sku' => 'SCRAP-FILL'], [
+        InventoryItem::firstOrCreate(['code' => 'SCRAP-FILL'], [
             'category_id' => $foamCategoryId,
             'name' => 'Foam Scrap Fill',
-            'sku' => 'SCRAP-FILL',
+            'code' => 'SCRAP-FILL',
             'item_type' => 'byproduct_fill',
             'unit_of_measure' => 'm3',
         ]);
 
-        InventoryItem::firstOrCreate(['sku' => 'SLICE-STD'], [
+        InventoryItem::firstOrCreate(['code' => 'SLICE-STD'], [
             'category_id' => $foamCategoryId,
             'name' => 'Foam Slice',
-            'sku' => 'SLICE-STD',
+            'code' => 'SLICE-STD',
             'item_type' => 'slice',
             'unit_of_measure' => 'each',
         ]);
@@ -630,8 +630,8 @@ class SystemBootstrapSeeder extends Seeder
         $batchService = app(ProductionBatchService::class);
 
         $warehouse = Warehouse::where('operating_unit_id', $foamUnit->id)->first();
-        $blockItem = InventoryItem::where('sku', 'BLOCK-WHITE-1214')->first();
-        $scrapItem = InventoryItem::where('sku', 'SCRAP-FILL')->first();
+        $blockItem = InventoryItem::where('code', 'BLOCK-WHITE-1214')->first();
+        $scrapItem = InventoryItem::where('code', 'SCRAP-FILL')->first();
 
         if ($warehouse === null || $blockItem === null || $scrapItem === null) {
             return;
