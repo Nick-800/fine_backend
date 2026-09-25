@@ -75,6 +75,13 @@ class SystemBootstrapSeeder extends Seeder
         $units = $this->seedOperatingUnits();
         $this->seedFxRates();
         $this->seedCashAccountsAndOpeningBalance($units['procurement']);
+
+        // ACC-03: per-unit chart seeding follows unit provisioning so the
+        // unit IDs in the seeded rows resolve correctly. Opt out with
+        // OPERATING_UNIT_CHART_SEEDER=false for manual-control installs.
+        if (env('OPERATING_UNIT_CHART_SEEDER', true)) {
+            $this->call(OperatingUnitChartSeeder::class);
+        }
         $this->seedInventoryMasterData($units['foam']);
         $this->seedEntityBackedClient($units['procurement']);
         $this->seedEntityBackedEmployee($units['procurement']);
