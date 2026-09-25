@@ -104,6 +104,19 @@ class AccountingService
             foreach ($lines as $line) {
                 $account = $this->resolveAccount($line['account_code']);
 
+                // ACC-03: cross-unit posting is a hard error.
+                $lineUnitId = $line['operating_unit_id'] ?? null;
+                if ($lineUnitId === null && $account->unit_id !== null) {
+                    throw new InvalidArgumentException(
+                        "A global journal cannot post to a unit-scoped account '{$account->account_code}'."
+                    );
+                }
+                if ($lineUnitId !== null && $account->unit_id !== null && (string) $account->unit_id !== (string) $lineUnitId) {
+                    throw new InvalidArgumentException(
+                        "Cannot post to '{$account->account_code}' (unit {$account->unit_id}) from unit {$lineUnitId}."
+                    );
+                }
+
                 JournalLine::create([
                     'journal_entry_id' => $entry->id,
                     'account_id' => $account->id,
