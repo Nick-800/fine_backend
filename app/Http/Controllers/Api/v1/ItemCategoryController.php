@@ -13,7 +13,7 @@ final class ItemCategoryController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = ItemCategory::with('attributeDefinitions');
+        $query = ItemCategory::query();
 
         if ($request->has('search') && filled($request->query('search'))) {
             $search = (string) $request->query('search');
@@ -38,12 +38,12 @@ final class ItemCategoryController extends Controller
 
         $category = ItemCategory::create($validated);
 
-        return response()->json($category->load('attributeDefinitions'), 201);
+        return response()->json($category, 201);
     }
 
     public function show(string $id): JsonResponse
     {
-        $category = ItemCategory::with('attributeDefinitions')->findOrFail($id);
+        $category = ItemCategory::findOrFail($id);
 
         return response()->json($category);
     }
@@ -61,7 +61,7 @@ final class ItemCategoryController extends Controller
 
         $category->update($validated);
 
-        return response()->json($category->load('attributeDefinitions'));
+        return response()->json($category);
     }
 
     public function destroy(string $id): JsonResponse

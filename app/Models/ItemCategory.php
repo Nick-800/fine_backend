@@ -43,11 +43,6 @@ final class ItemCategory extends Model
         'description',
     ];
 
-    public function attributeDefinitions(): HasMany
-    {
-        return $this->hasMany(InventoryAttributeDefinition::class, 'category_id')->orderBy('sort_order');
-    }
-
     public function items(): HasMany
     {
         return $this->hasMany(InventoryItem::class, 'category_id');

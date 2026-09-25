@@ -10,9 +10,7 @@ use App\Models\OverheadExpense;
 use App\Models\PayrollRun;
 use App\Models\ProductionBatch;
 use App\Models\Role;
-use App\Models\StockAdjustmentRequest;
 use App\Models\StockLot;
-use App\Models\TankStock;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Observers\AuditObserver;
@@ -46,8 +44,6 @@ class AppServiceProvider extends ServiceProvider
         InventoryItem::observe(AuditObserver::class);
         ItemCategory::observe(AuditObserver::class);
         StockLot::observe(AuditObserver::class);
-        TankStock::observe(AuditObserver::class);
-        StockAdjustmentRequest::observe(AuditObserver::class);
         ProductionBatch::observe(AuditObserver::class);
 
         // Phase 08: overhead and fixed assets carry money — every change is

@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Database\Seeders\Dummy;
 
-use App\Models\Bom;
-use App\Models\BomComponentLine;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
-use App\Models\LaborRequirement;
 use App\Models\OperatingUnit;
 use App\Models\Product;
 use App\Models\StockLot;
@@ -17,12 +14,11 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
 /**
- * Adds finished-good inventory items, products with active BOMs, and the
- * stock lots that let sales and POS flows draw real quantities.
+ * Adds finished-good inventory items, products, and the stock lots that let
+ * sales and POS flows draw real quantities.
  *
- * Targets the furniture unit for products and BOMs (FUR-01), and the foam
- * and cutter units for cut-piece lots so cutter work orders have something
- * to operate on.
+ * Targets the furniture unit for products, and the foam and cutter units for
+ * cut-piece lots so cutter work orders have something to operate on.
  */
 class InventoryAndBomSeeder extends Seeder
 {
@@ -102,8 +98,7 @@ class InventoryAndBomSeeder extends Seeder
             );
         }
 
-        // Products + BOMs in the furniture unit
-        $cutPieceItems = InventoryItem::whereIn('item_type', ['cut_piece'])->get();
+        // Products in the furniture unit
         $sliceItem = InventoryItem::where('sku', 'SLICE-STD')->first();
 
         if ($sliceItem === null) {
@@ -125,7 +120,7 @@ class InventoryAndBomSeeder extends Seeder
                 ?? InventoryItem::where('sku', $spec['sku'])->first()
                 ?? $sliceItem;
 
-            $product = Product::firstOrCreate(
+            Product::firstOrCreate(
                 ['sku' => $spec['sku']],
                 [
                     'id' => (string) Str::uuid(),
@@ -134,40 +129,6 @@ class InventoryAndBomSeeder extends Seeder
                     'name' => $spec['name'],
                     'description' => 'Dummy product seeded by DummyDataSeeder.',
                     'markup_factor' => $spec['markup'],
-                ],
-            );
-
-            $bom = Bom::firstOrCreate(
-                ['product_id' => $product->id, 'version' => 1],
-                [
-                    'id' => (string) Str::uuid(),
-                    'is_active' => true,
-                    'notes' => 'Dummy BOM (v1).',
-                ],
-            );
-
-            $componentCount = fake()->numberBetween(2, 4);
-            $picks = $cutPieceItems->shuffle()->take(min($componentCount, $cutPieceItems->count()));
-            if ($picks->isEmpty()) {
-                $picks = collect([$sliceItem]);
-            }
-            foreach ($picks as $component) {
-                BomComponentLine::firstOrCreate(
-                    ['bom_id' => $bom->id, 'inventory_item_id' => $component->id],
-                    [
-                        'id' => (string) Str::uuid(),
-                        'quantity' => fake()->randomFloat(4, 1, 8),
-                        'estimated_unit_cost' => fake()->randomFloat(4, 5, 60),
-                    ],
-                );
-            }
-
-            LaborRequirement::firstOrCreate(
-                ['bom_id' => $bom->id, 'role' => 'assembler'],
-                [
-                    'id' => (string) Str::uuid(),
-                    'estimated_hours' => fake()->randomFloat(2, 0.5, 4),
-                    'hourly_rate' => fake()->randomFloat(4, 8, 18),
                 ],
             );
         }

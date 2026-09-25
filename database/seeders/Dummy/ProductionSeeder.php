@@ -5,22 +5,16 @@ declare(strict_types=1);
 namespace Database\Seeders\Dummy;
 
 use App\Enums\ProductionBatchStatus;
-use App\Enums\ProductionOrderStatus;
-use App\Models\ConsumptionReport;
 use App\Models\CutterWorkOrder;
 use App\Models\CutterWorkOrderLine;
-use App\Models\Entity;
 use App\Models\InternalRestockRequest;
 use App\Models\InternalRestockRequestLine;
 use App\Models\InventoryItem;
 use App\Models\MaterialRequest;
 use App\Models\OperatingUnit;
-use App\Models\Product;
 use App\Models\ProductionBatch;
-use App\Models\ProductionOrder;
 use App\Models\StockLot;
 use App\Models\Warehouse;
-use App\Services\ConsumptionReportService;
 use App\Services\ProductionBatchService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
@@ -50,7 +44,6 @@ class ProductionSeeder extends Seeder
 
         $this->seedExtraFoamBatches($foamUnit);
         $this->seedCutterWorkOrders($cutterUnit);
-        $this->seedFurnitureProductionOrders($furnitureUnit);
         $this->seedMaterialRequests($furnitureUnit, $foamUnit);
         $this->seedInternalRestockRequests($cutterUnit, $showroom);
     }
@@ -58,7 +51,6 @@ class ProductionSeeder extends Seeder
     private function seedExtraFoamBatches(OperatingUnit $foamUnit): void
     {
         $batchService = app(ProductionBatchService::class);
-        $consumptionService = app(ConsumptionReportService::class);
         $warehouse = Warehouse::where('operating_unit_id', $foamUnit->id)->first();
         $blockItem = InventoryItem::where('sku', 'BLOCK-WHITE-1214')->first();
         $scrapItem = InventoryItem::where('sku', 'SCRAP-FILL')->first();
@@ -79,31 +71,25 @@ class ProductionSeeder extends Seeder
             ],
         );
 
-        if (ConsumptionReport::where('production_batch_id', $closedBatch->id)->doesntExist()) {
-            try {
-                $batchService->transition($closedBatch, ProductionBatchStatus::Configured);
-                $batchService->transition($closedBatch->fresh(), ProductionBatchStatus::Running);
-                $consumptionService->record($closedBatch->fresh(), [
-                    ['chemical_inventory_item_id' => InventoryItem::where('sku', 'CHEM-POLYOL-15')->value('id'), 'quantity_consumed' => 920],
-                    ['chemical_inventory_item_id' => InventoryItem::where('sku', 'CHEM-POLYOL-45')->value('id'), 'quantity_consumed' => 920],
-                    ['chemical_inventory_item_id' => InventoryItem::where('sku', 'CHEM-TDI-SABEC')->value('id'), 'quantity_consumed' => 1145],
-                ]);
-                foreach ([ProductionBatchStatus::Consumed, ProductionBatchStatus::Curing, ProductionBatchStatus::ReadyForGrading] as $s) {
-                    $batchService->transition($closedBatch->fresh(), $s);
-                }
-                $batchService->registerBlocks($closedBatch->fresh(), [
-                    [
-                        'kind' => 'block', 'count' => 12, 'length_m' => 2.0, 'height_m' => 0.8, 'pressure' => 35,
-                        'inventory_item_id' => $blockItem->id, 'warehouse_id' => $warehouse->id, 'grade' => 'standard', 'color' => 'white',
-                    ],
-                    ['kind' => 'scrap', 'count' => 1, 'length_m' => 2.0, 'height_m' => 0.4, 'inventory_item_id' => $scrapItem->id, 'warehouse_id' => $warehouse->id],
-                ]);
-                $batchService->transition($closedBatch->fresh(), ProductionBatchStatus::Graded);
-                $batchService->transition($closedBatch->fresh(), ProductionBatchStatus::Closed);
-            } catch (\Throwable $e) {
-                // Service-level guards may block the full path; leave the batch
-                // in whichever state it reached for manual recovery.
+        try {
+            $batchService->transition($closedBatch, ProductionBatchStatus::Configured);
+            $batchService->transition($closedBatch->fresh(), ProductionBatchStatus::Running);
+            foreach ([ProductionBatchStatus::Consumed, ProductionBatchStatus::Curing, ProductionBatchStatus::ReadyForGrading] as $s) {
+                $batchService->transition($closedBatch->fresh(), $s);
             }
+            $batchService->registerBlocks($closedBatch->fresh(), [
+                [
+                    'kind' => 'block', 'count' => 12, 'length_m' => 2.0, 'height_m' => 0.8, 'pressure' => 35,
+                    'inventory_item_id' => $blockItem->id, 'warehouse_id' => $warehouse->id, 'grade' => 'standard', 'color' => 'white',
+                ],
+                ['kind' => 'scrap', 'count' => 1, 'length_m' => 2.0, 'height_m' => 0.4, 'inventory_item_id' => $scrapItem->id, 'warehouse_id' => $warehouse->id],
+            ]);
+            $batchService->transition($closedBatch->fresh(), ProductionBatchStatus::Graded);
+            $batchService->transition($closedBatch->fresh(), ProductionBatchStatus::Closed);
+        } catch (\Throwable $e) {
+            // Service-level guards may block the full path (or it already ran
+            // on a previous seed); leave the batch in whichever state it
+            // reached for manual recovery.
         }
 
         // 2. A planned batch waiting to be configured
@@ -130,17 +116,11 @@ class ProductionSeeder extends Seeder
             ],
         );
 
-        if (ConsumptionReport::where('production_batch_id', $running->id)->doesntExist()) {
-            try {
-                $batchService->transition($running, ProductionBatchStatus::Configured);
-                $consumptionService->record($running->fresh(), [
-                    ['chemical_inventory_item_id' => InventoryItem::where('sku', 'CHEM-POLYOL-15')->value('id'), 'quantity_consumed' => 1100],
-                    ['chemical_inventory_item_id' => InventoryItem::where('sku', 'CHEM-TDI-SABEC')->value('id'), 'quantity_consumed' => 1380],
-                ]);
-                $batchService->transition($running->fresh(), ProductionBatchStatus::Consumed);
-            } catch (\Throwable $e) {
-                // ignore — partial state still useful for inspection
-            }
+        try {
+            $batchService->transition($running, ProductionBatchStatus::Configured);
+            $batchService->transition($running->fresh(), ProductionBatchStatus::Consumed);
+        } catch (\Throwable $e) {
+            // ignore — partial state still useful for inspection
         }
     }
 
@@ -177,39 +157,6 @@ class ProductionSeeder extends Seeder
         }
     }
 
-    private function seedFurnitureProductionOrders(OperatingUnit $furnitureUnit): void
-    {
-        $products = Product::where('operating_unit_id', $furnitureUnit->id)->get();
-
-        if ($products->isEmpty()) {
-            return;
-        }
-
-        $clientEntity = Entity::where('name', 'Sahara Trading & Contracting Co.')->first();
-
-        for ($i = 1; $i <= 4; $i++) {
-            $product = $products->random();
-            $bom = $product?->activeBom;
-            if ($product === null || $bom === null) {
-                continue;
-            }
-
-            ProductionOrder::firstOrCreate(
-                ['order_number' => 'PO-DUMMY-'.str_pad((string) $i, 3, '0', STR_PAD_LEFT)],
-                [
-                    'id' => (string) Str::uuid(),
-                    'operating_unit_id' => $furnitureUnit->id,
-                    'product_id' => $product->id,
-                    'bom_id' => $bom->id,
-                    'client_id' => $clientEntity?->client?->id,
-                    'quantity' => fake()->numberBetween(1, 10),
-                    'status' => ProductionOrderStatus::Requested,
-                    'notes' => 'Dummy furniture production order.',
-                ],
-            );
-        }
-    }
-
     private function seedMaterialRequests(OperatingUnit $furnitureUnit, OperatingUnit $foamUnit): void
     {
         $sliceItem = InventoryItem::where('sku', 'SLICE-STD')->first();
@@ -224,8 +171,6 @@ class ProductionSeeder extends Seeder
                 'quantity' => 4 * $i,
                 'status' => $status,
                 'operating_unit_id' => $foamUnit->id,
-                'requested_for_type' => 'ProductionOrder',
-                'requested_for_id' => ProductionOrder::inRandomOrder()->value('id'),
                 'fulfilled_at' => $status === MaterialRequest::STATUS_FULFILLED ? now() : null,
             ]);
         }

@@ -2,18 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Models\Bom;
 use App\Models\Company;
 use App\Models\Employee;
 use App\Models\Entity;
-use App\Models\InventoryItem;
 use App\Models\JournalEntry;
-use App\Models\LaborLog;
 use App\Models\LaborRoleRate;
 use App\Models\OperatingUnit;
 use App\Models\PayrollRun;
-use App\Models\Product;
-use App\Models\ProductionOrder;
 use App\Models\Role;
 use App\Models\UnitBlueprint;
 use App\Models\User;
@@ -65,32 +60,9 @@ beforeEach(function () {
         ], $overrides));
     };
 
-    // Salaried carpenter in the furniture plant with production hours logged
-    // against a real order — logs always belong to one.
+    // Salaried carpenter in the furniture plant.
     $this->salaried = $makeEmployee('Salaried Carpenter', $this->unitA, [
         'pay_type' => 'monthly', 'monthly_salary' => 3000,
-    ]);
-
-    $item = InventoryItem::create([
-        'name' => 'Sofa', 'sku' => 'SOFA-1', 'item_type' => 'finished_good', 'unit_of_measure' => 'pc',
-    ]);
-    $product = Product::create([
-        'operating_unit_id' => $this->unitA->id, 'inventory_item_id' => $item->id,
-        'name' => 'Sofa', 'sku' => 'PROD-SOFA-1',
-    ]);
-    $bom = Bom::create(['product_id' => $product->id, 'version' => 1, 'is_active' => true]);
-    $order = ProductionOrder::create([
-        'operating_unit_id' => $this->unitA->id, 'product_id' => $product->id, 'bom_id' => $bom->id,
-        'order_number' => 'FPO-9001', 'status' => 'in_production',
-    ]);
-
-    LaborLog::create([
-        'production_order_id' => $order->id,
-        'employee_id' => $this->salaried->id,
-        'role' => 'carpenter',
-        'hours_logged' => 5,
-        'hourly_rate_at_log' => 12,
-        'logged_at' => '2026-08-05 10:00:00',
     ]);
 
     // Hourly tailor in the showroom, paid from attendance at the role rate.
@@ -121,20 +93,19 @@ beforeEach(function () {
     };
 });
 
-test('calculation builds payslips from salary, attendance and labor logs', function () {
+test('calculation builds payslips from salary and attendance', function () {
     $run = ($this->openAndCalculate)();
 
-    // Salaried: 3000 base + 5h × 12 logged = 3060. Hourly: 16h × 10 = 160.
+    // Salaried: 3000 base. Hourly: 16h × 10 = 160.
     expect($run['status'])->toBe('calculated')
-        ->and((float) $run['total_gross'])->toBe(3220.0)
-        ->and((float) $run['total_net'])->toBe(3220.0)
+        ->and((float) $run['total_gross'])->toBe(3160.0)
+        ->and((float) $run['total_net'])->toBe(3160.0)
         ->and($run['payslips'])->toHaveCount(2);
 
     $slips = collect($run['payslips'])->keyBy('employee_id');
 
     expect((float) $slips[$this->salaried->id]['base_pay'])->toBe(3000.0)
-        ->and((float) $slips[$this->salaried->id]['labor_log_pay'])->toBe(60.0)
-        ->and((float) $slips[$this->salaried->id]['gross_pay'])->toBe(3060.0)
+        ->and((float) $slips[$this->salaried->id]['gross_pay'])->toBe(3000.0)
         ->and((float) $slips[$this->hourly->id]['attendance_pay'])->toBe(160.0);
 });
 
@@ -145,7 +116,7 @@ test('recalculating regenerates the payslips instead of duplicating them', funct
         ->assertStatus(200)->json();
 
     expect($again['payslips'])->toHaveCount(2)
-        ->and((float) $again['total_gross'])->toBe(3220.0);
+        ->and((float) $again['total_gross'])->toBe(3160.0);
 });
 
 test('one run per period', function () {
@@ -168,11 +139,11 @@ test('deductions recalculate net and refuse to exceed gross', function () {
     ])->assertStatus(200)->json();
 
     // HR-07: net derived server-side.
-    expect((float) $updated['net_pay'])->toBe(2710.0);
+    expect((float) $updated['net_pay'])->toBe(2650.0);
 
     $runFresh = PayrollRun::find($run['id']);
     expect((float) $runFresh->total_deductions)->toBe(350.0)
-        ->and((float) $runFresh->total_net)->toBe(2870.0);
+        ->and((float) $runFresh->total_net)->toBe(2810.0);
 
     ($this->asOwner)()->putJson("/api/v1/payslips/{$slip['id']}/deductions", [
         'deductions' => [['type' => 'advance', 'amount' => 99999]],
@@ -190,7 +161,7 @@ test('an hourly employee with payable hours but no rate blocks calculation', fun
         ->assertJsonPath('code', 'INVALID_PAYROLL_CALCULATION');
 });
 
-test('the run walks the full lifecycle and posting reaches the ledger split by accrual', function () {
+test('the run walks the full lifecycle and posting reaches the ledger', function () {
     $run = ($this->openAndCalculate)();
     $slip = collect($run['payslips'])->firstWhere('employee_id', $this->salaried->id);
 
@@ -213,12 +184,12 @@ test('the run walks the full lifecycle and posting reaches the ledger split by a
     $unitA = $lines->where('operating_unit_id', $this->unitA->id);
     $unitB = $lines->where('operating_unit_id', $this->unitB->id);
 
-    // Unit A: 60 settles the production accrual, 3000 is fresh wage expense,
-    // 2960 cash out, 100 withheld.
-    expect((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '22')->debit)->toBe(60.0)
-        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(3000.0)
-        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(2960.0)
-        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '221')->credit)->toBe(100.0);
+    // Unit A: 3000 fresh wage expense, 2900 cash out, 100 withheld. No labor
+    // logs exist any more, so there is no accrual (22) leg at all.
+    expect((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(3000.0)
+        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(2900.0)
+        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '221')->credit)->toBe(100.0)
+        ->and($unitA->first(fn ($l) => $l->account->account_code === '22'))->toBeNull();
 
     // Unit B: pure attendance pay, no accrual, no deductions.
     expect((float) $unitB->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(160.0)

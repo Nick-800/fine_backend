@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 final class InventoryItem extends Model
@@ -51,15 +50,5 @@ final class InventoryItem extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(ItemCategory::class, 'category_id');
-    }
-
-    public function attributeDefinitions(): BelongsToMany
-    {
-        return $this->belongsToMany(
-            InventoryAttributeDefinition::class,
-            'inventory_item_attribute_definitions',
-            'inventory_item_id',
-            'attribute_definition_id'
-        );
     }
 }

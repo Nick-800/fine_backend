@@ -116,16 +116,6 @@ final class EmployeeController extends Controller
         );
     }
 
-    public function laborLogs(Request $request, string $id): JsonResponse
-    {
-        $employee = Employee::findOrFail($id);
-
-        return response()->json(
-            $employee->laborLogs()->with('productionOrder:id,order_number')
-                ->orderByDesc('logged_at')->paginate($request->integer('per_page', 25))
-        );
-    }
-
     public function payslips(Request $request, string $id): JsonResponse
     {
         $employee = Employee::findOrFail($id);

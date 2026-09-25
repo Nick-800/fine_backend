@@ -8,10 +8,8 @@ use App\Http\Controllers\Api\v1\AttendanceController;
 use App\Http\Controllers\Api\v1\AuditLogController;
 use App\Http\Controllers\Api\v1\AuthController;
 use App\Http\Controllers\Api\v1\BankHoldController;
-use App\Http\Controllers\Api\v1\BomController;
 use App\Http\Controllers\Api\v1\CashAccountController;
 use App\Http\Controllers\Api\v1\ClientController;
-use App\Http\Controllers\Api\v1\ConsumptionReportController;
 use App\Http\Controllers\Api\v1\CreditApprovalController;
 use App\Http\Controllers\Api\v1\CutterWorkOrderController;
 use App\Http\Controllers\Api\v1\DashboardController;
@@ -23,7 +21,6 @@ use App\Http\Controllers\Api\v1\FxRateController;
 use App\Http\Controllers\Api\v1\GoodsReceiptController;
 use App\Http\Controllers\Api\v1\ImportOrderController;
 use App\Http\Controllers\Api\v1\InternalRestockController;
-use App\Http\Controllers\Api\v1\InventoryAttributeController;
 use App\Http\Controllers\Api\v1\InventoryItemController;
 use App\Http\Controllers\Api\v1\InventoryMovementController;
 use App\Http\Controllers\Api\v1\InventoryValuationController;
@@ -43,14 +40,11 @@ use App\Http\Controllers\Api\v1\PermissionController;
 use App\Http\Controllers\Api\v1\PosController;
 use App\Http\Controllers\Api\v1\ProductController;
 use App\Http\Controllers\Api\v1\ProductionBatchController;
-use App\Http\Controllers\Api\v1\ProductionOrderController;
 use App\Http\Controllers\Api\v1\RoleController;
 use App\Http\Controllers\Api\v1\SalesOrderController;
-use App\Http\Controllers\Api\v1\StockAdjustmentRequestController;
 use App\Http\Controllers\Api\v1\StockLotController;
 use App\Http\Controllers\Api\v1\SupplierController;
 use App\Http\Controllers\Api\v1\SystemVersionController;
-use App\Http\Controllers\Api\v1\TankStockController;
 use App\Http\Controllers\Api\v1\UnitBlueprintController;
 use App\Http\Controllers\Api\v1\UserController;
 use App\Http\Controllers\Api\v1\WarehouseController;
@@ -181,7 +175,6 @@ Route::prefix('v1')->group(function () {
             // HR & Payroll & Employees
             Route::middleware('require.role:owner,hr-manager,accounting-manager,unit_manager,manager,foam-manager,cutter-manager,furniture-manager,store-manager,procurement-manager')->group(function () {
                 Route::get('/employees/{id}/attendance', [EmployeeController::class, 'attendance']);
-                Route::get('/employees/{id}/labor-logs', [EmployeeController::class, 'laborLogs']);
                 Route::get('/employees/{id}/payslips', [EmployeeController::class, 'payslips']);
                 Route::apiResource('employees', EmployeeController::class);
                 Route::get('/attendance', [AttendanceController::class, 'index']);
@@ -212,8 +205,6 @@ Route::prefix('v1')->group(function () {
             Route::middleware('require.role:owner,foam-manager,foam-operator,unit_manager,manager')->group(function () {
                 Route::post('/production-batches/{id}/blocks', [ProductionBatchController::class, 'registerBlocks']);
                 Route::post('/production-batches/{id}/transition', [ProductionBatchController::class, 'transition']);
-                Route::get('/production-batches/{id}/consumption-report', [ConsumptionReportController::class, 'show']);
-                Route::post('/production-batches/{id}/consumption-report', [ConsumptionReportController::class, 'store']);
                 Route::apiResource('production-batches', ProductionBatchController::class);
             });
 
@@ -237,23 +228,6 @@ Route::prefix('v1')->group(function () {
             // Furniture Manufacturing
             Route::middleware('require.role:owner,furniture-manager,assembler,unit_manager,manager')->group(function () {
                 Route::apiResource('products', ProductController::class);
-                Route::get('/products/{id}/boms', [ProductController::class, 'boms']);
-                Route::post('/boms', [BomController::class, 'store']);
-                Route::get('/boms/{id}', [BomController::class, 'show']);
-                Route::post('/boms/{id}/activate', [BomController::class, 'activate']);
-                Route::post('/boms/{id}/clone', [BomController::class, 'clone']);
-                Route::get('/boms/{id}/price-preview', [BomController::class, 'pricePreview']);
-                Route::post('/boms/{id}/component-lines', [BomController::class, 'storeComponentLine']);
-                Route::delete('/boms/{id}/component-lines/{lineId}', [BomController::class, 'destroyComponentLine']);
-                Route::post('/boms/{id}/labor-requirements', [BomController::class, 'storeLaborRequirement']);
-                Route::delete('/boms/{id}/labor-requirements/{reqId}', [BomController::class, 'destroyLaborRequirement']);
-                Route::get('/production-orders', [ProductionOrderController::class, 'index']);
-                Route::post('/production-orders', [ProductionOrderController::class, 'store']);
-                Route::get('/production-orders/{id}', [ProductionOrderController::class, 'show']);
-                Route::post('/production-orders/{id}/transition', [ProductionOrderController::class, 'transition']);
-                Route::get('/production-orders/{id}/labor-logs', [ProductionOrderController::class, 'laborLogs']);
-                Route::post('/production-orders/{id}/labor-logs', [ProductionOrderController::class, 'storeLaborLog']);
-                Route::get('/production-orders/{id}/material-requests', [ProductionOrderController::class, 'materialRequests']);
             });
 
             // Cross-module material requests — visible to furniture/cutter/foam
@@ -289,26 +263,12 @@ Route::prefix('v1')->group(function () {
             // Inventory, Stock Lots, Tanks & Work Orders
             Route::middleware('require.role:owner,foam-manager,foam-operator,cutter-manager,cutter-operator,furniture-manager,assembler,store-manager,pos-cashier,procurement-manager,treasury-officer,accounting-manager,unit_manager,manager,inventory-manager')->group(function () {
                 Route::apiResource('item-categories', ItemCategoryController::class);
-                Route::get('/attribute-definitions', [InventoryAttributeController::class, 'index']);
-                Route::post('/attribute-definitions', [InventoryAttributeController::class, 'store']);
-                Route::get('/item-categories/{categoryId}/attribute-definitions', [InventoryAttributeController::class, 'indexForCategory']);
-                Route::post('/item-categories/{categoryId}/attribute-definitions', [InventoryAttributeController::class, 'storeForCategory']);
-                Route::put('/attribute-definitions/{id}', [InventoryAttributeController::class, 'update']);
-                Route::delete('/attribute-definitions/{id}', [InventoryAttributeController::class, 'destroy']);
                 Route::apiResource('inventory-items', InventoryItemController::class);
                 Route::get('/stock-lots/available-for-cutting', [StockLotController::class, 'availableForCutting']);
                 Route::get('/stock-lots/available-foam-blocks', [StockLotController::class, 'availableFoamBlocks']);
                 Route::post('/stock-lots/intake', [StockLotController::class, 'intake']);
                 Route::post('/stock-lots/{id}/process-cut-remnant', [StockLotController::class, 'processCutRemnant']);
                 Route::apiResource('stock-lots', StockLotController::class)->except(['destroy']);
-                Route::get('/tank-stocks', [TankStockController::class, 'index']);
-                Route::post('/tank-stocks/refill-from-lot', [TankStockController::class, 'refillFromLot']);
-                Route::post('/tank-stocks/refill', [TankStockController::class, 'refill']);
-                Route::get('/tank-stocks/{id}', [TankStockController::class, 'show']);
-                Route::get('/stock-adjustment-requests', [StockAdjustmentRequestController::class, 'index']);
-                Route::post('/stock-adjustment-requests', [StockAdjustmentRequestController::class, 'store']);
-                Route::post('/stock-adjustment-requests/{id}/approve', [StockAdjustmentRequestController::class, 'approve']);
-                Route::post('/stock-adjustment-requests/{id}/reject', [StockAdjustmentRequestController::class, 'reject']);
                 Route::get('/inventory/valuation', [InventoryValuationController::class, 'index']);
                 Route::get('/inventory/valuation/rollup', [InventoryValuationController::class, 'rollup']);
                 Route::apiResource('warehouses', WarehouseController::class);

@@ -15,7 +15,7 @@ class InventoryItemController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = InventoryItem::with(['category', 'attributeDefinitions']);
+        $query = InventoryItem::with(['category']);
 
         if ($request->has('category_id') && filled($request->query('category_id'))) {
             $query->where('category_id', $request->query('category_id'));
@@ -58,22 +58,16 @@ class InventoryItemController extends Controller
             'container_capacity' => ['nullable', 'numeric', 'gt:0'],
             'empty_container_item_id' => ['nullable', 'uuid', 'exists:inventory_items,id'],
             'default_attributes' => ['nullable', 'array'],
-            'attribute_definition_ids' => ['nullable', 'array'],
-            'attribute_definition_ids.*' => ['uuid', 'exists:inventory_attribute_definitions,id'],
         ]);
 
         $item = InventoryItem::create($validated);
 
-        if (! empty($validated['attribute_definition_ids'])) {
-            $item->attributeDefinitions()->sync($validated['attribute_definition_ids']);
-        }
-
-        return response()->json($item->load(['category', 'attributeDefinitions']), 201);
+        return response()->json($item->load(['category']), 201);
     }
 
     public function show(string $id): JsonResponse
     {
-        $item = InventoryItem::with(['category', 'attributeDefinitions'])->findOrFail($id);
+        $item = InventoryItem::with(['category'])->findOrFail($id);
 
         return response()->json($item);
     }
@@ -95,17 +89,11 @@ class InventoryItemController extends Controller
             'container_capacity' => ['nullable', 'numeric', 'gt:0'],
             'empty_container_item_id' => ['nullable', 'uuid', 'exists:inventory_items,id'],
             'default_attributes' => ['nullable', 'array'],
-            'attribute_definition_ids' => ['nullable', 'array'],
-            'attribute_definition_ids.*' => ['uuid', 'exists:inventory_attribute_definitions,id'],
         ]);
 
         $item->update($validated);
 
-        if (array_key_exists('attribute_definition_ids', $validated)) {
-            $item->attributeDefinitions()->sync($validated['attribute_definition_ids'] ?? []);
-        }
-
-        return response()->json($item->load(['category', 'attributeDefinitions']));
+        return response()->json($item->load(['category']));
     }
 
     public function destroy(string $id): JsonResponse

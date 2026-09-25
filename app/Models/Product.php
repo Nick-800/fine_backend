@@ -11,8 +11,6 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 final class Product extends Model
@@ -37,15 +35,5 @@ final class Product extends Model
     public function inventoryItem(): BelongsTo
     {
         return $this->belongsTo(InventoryItem::class);
-    }
-
-    public function boms(): HasMany
-    {
-        return $this->hasMany(Bom::class)->orderByDesc('version');
-    }
-
-    public function activeBom(): HasOne
-    {
-        return $this->hasOne(Bom::class)->where('is_active', true);
     }
 }
