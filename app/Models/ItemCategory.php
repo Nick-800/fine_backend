@@ -34,6 +34,30 @@ final class ItemCategory extends Model
                 }
             }
         });
+
+        // The full code is never entered directly — it's always the parent's
+        // code plus this category's own segment, recomputed on every save.
+        self::saving(function (ItemCategory $category): void {
+            $category->code = self::buildCode($category->parent_id, $category->code_segment);
+        });
+
+        // Re-parenting or re-segmenting a category invalidates every
+        // descendant's code, so cascade the recompute down the tree.
+        self::saved(function (ItemCategory $category): void {
+            if ($category->wasChanged('code')) {
+                $category->children()->get()->each(fn (self $child) => $child->save());
+            }
+        });
+    }
+
+    /** The parent's code (or '' at the root) plus this category's own segment. */
+    public static function buildCode(?string $parentId, ?string $codeSegment): string
+    {
+        $parentCode = $parentId
+            ? (self::withoutGlobalScopes()->find($parentId)?->code ?? '')
+            : '';
+
+        return $parentCode.(string) $codeSegment;
     }
 
     protected $fillable = [
@@ -44,13 +68,11 @@ final class ItemCategory extends Model
         'code',
         'item_type',
         'child_code_length',
-        'product_code_length',
         'description',
     ];
 
     protected $casts = [
         'child_code_length' => 'integer',
-        'product_code_length' => 'integer',
     ];
 
     public function parent(): BelongsTo

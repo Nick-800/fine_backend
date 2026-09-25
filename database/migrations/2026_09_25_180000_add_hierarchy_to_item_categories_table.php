@@ -17,9 +17,11 @@ return new class extends Migration
                 ->constrained('item_categories')
                 ->nullOnDelete();
 
-            $table->string('code_segment')->default('')->after('name');
+            // Nullable, not default(''): the "convert empty strings to null"
+            // middleware turns a submitted '' into null before it reaches the
+            // model, and an explicit null insert bypasses a column default.
+            $table->string('code_segment')->nullable()->after('name');
             $table->unsignedSmallInteger('child_code_length')->default(2)->after('item_type');
-            $table->unsignedSmallInteger('product_code_length')->default(3)->after('child_code_length');
         });
     }
 
@@ -27,7 +29,7 @@ return new class extends Migration
     {
         Schema::table('item_categories', function (Blueprint $table): void {
             $table->dropConstrainedForeignId('parent_id');
-            $table->dropColumn(['code_segment', 'child_code_length', 'product_code_length']);
+            $table->dropColumn(['code_segment', 'child_code_length']);
         });
     }
 };

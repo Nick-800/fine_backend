@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ItemCategory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 final class ItemCategoryController extends Controller
 {
@@ -23,6 +24,12 @@ final class ItemCategoryController extends Controller
             });
         }
 
+        if ($request->boolean('root_only')) {
+            $query->whereNull('parent_id');
+        } elseif ($request->filled('parent_id')) {
+            $query->where('parent_id', (string) $request->query('parent_id'));
+        }
+
         return response()->json($query->orderBy('name')->get());
     }
 
@@ -30,11 +37,19 @@ final class ItemCategoryController extends Controller
     {
         $validated = $request->validate([
             // Unit comes from the role-validated request context, not the body.
+            // `code` is never accepted from the client — it's always derived
+            // from the parent's code plus `code_segment` (see ItemCategory::buildCode).
+            'parent_id' => ['nullable', 'uuid', 'exists:item_categories,id'],
             'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:50', 'unique:item_categories,code'],
+            'code_segment' => ['required', 'string', 'max:50'],
             'item_type' => ['nullable', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
+            'child_code_length' => ['nullable', 'integer', 'min:1', 'max:10'],
             'description' => ['nullable', 'string'],
         ]);
+
+        $this->assertCodeAvailable(
+            ItemCategory::buildCode($validated['parent_id'] ?? null, $validated['code_segment']),
+        );
 
         $category = ItemCategory::create($validated);
 
@@ -53,20 +68,60 @@ final class ItemCategoryController extends Controller
         $category = ItemCategory::findOrFail($id);
 
         $validated = $request->validate([
+            'parent_id' => ['sometimes', 'nullable', 'uuid', 'exists:item_categories,id', "not_in:{$id}"],
             'name' => ['sometimes', 'string', 'max:255'],
-            'code' => ['sometimes', 'string', 'max:50', "unique:item_categories,code,{$id}"],
+            'code_segment' => ['sometimes', 'required', 'string', 'max:50'],
             'item_type' => ['nullable', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
+            'child_code_length' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:10'],
             'description' => ['nullable', 'string'],
         ]);
+
+        $nextParentId = array_key_exists('parent_id', $validated) ? $validated['parent_id'] : $category->parent_id;
+        $nextSegment = $validated['code_segment'] ?? $category->code_segment;
+
+        $this->assertCodeAvailable(
+            ItemCategory::buildCode($nextParentId, $nextSegment),
+            excludeId: $id,
+        );
 
         $category->update($validated);
 
         return response()->json($category);
     }
 
+    /** @throws ValidationException when another category already owns the computed code. */
+    private function assertCodeAvailable(string $code, ?string $excludeId = null): void
+    {
+        $taken = ItemCategory::withoutGlobalScopes()
+            ->where('code', $code)
+            ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
+            ->exists();
+
+        if ($taken) {
+            throw ValidationException::withMessages([
+                'code_segment' => ["The resulting code '{$code}' is already used by another category."],
+            ]);
+        }
+    }
+
     public function destroy(string $id): JsonResponse
     {
         $category = ItemCategory::findOrFail($id);
+
+        if ($category->children()->exists()) {
+            return response()->json([
+                'message' => 'Cannot delete a category that still has sub-categories.',
+                'code' => 'CATEGORY_HAS_CHILDREN',
+            ], 422);
+        }
+
+        if ($category->items()->exists()) {
+            return response()->json([
+                'message' => 'Cannot delete a category that still has inventory items assigned to it.',
+                'code' => 'CATEGORY_HAS_ITEMS',
+            ], 422);
+        }
+
         $category->delete();
 
         return response()->json(['message' => 'Item category deleted successfully.']);
