@@ -7,24 +7,16 @@ namespace App\Console\Commands;
 use App\Models\Account;
 use App\Models\ChartOfAccounts;
 use App\Models\Company;
-use App\Models\OperatingUnit;
 use Illuminate\Console\Command;
 
 final class SeedExcelCoa extends Command
 {
     protected $signature = 'coa:seed-excel
-                            {--unit=all : Specify which unit chart to seed: foam, cutter, or all}
+                            {--dataset=all : Specify which dataset to seed: foam, cutter, or all (foam primary)}
+                            {--unit= : Alias for --dataset}
                             {--force : Force execution without confirmation}';
 
-    protected $description = 'Seed the Chart of Accounts data extracted from the Excel files for foam and cutter units';
-
-    /**
-     * Mapping from unit key to its corresponding OperatingUnit name.
-     */
-    public const UNIT_NAMES = [
-        'foam' => 'مصنع الإسفنج',
-        'cutter' => 'قسم القص',
-    ];
+    protected $description = 'Seed the unified company Chart of Accounts extracted from the Excel datasets';
 
     public function handle(): int
     {
@@ -40,22 +32,24 @@ final class SeedExcelCoa extends Command
             ['name' => 'دليل الحسابات الرئيسي'],
         );
 
-        $selectedUnit = strtolower((string) $this->option('unit'));
-        if (! in_array($selectedUnit, ['foam', 'cutter', 'all'], true)) {
-            $this->error("Invalid --unit option '{$selectedUnit}'. Allowed values: foam, cutter, all.");
+        $rawOption = $this->option('unit') ?: $this->option('dataset');
+        $selectedDataset = strtolower((string) ($rawOption ?: 'all'));
+        if (! in_array($selectedDataset, ['foam', 'cutter', 'all'], true)) {
+            $this->error("Invalid --dataset option '{$selectedDataset}'. Allowed values: foam, cutter, all.");
 
             return self::FAILURE;
         }
 
         $globalParentIds = Account::query()
             ->where('chart_of_accounts_id', $coa->id)
-            ->whereNull('unit_id')
             ->pluck('id', 'account_code')
             ->all();
 
         $chartsToLoad = [];
-        if ($selectedUnit === 'all' || $selectedUnit === 'foam') {
-            $foamFile = database_path('seeders/data/foam_chart.php');
+        $foamFile = database_path('seeders/data/foam_chart.php');
+        $cutterFile = database_path('seeders/data/cutter_chart.php');
+
+        if ($selectedDataset === 'all' || $selectedDataset === 'foam') {
             if (file_exists($foamFile)) {
                 $chartsToLoad['foam'] = require $foamFile;
             } else {
@@ -63,8 +57,7 @@ final class SeedExcelCoa extends Command
             }
         }
 
-        if ($selectedUnit === 'all' || $selectedUnit === 'cutter') {
-            $cutterFile = database_path('seeders/data/cutter_chart.php');
+        if ($selectedDataset === 'all' || $selectedDataset === 'cutter') {
             if (file_exists($cutterFile)) {
                 $chartsToLoad['cutter'] = require $cutterFile;
             } else {
@@ -78,62 +71,84 @@ final class SeedExcelCoa extends Command
             return self::FAILURE;
         }
 
-        $this->info('Starting Chart of Accounts import from extracted Excel datasets...');
+        $this->info('Starting unified Chart of Accounts import from extracted Excel datasets...');
         $startTime = microtime(true);
         $tableRows = [];
 
-        foreach ($chartsToLoad as $key => $rows) {
-            $unit = $this->findOperatingUnit($key);
+        $existingByCode = Account::query()
+            ->where('chart_of_accounts_id', $coa->id)
+            ->pluck('id', 'account_code')
+            ->all();
 
-            if ($unit === null) {
-                $expected = self::UNIT_NAMES[$key] ?? $key;
-                $available = OperatingUnit::pluck('name')->implode(', ');
-                $this->warn("Operating unit for '{$key}' ('{$expected}') not found. (Available in DB: {$available}). Skipping.");
-                $tableRows[] = [$key, $expected, count($rows), 0, 0, 'SKIPPED (Unit Missing)'];
+        // 1. Foam dataset is the primary master chart
+        if (isset($chartsToLoad['foam'])) {
+            [$created, $updated, $skipped] = $this->importDataset(
+                $coa,
+                $company,
+                $chartsToLoad['foam'],
+                $existingByCode,
+                $globalParentIds,
+                skipConflicts: false
+            );
+            $tableRows[] = ['foam', 'Master Factory Chart (مصنع الإسفنج)', count($chartsToLoad['foam']), $created, $updated, $skipped, 'SUCCESS'];
+        }
 
-                continue;
-            }
-
-            [$created, $updated] = $this->importUnitChart($unit, $coa, $company, $rows, $globalParentIds);
-            $tableRows[] = [$key, $unit->name, count($rows), $created, $updated, 'SUCCESS'];
+        // 2. Secondary dataset: cutter (skips conflicting codes already defined in master chart)
+        if (isset($chartsToLoad['cutter'])) {
+            $isSecondary = isset($chartsToLoad['foam']);
+            [$created, $updated, $skipped] = $this->importDataset(
+                $coa,
+                $company,
+                $chartsToLoad['cutter'],
+                $existingByCode,
+                $globalParentIds,
+                skipConflicts: $isSecondary
+            );
+            $status = $isSecondary ? 'MERGED (Duplicates Skipped)' : 'SUCCESS';
+            $tableRows[] = ['cutter', 'Cutter Chart (مقص فاين)', count($chartsToLoad['cutter']), $created, $updated, $skipped, $status];
         }
 
         $this->newLine();
         $this->table(
-            ['Key', 'Unit Name', 'Rows in File', 'Created', 'Updated', 'Status'],
+            ['Dataset', 'Description', 'Rows in File', 'Created', 'Updated', 'Skipped', 'Status'],
             $tableRows,
         );
 
         $elapsed = round(microtime(true) - $startTime, 2);
-        $this->info("Chart of Accounts seeding completed in {$elapsed}s.");
+        $totalAccounts = Account::where('chart_of_accounts_id', $coa->id)->count();
+        $this->info("Unified Chart of Accounts seeding completed in {$elapsed}s. Total accounts in company chart: {$totalAccounts}.");
 
         return self::SUCCESS;
     }
 
     /**
      * @param  array<int, array{0: string, 1: string, 2: string}>  $rows
+     * @param  array<string, string>  $existingByCode
      * @param  array<string, string>  $globalParentIds
-     * @return array{0: int, 1: int} [created, updated]
+     * @return array{0: int, 1: int, 2: int} [created, updated, skipped]
      */
-    public function importUnitChart(
-        OperatingUnit $unit,
+    public function importDataset(
         ChartOfAccounts $coa,
         Company $company,
         array $rows,
-        array $globalParentIds
+        array &$existingByCode,
+        array $globalParentIds,
+        bool $skipConflicts = false
     ): array {
-        $existingByCode = Account::query()
-            ->where('chart_of_accounts_id', $coa->id)
-            ->where('unit_id', $unit->id)
-            ->pluck('id', 'account_code')
-            ->all();
-
         $created = 0;
         $updated = 0;
+        $skipped = 0;
         $currency = $company->default_currency ?? 'LYD';
+        $rowsToProcess = [];
 
-        // Pass 1: Land every account with parent_account_id = null
+        // Pass 1: Land accounts with parent_account_id = null
         foreach ($rows as [$code, $name, $section]) {
+            if ($skipConflicts && isset($existingByCode[$code])) {
+                $skipped++;
+
+                continue;
+            }
+
             $values = [
                 'name' => $name,
                 'type' => $this->inferType($code, $section),
@@ -145,7 +160,6 @@ final class SeedExcelCoa extends Command
             $account = Account::updateOrCreate(
                 [
                     'chart_of_accounts_id' => $coa->id,
-                    'unit_id' => $unit->id,
                     'account_code' => $code,
                 ],
                 $values,
@@ -154,17 +168,17 @@ final class SeedExcelCoa extends Command
             $created += $account->wasRecentlyCreated ? 1 : 0;
             $updated += $account->wasRecentlyCreated ? 0 : 1;
             $existingByCode[$code] = $account->id;
+            $rowsToProcess[] = [$code, $name, $section];
         }
 
         // Pass 2: Resolve parent accounts hierarchically
         $childrenAccounts = Account::query()
             ->where('chart_of_accounts_id', $coa->id)
-            ->where('unit_id', $unit->id)
-            ->whereIn('account_code', array_column($rows, 0))
+            ->whereIn('account_code', array_column($rowsToProcess, 0))
             ->get()
             ->keyBy('account_code');
 
-        foreach ($rows as [$code, $name, $section]) {
+        foreach ($rowsToProcess as [$code, $name, $section]) {
             $account = $childrenAccounts[$code] ?? null;
             if ($account === null) {
                 continue;
@@ -177,7 +191,7 @@ final class SeedExcelCoa extends Command
             }
         }
 
-        return [$created, $updated];
+        return [$created, $updated, $skipped];
     }
 
     /**
@@ -232,39 +246,5 @@ final class SeedExcelCoa extends Command
         }
 
         return 'expense';
-    }
-
-    private function findOperatingUnit(string $key): ?OperatingUnit
-    {
-        $exactName = self::UNIT_NAMES[$key] ?? null;
-        if ($exactName !== null) {
-            $unit = OperatingUnit::where('name', $exactName)->first();
-            if ($unit !== null) {
-                return $unit;
-            }
-        }
-
-        if ($key === 'foam') {
-            return OperatingUnit::query()
-                ->where(function ($q) {
-                    $q->where('name', 'LIKE', '%إسفنج%')
-                        ->orWhere('name', 'LIKE', '%اسفنج%')
-                        ->orWhere('name', 'LIKE', '%foam%')
-                        ->orWhere('code', 'LIKE', '%FOAM%');
-                })
-                ->first();
-        }
-
-        if ($key === 'cutter') {
-            return OperatingUnit::query()
-                ->where(function ($q) {
-                    $q->where('name', 'LIKE', '%قص%')
-                        ->orWhere('name', 'LIKE', '%cutter%')
-                        ->orWhere('code', 'LIKE', '%CUT%');
-                })
-                ->first();
-        }
-
-        return null;
     }
 }
