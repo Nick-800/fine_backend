@@ -18,7 +18,7 @@ final class InventoryItem extends Model
     protected $fillable = [
         'category_id',
         'name',
-        'sku',
+        'code',
         'item_type',
         'unit_of_measure',
         'primary_uom',
