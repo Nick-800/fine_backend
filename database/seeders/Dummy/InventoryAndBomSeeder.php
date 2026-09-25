@@ -7,18 +7,18 @@ namespace Database\Seeders\Dummy;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
 use App\Models\OperatingUnit;
-use App\Models\Product;
 use App\Models\StockLot;
 use App\Models\Warehouse;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
 /**
- * Adds finished-good inventory items, products, and the stock lots that let
- * sales and POS flows draw real quantities.
+ * Adds finished-good inventory items and the stock lots that let sales and
+ * POS flows draw real quantities.
  *
- * Targets the furniture unit for products, and the foam and cutter units for
- * cut-piece lots so cutter work orders have something to operate on.
+ * Targets the showroom/furniture unit for finished goods, and the foam and
+ * cutter units for cut-piece lots so cutter work orders have something to
+ * operate on.
  */
 class InventoryAndBomSeeder extends Seeder
 {
@@ -94,41 +94,6 @@ class InventoryAndBomSeeder extends Seeder
                     'quantity' => fake()->numberBetween(5, 40),
                     'unit_cost' => fake()->randomFloat(4, 80, 1200),
                     'status' => 'available',
-                ],
-            );
-        }
-
-        // Products in the furniture unit
-        $sliceItem = InventoryItem::where('code', 'SLICE-STD')->first();
-
-        if ($sliceItem === null) {
-            return;
-        }
-
-        $productSpecs = [
-            ['name' => 'Queen Mattress — Premium', 'sku' => 'PROD-Q-MATT-PREM', 'markup' => 1.35],
-            ['name' => 'King Mattress — Luxury', 'sku' => 'PROD-K-MATT-LUX', 'markup' => 1.45],
-            ['name' => 'Standard Cushion Set', 'sku' => 'PROD-CUSH-STD', 'markup' => 1.25],
-            ['name' => 'Left Sofa Section', 'sku' => 'PROD-SOFA-L', 'markup' => 1.40],
-            ['name' => 'Bolster Pillow', 'sku' => 'PROD-BOLSTER', 'markup' => 1.30],
-            ['name' => 'Bed Base Queen', 'sku' => 'PROD-BASE-Q', 'markup' => 1.20],
-        ];
-
-        foreach ($productSpecs as $spec) {
-            $finishedSku = 'FG-'.str_replace('PROD-', '', $spec['sku']);
-            $inventoryItem = InventoryItem::where('code', 'FG-'.str_replace('PROD-', '', $spec['sku']))->first()
-                ?? InventoryItem::where('code', $spec['sku'])->first()
-                ?? $sliceItem;
-
-            Product::firstOrCreate(
-                ['sku' => $spec['sku']],
-                [
-                    'id' => (string) Str::uuid(),
-                    'operating_unit_id' => $furnitureUnit->id,
-                    'inventory_item_id' => $inventoryItem->id,
-                    'name' => $spec['name'],
-                    'description' => 'Dummy product seeded by DummyDataSeeder.',
-                    'markup_factor' => $spec['markup'],
                 ],
             );
         }

@@ -38,7 +38,6 @@ use App\Http\Controllers\Api\v1\PaymentRequestController;
 use App\Http\Controllers\Api\v1\PayrollRunController;
 use App\Http\Controllers\Api\v1\PermissionController;
 use App\Http\Controllers\Api\v1\PosController;
-use App\Http\Controllers\Api\v1\ProductController;
 use App\Http\Controllers\Api\v1\ProductionBatchController;
 use App\Http\Controllers\Api\v1\RoleController;
 use App\Http\Controllers\Api\v1\SalesOrderController;
@@ -223,11 +222,6 @@ Route::prefix('v1')->group(function () {
                 Route::put('/cutter-work-order-lines/{lineId}/assign-template', [CutterWorkOrderController::class, 'assignTemplate']);
                 Route::get('/cutter-work-order-lines/{lineId}/available-blocks', [CutterWorkOrderController::class, 'availableBlocks']);
                 Route::post('/cutter-work-order-lines/{lineId}/select-block', [CutterWorkOrderController::class, 'selectBlock']);
-            });
-
-            // Furniture Manufacturing
-            Route::middleware('require.role:owner,furniture-manager,assembler,unit_manager,manager')->group(function () {
-                Route::apiResource('products', ProductController::class);
             });
 
             // Cross-module material requests — visible to furniture/cutter/foam
