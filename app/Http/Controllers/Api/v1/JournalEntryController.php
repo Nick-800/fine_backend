@@ -117,9 +117,41 @@ class JournalEntryController extends Controller
 
     public function trialBalance(Request $request): JsonResponse
     {
-        // Owner sees company-wide; a unit-scoped caller sees their own subledger.
-        $unitId = $this->resolveReportUnitId($request, $this->unitContext);
+        // ACC-03: trial balance respects the same scope filter as
+        // GET /api/v1/accounts.
+        $auth = $this->resolveReportUnitId($request, $this->unitContext);
+        $scope = (string) $request->query('scope', $auth !== null ? 'unit' : 'global');
 
-        return response()->json($this->accountingService->trialBalance($unitId));
+        if ($scope === 'company' && $auth !== null) {
+            return response()->json([
+                'message' => 'Company-wide scope is restricted to accounting roles.',
+                'code' => 'COMPANY_WIDE_FORBIDDEN',
+            ], 403);
+        }
+
+        if ($scope === 'unit') {
+            $unitIdParam = $request->query('unit_id', $auth);
+            if (! $unitIdParam) {
+                return response()->json([
+                    'message' => 'unit_id is required for scope=unit.',
+                    'code' => 'UNIT_ID_REQUIRED',
+                ], 422);
+            }
+            if ($auth !== null && (string) $auth !== (string) $unitIdParam) {
+                return response()->json([
+                    'message' => 'Cross-unit scope forbidden.',
+                    'code' => 'CROSS_UNIT_SCOPE',
+                ], 403);
+            }
+            $unitIdForBalance = $unitIdParam;
+        } else {
+            // scope=global or scope=company → union (no operating_unit_id filter
+            // in the trial balance service; existing callers that pass a unit_id
+            // through resolveReportUnitId continue to work, and explicitly
+            // scope=global forces $unitIdForBalance = null).
+            $unitIdForBalance = null;
+        }
+
+        return response()->json($this->accountingService->trialBalance($unitIdForBalance));
     }
 }

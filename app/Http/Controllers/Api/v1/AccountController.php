@@ -22,13 +22,66 @@ final class AccountController extends Controller
         private readonly CurrentUnitContext $unitContext,
     ) {}
 
-    public function index(): JsonResponse
+    /**
+     * A unit-scoped caller may only access accounts inside their own
+     * operating_unit_id. Global callers (accounting-manager / owner)
+     * see anything.
+     */
+    private function guardUnitScope(Request $request, Account $account): void
     {
-        $accounts = Account::query()
+        $auth = $this->resolveReportUnitId($request, $this->unitContext);
+        if ($auth === null) {
+            return;
+        }
+        if ($account->unit_id !== null && (string) $account->unit_id !== (string) $auth) {
+            abort(response()->json([
+                'message' => 'Account belongs to a different operating unit.',
+                'code' => 'ACCOUNT_WRONG_UNIT',
+            ], 403));
+        }
+    }
+
+    public function index(Request $request): JsonResponse
+    {
+        $auth = $this->resolveReportUnitId($request, $this->unitContext);
+        $scope = (string) $request->query('scope', 'global');
+
+        $query = Account::query()
             ->withSum('journalLines as total_debit', 'debit')
             ->withSum('journalLines as total_credit', 'credit')
-            ->orderBy('account_code')
-            ->get()
+            ->orderBy('account_code');
+
+        if ($scope === 'unit') {
+            // Default to the authenticated caller's unit when no explicit
+            // unit_id is supplied. A 422 fires only when neither is set.
+            $unitId = $request->query('unit_id', $auth);
+            if (! $unitId) {
+                return response()->json([
+                    'message' => 'unit_id is required for scope=unit.',
+                    'code' => 'UNIT_ID_REQUIRED',
+                ], 422);
+            }
+            if ($auth !== null && $auth !== $unitId) {
+                return response()->json([
+                    'message' => 'Cross-unit scope is forbidden for unit-scoped callers.',
+                    'code' => 'CROSS_UNIT_SCOPE',
+                ], 403);
+            }
+            $query->where('unit_id', $unitId);
+        } elseif ($scope === 'company') {
+            if ($auth !== null) {
+                return response()->json([
+                    'message' => 'Company-wide scope is restricted to accounting roles.',
+                    'code' => 'COMPANY_WIDE_FORBIDDEN',
+                ], 403);
+            }
+            // default: union (global + every unit) — no additional where clause
+        } else {
+            $scope = 'global';
+            $query->whereNull('unit_id');
+        }
+
+        $accounts = $query->get()
             ->map(function (Account $account): array {
                 $debit = round((float) ($account->total_debit ?? 0), 4);
                 $credit = round((float) ($account->total_credit ?? 0), 4);
@@ -44,6 +97,7 @@ final class AccountController extends Controller
                     'type' => $account->type,
                     'currency' => $account->currency,
                     'parent_account_id' => $account->parent_account_id,
+                    'unit_id' => $account->unit_id,
                     'is_main' => $account->parent_account_id === null,
                     'total_debit' => $debit,
                     'total_credit' => $credit,
@@ -51,12 +105,16 @@ final class AccountController extends Controller
                 ];
             });
 
-        return response()->json(['data' => $accounts]);
+        return response()->json([
+            'data' => $accounts,
+            'meta' => ['scope' => $scope, 'count' => $accounts->count()],
+        ]);
     }
 
     public function show(Request $request, string $id): JsonResponse
     {
         $account = Account::with(['parent:id,account_code,name,type'])->findOrFail($id);
+        $this->guardUnitScope($request, $account);
 
         $unitId = $this->resolveReportUnitId($request, $this->unitContext);
 
@@ -139,8 +197,18 @@ final class AccountController extends Controller
             'name' => 'required|string|max:255',
             'type' => 'required|string|in:asset,liability,equity,revenue,expense',
             'parent_account_id' => 'nullable|uuid|exists:accounts,id',
+            'unit_id' => 'nullable|uuid|exists:operating_units,id',
             'currency' => 'nullable|string|size:3',
         ]);
+
+        $auth = $this->resolveReportUnitId($request, $this->unitContext);
+        $unitId = $validated['unit_id'] ?? null;
+        if ($auth !== null && $unitId !== null && (string) $auth !== (string) $unitId) {
+            return response()->json([
+                'message' => 'Unit-scoped callers can only create accounts inside their own operating unit.',
+                'code' => 'ACCOUNT_WRONG_UNIT',
+            ], 403);
+        }
 
         $parent = null;
         if (! empty($validated['parent_account_id'])) {
@@ -168,6 +236,7 @@ final class AccountController extends Controller
 
         $account = Account::create([
             'chart_of_accounts_id' => $coaId,
+            'unit_id' => $unitId,
             'account_code' => $validated['account_code'],
             'name' => $validated['name'],
             'type' => $validated['type'],
@@ -184,6 +253,7 @@ final class AccountController extends Controller
                 'type' => $account->type,
                 'currency' => $account->currency,
                 'parent_account_id' => $account->parent_account_id,
+                'unit_id' => $account->unit_id,
                 'total_debit' => 0.0,
                 'total_credit' => 0.0,
                 'balance' => 0.0,
@@ -199,6 +269,7 @@ final class AccountController extends Controller
     public function update(Request $request, string $id): JsonResponse
     {
         $account = Account::findOrFail($id);
+        $this->guardUnitScope($request, $account);
         $isMain = $account->parent_account_id === null;
 
         $rules = [
@@ -247,9 +318,10 @@ final class AccountController extends Controller
      * ACC-02: delete is allowed only for sub-accounts that have no journal
      * lines and no children. Main accounts can never be deleted.
      */
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
         $account = Account::findOrFail($id);
+        $this->guardUnitScope($request, $account);
         $isMain = $account->parent_account_id === null;
 
         if ($isMain) {
