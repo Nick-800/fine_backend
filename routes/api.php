@@ -325,6 +325,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/stock-adjustment-requests/{id}/reject', [StockAdjustmentRequestController::class, 'reject']);
                 Route::get('/inventory/valuation', [InventoryValuationController::class, 'index']);
                 Route::get('/inventory/valuation/rollup', [InventoryValuationController::class, 'rollup']);
+                Route::get('/warehouses/{id}/stock-summary', [WarehouseController::class, 'stockSummary']);
                 Route::apiResource('warehouses', WarehouseController::class);
                 Route::apiResource('work-orders', WorkOrderController::class);
                 Route::post('/work-orders/{id}/complete', [WorkOrderController::class, 'complete']);

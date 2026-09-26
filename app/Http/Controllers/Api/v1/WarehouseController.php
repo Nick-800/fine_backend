@@ -94,6 +94,56 @@ class WarehouseController extends Controller
         return response()->json(Warehouse::withoutGlobalScopes()->with('operatingUnit')->findOrFail($id));
     }
 
+    /**
+     * What's currently in this warehouse, grouped by item, with a weighted
+     * average unit cost across its available lots.
+     */
+    public function stockSummary(string $id): JsonResponse
+    {
+        $warehouse = Warehouse::findOrFail($id);
+
+        $rows = StockLot::query()
+            ->join('inventory_items', 'inventory_items.id', '=', 'stock_lots.inventory_item_id')
+            ->where('stock_lots.warehouse_id', $warehouse->id)
+            ->where('stock_lots.status', 'available')
+            ->groupBy(
+                'stock_lots.inventory_item_id',
+                'inventory_items.name',
+                'inventory_items.code',
+                'inventory_items.unit_of_measure',
+            )
+            ->selectRaw('stock_lots.inventory_item_id as inventory_item_id')
+            ->selectRaw('inventory_items.name as item_name')
+            ->selectRaw('inventory_items.code as item_code')
+            ->selectRaw('inventory_items.unit_of_measure as uom')
+            ->selectRaw('SUM(stock_lots.quantity) as total_quantity')
+            ->selectRaw('SUM(stock_lots.quantity * stock_lots.unit_cost) as total_value')
+            ->selectRaw('COUNT(*) as lots_count')
+            ->orderBy('inventory_items.name')
+            ->get()
+            ->map(function ($row): array {
+                $totalQuantity = (float) $row->total_quantity;
+                $totalValue = round((float) $row->total_value, 4);
+
+                return [
+                    'inventory_item_id' => $row->inventory_item_id,
+                    'item_name' => $row->item_name,
+                    'item_code' => $row->item_code,
+                    'uom' => $row->uom,
+                    'total_quantity' => $totalQuantity,
+                    'avg_unit_cost' => $totalQuantity > 0 ? round($totalValue / $totalQuantity, 4) : 0.0,
+                    'total_value' => $totalValue,
+                    'lots_count' => (int) $row->lots_count,
+                ];
+            });
+
+        return response()->json([
+            'warehouse' => ['id' => $warehouse->id, 'name' => $warehouse->name],
+            'rows' => $rows,
+            'total_value' => round((float) $rows->sum('total_value'), 4),
+        ]);
+    }
+
     public function update(Request $request, string $id): JsonResponse
     {
         $warehouse = Warehouse::withoutGlobalScopes()->findOrFail($id);
