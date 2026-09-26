@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\v1\AttendanceController;
 use App\Http\Controllers\Api\v1\AuditLogController;
 use App\Http\Controllers\Api\v1\AuthController;
 use App\Http\Controllers\Api\v1\BankHoldController;
+use App\Http\Controllers\Api\v1\BundleController;
 use App\Http\Controllers\Api\v1\CashAccountController;
 use App\Http\Controllers\Api\v1\ClientController;
 use App\Http\Controllers\Api\v1\CreditApprovalController;
@@ -252,11 +253,13 @@ Route::prefix('v1')->group(function () {
                 Route::get('/pos/daily-close', [PosController::class, 'showDailyClose']);
                 Route::post('/pos/daily-close', [PosController::class, 'dailyClose']);
                 Route::get('/pos/sales/{id}', [PosController::class, 'show']);
+                Route::get('/reports/bundle-sales', [BundleController::class, 'salesReport']);
             });
 
             // Inventory, Stock Lots, Tanks & Work Orders
             Route::middleware('require.role:owner,foam-manager,foam-operator,cutter-manager,cutter-operator,furniture-manager,assembler,store-manager,pos-cashier,procurement-manager,treasury-officer,accounting-manager,unit_manager,manager,inventory-manager')->group(function () {
                 Route::apiResource('item-categories', ItemCategoryController::class);
+                Route::apiResource('bundles', BundleController::class);
                 Route::apiResource('inventory-items', InventoryItemController::class);
                 Route::get('/stock-lots/available-for-cutting', [StockLotController::class, 'availableForCutting']);
                 Route::get('/stock-lots/available-foam-blocks', [StockLotController::class, 'availableFoamBlocks']);

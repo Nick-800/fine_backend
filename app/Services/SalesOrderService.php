@@ -245,6 +245,7 @@ class SalesOrderService
                 $order->lines()->create([
                     'inventory_item_id' => $item['inventory_item_id'],
                     'stock_lot_id' => $item['stock_lot_id'] ?? null,
+                    'bundle_id' => $item['bundle_id'] ?? null,
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
                 ]);

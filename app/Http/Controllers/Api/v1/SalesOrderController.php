@@ -50,6 +50,7 @@ class SalesOrderController extends Controller
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
             'lines.*.stock_lot_id' => ['sometimes', 'nullable', 'uuid', 'exists:stock_lots,id'],
+            'lines.*.bundle_id' => ['sometimes', 'nullable', 'uuid', 'exists:bundles,id'],
             'lines.*.quantity' => ['required', 'numeric', 'gt:0'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
         ]);
@@ -83,7 +84,7 @@ class SalesOrderController extends Controller
             $order->lines()->create($line);
         }
 
-        return response()->json($order->fresh(['lines.inventoryItem', 'client.entity', 'buyerUnit']), 201);
+        return response()->json($order->fresh(['lines.inventoryItem', 'lines.bundle', 'client.entity', 'buyerUnit']), 201);
     }
 
     public function show(string $id): JsonResponse
@@ -92,6 +93,7 @@ class SalesOrderController extends Controller
             SalesOrder::with([
                 'lines.inventoryItem',
                 'lines.stockLot',
+                'lines.bundle',
                 'client.entity',
                 'buyerUnit',
                 'creditApprovalRequest.decidedBy',
@@ -156,7 +158,7 @@ class SalesOrderController extends Controller
      */
     public function invoice(string $id): JsonResponse
     {
-        $order = SalesOrder::with(['lines.inventoryItem', 'lines.stockLot', 'client.entity', 'operatingUnit'])->findOrFail($id);
+        $order = SalesOrder::with(['lines.inventoryItem', 'lines.stockLot', 'lines.bundle', 'client.entity', 'operatingUnit'])->findOrFail($id);
 
         if (! in_array($order->status->value, ['fulfilled', 'partially_paid', 'paid', 'completed'], true)) {
             return response()->json([
@@ -177,6 +179,7 @@ class SalesOrderController extends Controller
                 'unit_price' => (float) $l->unit_price,
                 'line_total' => $l->lineTotal(),
                 'lot_number' => $l->stockLot?->lot_number,
+                'bundle' => $l->bundle?->name,
             ]),
             'total_amount' => (float) $order->total_amount,
             'amount_paid' => (float) $order->amount_paid,

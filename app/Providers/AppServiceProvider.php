@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\Bundle;
 use App\Models\FixedAsset;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
@@ -43,6 +44,7 @@ class AppServiceProvider extends ServiceProvider
         // inventory adjustment, and these carry the material and money movements.
         InventoryItem::observe(AuditObserver::class);
         ItemCategory::observe(AuditObserver::class);
+        Bundle::observe(AuditObserver::class);
         StockLot::observe(AuditObserver::class);
         ProductionBatch::observe(AuditObserver::class);
 

@@ -33,6 +33,7 @@ class PosController extends Controller
             'items' => ['required', 'array', 'min:1'],
             'items.*.inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
             'items.*.stock_lot_id' => ['sometimes', 'nullable', 'uuid', 'exists:stock_lots,id'],
+            'items.*.bundle_id' => ['sometimes', 'nullable', 'uuid', 'exists:bundles,id'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0'],
         ]);
@@ -67,7 +68,7 @@ class PosController extends Controller
     public function show(string $id): JsonResponse
     {
         return response()->json(
-            SalesOrder::with(['lines.inventoryItem', 'lines.stockLot'])
+            SalesOrder::with(['lines.inventoryItem', 'lines.stockLot', 'lines.bundle'])
                 ->where('channel', 'pos')
                 ->findOrFail($id)
         );
