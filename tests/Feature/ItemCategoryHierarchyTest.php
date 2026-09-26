@@ -194,3 +194,46 @@ test('can delete a leaf category with no children or items', function () {
     $response->assertStatus(200);
     expect(ItemCategory::find($category->id))->toBeNull();
 });
+
+test('rejects a child segment whose length does not match the parent child_code_length', function () {
+    $root = ItemCategory::create(['name' => 'قوالب إسفنج', 'code_segment' => '01', 'child_code_length' => 3]);
+
+    $response = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/item-categories', [
+            'parent_id' => $root->id,
+            'name' => 'قالب قصير',
+            'code_segment' => '01',
+        ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['code_segment']);
+});
+
+test('accepts a child segment whose length matches the parent child_code_length', function () {
+    $root = ItemCategory::create(['name' => 'قوالب إسفنج', 'code_segment' => '01', 'child_code_length' => 3]);
+
+    $response = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/item-categories', [
+            'parent_id' => $root->id,
+            'name' => 'قالب صحيح',
+            'code_segment' => '001',
+        ]);
+
+    $response->assertStatus(201)->assertJsonPath('code', '01001');
+});
+
+test('rejects updating a category into a mismatched segment length for its parent', function () {
+    $root = ItemCategory::create(['name' => 'Root', 'code_segment' => '01', 'child_code_length' => 3]);
+    $child = ItemCategory::create(['name' => 'Child', 'code_segment' => '001', 'parent_id' => $root->id]);
+
+    $response = $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->putJson("/api/v1/item-categories/{$child->id}", [
+            'code_segment' => '01',
+        ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['code_segment']);
+});

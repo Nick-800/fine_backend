@@ -52,6 +52,7 @@ final class ItemCategoryController extends Controller
         ]);
 
         if (isset($validated['code_segment'])) {
+            $this->assertCodeSegmentLength($validated['parent_id'] ?? null, $validated['code_segment']);
             $this->assertCodeAvailable(
                 ItemCategory::buildCode($validated['parent_id'] ?? null, $validated['code_segment']),
             );
@@ -92,6 +93,7 @@ final class ItemCategoryController extends Controller
             $nextParentId = array_key_exists('parent_id', $validated) ? $validated['parent_id'] : $category->parent_id;
             $nextSegment = $validated['code_segment'] ?? $category->code_segment;
 
+            $this->assertCodeSegmentLength($nextParentId, $nextSegment);
             $this->assertCodeAvailable(
                 ItemCategory::buildCode($nextParentId, $nextSegment),
                 excludeId: $id,
@@ -101,6 +103,24 @@ final class ItemCategoryController extends Controller
         $category->update($validated);
 
         return response()->json($category);
+    }
+
+    /** @throws ValidationException when the segment doesn't match the parent's reserved width. */
+    private function assertCodeSegmentLength(?string $parentId, string $codeSegment): void
+    {
+        if ($parentId === null) {
+            return;
+        }
+
+        $parent = ItemCategory::withoutGlobalScopes()->find($parentId);
+
+        if ($parent?->child_code_length === null || strlen($codeSegment) === $parent->child_code_length) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'code_segment' => ["Category code must be exactly {$parent->child_code_length} character(s) long to match the parent category's child code length."],
+        ]);
     }
 
     /** @throws ValidationException when another category already owns the computed code. */
