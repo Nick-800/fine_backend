@@ -24,7 +24,9 @@ class WarehouseController extends Controller
      */
     public function index(): JsonResponse
     {
-        return response()->json(Warehouse::orderBy('name')->get());
+        return response()->json(
+            Warehouse::whereNull('parent_id')->with('children')->orderBy('name')->get()
+        );
     }
 
     /**
@@ -69,9 +71,27 @@ class WarehouseController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'operating_unit_id' => ['nullable', 'uuid', 'exists:operating_units,id'],
             'is_internal_unit' => ['nullable', 'boolean'],
+            'parent_id' => ['nullable', 'uuid', 'exists:warehouses,id'],
+            'location_type' => ['nullable', 'string', 'max:32'],
         ]);
 
-        $unitId = $validated['operating_unit_id'] ?? $this->unitContext->getUnitId();
+        $parent = null;
+        if (! empty($validated['parent_id'])) {
+            $parent = Warehouse::withoutGlobalScopes()->findOrFail($validated['parent_id']);
+
+            if ($parent->parent_id !== null) {
+                return response()->json([
+                    'message' => 'A sub-warehouse cannot itself have sub-warehouses.',
+                    'code' => 'NESTED_SUB_WAREHOUSE_NOT_ALLOWED',
+                ], 422);
+            }
+        }
+
+        // A sub-warehouse always inherits its parent's unit — it is never
+        // independently assigned one.
+        $unitId = $parent?->operating_unit_id
+            ?? $validated['operating_unit_id']
+            ?? $this->unitContext->getUnitId();
 
         if ($unitId === null) {
             return response()->json([
@@ -82,8 +102,10 @@ class WarehouseController extends Controller
 
         $warehouse = Warehouse::create([
             'operating_unit_id' => $unitId,
+            'parent_id' => $parent?->id,
             'name' => $validated['name'],
             'is_internal_unit' => $validated['is_internal_unit'] ?? false,
+            'location_type' => $validated['location_type'] ?? null,
         ]);
 
         return response()->json($warehouse, 201);
@@ -151,6 +173,7 @@ class WarehouseController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'is_internal_unit' => ['nullable', 'boolean'],
+            'location_type' => ['sometimes', 'nullable', 'string', 'max:32'],
         ]);
 
         $warehouse->update($validated);
@@ -162,6 +185,14 @@ class WarehouseController extends Controller
     {
         $warehouse = Warehouse::withoutGlobalScopes()->findOrFail($id);
 
+        // Sub-warehouses must be removed before their parent.
+        if ($warehouse->children()->exists()) {
+            return response()->json([
+                'message' => 'Delete this warehouse\'s sub-warehouses first.',
+                'code' => 'WAREHOUSE_HAS_CHILDREN',
+            ], 422);
+        }
+
         // Stock lots are located by warehouse; removing one out from under live
         // stock would orphan it.
         if (StockLot::where('warehouse_id', $warehouse->id)->exists()) {
@@ -171,16 +202,21 @@ class WarehouseController extends Controller
             ], 422);
         }
 
-        // An operating unit must retain at least one warehouse for operational workflows.
-        $totalWarehouses = Warehouse::withoutGlobalScopes()
-            ->where('operating_unit_id', $warehouse->operating_unit_id)
-            ->count();
+        // An operating unit must retain at least one top-level warehouse for
+        // operational workflows — sub-warehouses don't count toward this, and
+        // deleting one never trips this guard.
+        if ($warehouse->parent_id === null) {
+            $totalWarehouses = Warehouse::withoutGlobalScopes()
+                ->where('operating_unit_id', $warehouse->operating_unit_id)
+                ->whereNull('parent_id')
+                ->count();
 
-        if ($totalWarehouses <= 1) {
-            return response()->json([
-                'message' => 'Cannot delete the only warehouse of an operating unit.',
-                'code' => 'CANNOT_DELETE_LAST_WAREHOUSE',
-            ], 422);
+            if ($totalWarehouses <= 1) {
+                return response()->json([
+                    'message' => 'Cannot delete the only warehouse of an operating unit.',
+                    'code' => 'CANNOT_DELETE_LAST_WAREHOUSE',
+                ], 422);
+            }
         }
 
         $warehouse->delete();
