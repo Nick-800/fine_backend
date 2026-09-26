@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Exceptions\InsufficientComponentStockException;
 use App\Models\ImportOrder;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
@@ -498,6 +499,126 @@ class StockLotService
                 'parent_lot' => $parentLot->fresh(['inventoryItem', 'warehouse']),
                 'remnant_lot' => $remnantLot ? $remnantLot->fresh(['inventoryItem', 'warehouse']) : null,
                 'byproduct_movement' => $byproductMovement,
+            ];
+        });
+    }
+
+    /**
+     * Move stock of one item between two warehouses of the SAME operating
+     * unit — never across units (that's `InternalRestockController`'s job,
+     * a separate approval-gated flow). Both warehouses are resolved through
+     * the caller's scoped unit context, so they can only ever be warehouses
+     * belonging to that one unit; the controller additionally requires a
+     * unit to be active before calling this at all.
+     *
+     * Draws FIFO from available lots in the source warehouse (mirrors
+     * `SalesOrderService::drawFromUnit`), splitting each lot drawn into a new
+     * lot in the destination warehouse so per-lot cost/grade/dimensions are
+     * preserved. Purely a physical move within one unit — no ledger entry.
+     *
+     * @return array{transferred_quantity: float, lots: array<int, StockLot>}
+     */
+    public function transferBetweenWarehouses(
+        string $inventoryItemId,
+        string $fromWarehouseId,
+        string $toWarehouseId,
+        float $quantity,
+        ?string $reason = null,
+        ?string $referenceDocumentType = null,
+        ?string $referenceId = null,
+    ): array {
+        if ($fromWarehouseId === $toWarehouseId) {
+            throw new InvalidArgumentException('Source and destination warehouses must be different.');
+        }
+
+        return DB::transaction(function () use ($inventoryItemId, $fromWarehouseId, $toWarehouseId, $quantity, $reason, $referenceDocumentType, $referenceId) {
+            $item = InventoryItem::findOrFail($inventoryItemId);
+            $fromWarehouse = Warehouse::findOrFail($fromWarehouseId);
+            $toWarehouse = Warehouse::findOrFail($toWarehouseId);
+
+            $lots = StockLot::where('inventory_item_id', $item->id)
+                ->where('warehouse_id', $fromWarehouse->id)
+                ->where('status', 'available')
+                ->orderBy('created_at')
+                ->lockForUpdate()
+                ->get();
+
+            $available = (float) $lots->sum('quantity');
+
+            if ($available < $quantity) {
+                throw new InsufficientComponentStockException(
+                    "Stock cannot cover the transfer — {$item->code}: need {$quantity}, have {$available} in {$fromWarehouse->name}."
+                );
+            }
+
+            $remaining = $quantity;
+            $newLots = [];
+
+            foreach ($lots as $lot) {
+                if ($remaining <= 0) {
+                    break;
+                }
+
+                $take = min((float) $lot->quantity, $remaining);
+                $remaining = round($remaining - $take, 4);
+
+                $lot->quantity = round((float) $lot->quantity - $take, 4);
+                if ((float) $lot->quantity <= 0) {
+                    $lot->quantity = 0;
+                    $lot->status = 'consumed';
+                }
+                $lot->save();
+
+                InventoryMovement::create([
+                    'operating_unit_id' => $fromWarehouse->operating_unit_id,
+                    'stock_lot_id' => $lot->id,
+                    'from_warehouse_id' => $fromWarehouse->id,
+                    'sku' => $item->code,
+                    'movement_type' => 'transfer',
+                    'quantity_delta' => -$take,
+                    'unit_cost' => (float) $lot->unit_cost,
+                    'reason' => $reason ?? 'internal_warehouse_transfer',
+                    'reference_document_type' => $referenceDocumentType,
+                    'reference_id' => $referenceId,
+                ]);
+
+                [$lotNumber] = $this->resolveUniqueLotNumber($lot->lot_number.'-XFER');
+
+                $newLot = StockLot::create([
+                    'inventory_item_id' => $item->id,
+                    'warehouse_id' => $toWarehouse->id,
+                    'lot_number' => $lotNumber,
+                    'quantity' => $take,
+                    'length_m' => $lot->length_m,
+                    'width_m' => $lot->width_m,
+                    'height_m' => $lot->height_m,
+                    'weight_kg' => $lot->weight_kg,
+                    'unit_cost' => $lot->unit_cost,
+                    'grade' => $lot->grade,
+                    'block_type' => $lot->block_type,
+                    'attribute_values' => $lot->attribute_values,
+                    'status' => 'available',
+                ]);
+
+                InventoryMovement::create([
+                    'operating_unit_id' => $toWarehouse->operating_unit_id,
+                    'stock_lot_id' => $newLot->id,
+                    'to_warehouse_id' => $toWarehouse->id,
+                    'sku' => $item->code,
+                    'movement_type' => 'transfer',
+                    'quantity_delta' => $take,
+                    'unit_cost' => (float) $newLot->unit_cost,
+                    'reason' => $reason ?? 'internal_warehouse_transfer',
+                    'reference_document_type' => $referenceDocumentType,
+                    'reference_id' => $referenceId,
+                ]);
+
+                $newLots[] = $newLot->fresh(['inventoryItem', 'warehouse']);
+            }
+
+            return [
+                'transferred_quantity' => $quantity,
+                'lots' => $newLots,
             ];
         });
     }
