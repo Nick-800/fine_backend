@@ -10,6 +10,7 @@ use App\Support\CurrentUnitContext;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -33,19 +34,60 @@ final class ItemCategory extends Model
                 }
             }
         });
+
+        // The full code is derived from the parent's code plus this category's
+        // own segment — but only for categories that opt into the segment
+        // system. Pre-existing flat categories (no code_segment, e.g. the
+        // ones SystemBootstrapSeeder creates with a manual 'CAT-FOAM' code)
+        // keep whatever `code` was set directly.
+        self::saving(function (ItemCategory $category): void {
+            if ($category->code_segment !== null) {
+                $category->code = self::buildCode($category->parent_id, $category->code_segment);
+            }
+        });
+
+        // Re-parenting or re-segmenting a category invalidates every
+        // descendant's code, so cascade the recompute down the tree.
+        self::saved(function (ItemCategory $category): void {
+            if ($category->wasChanged('code')) {
+                $category->children()->get()->each(fn (self $child) => $child->save());
+            }
+        });
+    }
+
+    /** The parent's code (or '' at the root) plus this category's own segment. */
+    public static function buildCode(?string $parentId, ?string $codeSegment): string
+    {
+        $parentCode = $parentId
+            ? (self::withoutGlobalScopes()->find($parentId)?->code ?? '')
+            : '';
+
+        return $parentCode.(string) $codeSegment;
     }
 
     protected $fillable = [
         'operating_unit_id',
+        'parent_id',
         'name',
+        'code_segment',
         'code',
         'item_type',
+        'child_code_length',
         'description',
     ];
 
-    public function attributeDefinitions(): HasMany
+    protected $casts = [
+        'child_code_length' => 'integer',
+    ];
+
+    public function parent(): BelongsTo
     {
-        return $this->hasMany(InventoryAttributeDefinition::class, 'category_id')->orderBy('sort_order');
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    public function children(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id');
     }
 
     public function items(): HasMany

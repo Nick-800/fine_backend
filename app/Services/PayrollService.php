@@ -10,7 +10,6 @@ use App\Exceptions\InvalidStateTransitionException;
 use App\Models\Attendance;
 use App\Models\Company;
 use App\Models\Employee;
-use App\Models\LaborLog;
 use App\Models\LaborRoleRate;
 use App\Models\PayrollRun;
 use App\Models\Payslip;
@@ -19,16 +18,9 @@ use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
- * Phase 09 §9.4–9.7. A run opens a period, aggregates attendance and labor
- * logs into payslips (§9.6), passes review and approval gates (HR-06), and
- * posts to the ledger on the final transition (HR-08).
- *
- * The posting splits gross pay: hours logged against production orders were
- * already accrued into 2200 Wages Payable when the order finished, so payroll
- * settles that liability; everything else (base salary, attendance pay) is
- * fresh expense on 5700. Logs on orders that have not finished yet still
- * settle 2200 — the account dips until the order closes and accrues it back,
- * which self-corrects and beats double-expensing the same hours.
+ * Phase 09 §9.4–9.7. A run opens a period, aggregates attendance into
+ * payslips (§9.6), passes review and approval gates (HR-06), and posts to
+ * the ledger on the final transition (HR-08).
  */
 final class PayrollService
 {
@@ -61,9 +53,9 @@ final class PayrollService
     }
 
     /**
-     * §9.6: gross = base salary + payable attendance hours × role rate
-     * + labor-log hours × their snapshotted rates. Recalculating while still
-     * in Calculated wipes and regenerates the payslips.
+     * §9.6: gross = base salary + payable attendance hours × role rate.
+     * Recalculating while still in Calculated wipes and regenerates the
+     * payslips.
      */
     public function calculate(PayrollRun $run): PayrollRun
     {
@@ -92,12 +84,7 @@ final class PayrollService
                     ? $this->attendancePay($employee, $start, $end)
                     : 0.0;
 
-                $laborLogPay = round((float) LaborLog::where('employee_id', $employee->id)
-                    ->whereBetween('logged_at', [$start, $end->copy()->endOfDay()])
-                    ->get()
-                    ->sum(fn (LaborLog $log) => $log->cost()), 4);
-
-                $gross = round($basePay + $attendancePay + $laborLogPay, 4);
+                $gross = round($basePay + $attendancePay, 4);
 
                 if ($gross <= 0.0) {
                     continue;
@@ -109,7 +96,7 @@ final class PayrollService
                     'operating_unit_id' => $employee->operating_unit_id,
                     'base_pay' => $basePay,
                     'attendance_pay' => $attendancePay,
-                    'labor_log_pay' => $laborLogPay,
+                    'labor_log_pay' => 0,
                     'gross_pay' => $gross,
                     'deductions' => [],
                     'net_pay' => $gross,

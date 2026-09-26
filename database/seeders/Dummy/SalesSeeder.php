@@ -42,7 +42,7 @@ class SalesSeeder extends Seeder
             return;
         }
 
-        $finishedItems = InventoryItem::whereIn('sku', [
+        $finishedItems = InventoryItem::whereIn('code', [
             'FG-MATTRESS-Q', 'FG-MATTRESS-K', 'FG-CUSHION-SET',
             'FG-SOFA-LEFT', 'FG-BOLSTER', 'FG-BASE-Q',
         ])->get();

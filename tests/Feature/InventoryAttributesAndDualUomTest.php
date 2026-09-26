@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Models\Company;
-use App\Models\InventoryAttributeDefinition;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
 use App\Models\OperatingUnit;
@@ -57,69 +56,6 @@ beforeEach(function () {
     ]);
 });
 
-test('can create item categories and attribute definitions', function () {
-    $catResponse = $this->actingAs($this->user)
-        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
-        ->postJson('/api/v1/item-categories', [
-            'name' => 'Foam Blocks',
-            'code' => 'CAT-FOAM-BLOCK',
-            'description' => 'Raw block inventory',
-        ]);
-
-    $catResponse->assertStatus(201)
-        ->assertJsonPath('code', 'CAT-FOAM-BLOCK');
-
-    $categoryId = $catResponse->json('id');
-
-    $attrResponse = $this->actingAs($this->user)
-        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
-        ->postJson("/api/v1/item-categories/{$categoryId}/attribute-definitions", [
-            'name' => 'Pressure Rating',
-            'slug' => 'pressure_kpa',
-            'data_type' => 'number',
-            'unit_of_measure' => 'kPa',
-            'is_required_on_lot' => true,
-        ]);
-
-    $attrResponse->assertStatus(201)
-        ->assertJsonPath('slug', 'pressure_kpa');
-});
-
-test('can link attributes to inventory items via many-to-many relationship', function () {
-    $attr1 = InventoryAttributeDefinition::create([
-        'name' => 'Density',
-        'slug' => 'density_kg_m3',
-        'data_type' => 'number',
-        'unit_of_measure' => 'kg/m3',
-    ]);
-
-    $attr2 = InventoryAttributeDefinition::create([
-        'name' => 'Gross Weight',
-        'slug' => 'gross_weight_kg',
-        'data_type' => 'number',
-        'unit_of_measure' => 'kg',
-    ]);
-
-    $response = $this->actingAs($this->user)
-        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
-        ->postJson('/api/v1/inventory-items', [
-            'name' => 'Custom Block Item',
-            'sku' => 'BLOCK-CUST-01',
-            'item_type' => 'foam_block',
-            'unit_of_measure' => 'm3',
-            'primary_uom' => 'block',
-            'secondary_uom' => 'm3',
-            'attribute_definition_ids' => [$attr1->id, $attr2->id],
-        ]);
-
-    $response->assertStatus(201)
-        ->assertJsonCount(2, 'attribute_definitions');
-
-    $itemId = $response->json('id');
-    $item = InventoryItem::with('attributeDefinitions')->find($itemId);
-    expect($item->attributeDefinitions->pluck('slug')->toArray())->toContain('density_kg_m3', 'gross_weight_kg');
-});
-
 test('can store and query stock lots by dynamic JSON attributes', function () {
     $category = ItemCategory::create([
         'name' => 'Foam Blocks',
@@ -129,7 +65,7 @@ test('can store and query stock lots by dynamic JSON attributes', function () {
     $item = InventoryItem::create([
         'category_id' => $category->id,
         'name' => 'Block 35 Pressure',
-        'sku' => 'BLOCK-35P',
+        'code' => 'BLOCK-35P',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
         'primary_uom' => 'block',
@@ -190,7 +126,7 @@ test('can define and update inventory item with container capacity and dual UOMs
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->postJson('/api/v1/inventory-items', [
             'name' => 'Polyol Special Chemical',
-            'sku' => 'POLY-SPEC-200',
+            'code' => 'POLY-SPEC-200',
             'item_type' => 'raw_material',
             'unit_of_measure' => 'liter',
             'primary_uom' => 'barrel',
@@ -200,7 +136,7 @@ test('can define and update inventory item with container capacity and dual UOMs
 
     $response->assertStatus(201)
         ->assertJsonPath('name', 'Polyol Special Chemical')
-        ->assertJsonPath('sku', 'POLY-SPEC-200')
+        ->assertJsonPath('code', 'POLY-SPEC-200')
         ->assertJsonPath('primary_uom', 'barrel')
         ->assertJsonPath('secondary_uom', 'liter');
 
@@ -258,7 +194,7 @@ test('item category supports item_type and auto-defaults into inventory items', 
         ->postJson('/api/v1/inventory-items', [
             'category_id' => $categoryId,
             'name' => 'TDI Chemical',
-            'sku' => 'CHEM-TDI-001',
+            'code' => 'CHEM-TDI-001',
             'unit_of_measure' => 'kg',
         ]);
 

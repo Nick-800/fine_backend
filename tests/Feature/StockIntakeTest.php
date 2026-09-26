@@ -35,7 +35,7 @@ beforeEach(function () {
         'operating_unit_id' => $this->unit->id, 'name' => 'WH', 'code' => 'WH-1',
     ]);
     $this->fabric = InventoryItem::create([
-        'name' => 'Fabric', 'sku' => 'FAB-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'meter',
+        'name' => 'Fabric', 'code' => 'FAB-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'meter',
     ]);
 
     $this->user = User::factory()->create(['must_change_password' => false]);
@@ -124,7 +124,7 @@ test('an import receipt without its order is refused, as is an unknown source', 
 
 test('finished-good item types land on their own inventory accounts', function () {
     $block = InventoryItem::create([
-        'name' => 'Foam Block', 'sku' => 'BLK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
+        'name' => 'Foam Block', 'code' => 'BLK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
     ]);
 
     // Serialized items keep their rules on this path too: two blocks in one

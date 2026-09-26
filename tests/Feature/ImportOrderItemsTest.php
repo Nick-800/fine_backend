@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Enums\ImportOrderStatus;
 use App\Models\Company;
 use App\Models\ImportOrder;
+use App\Models\ImportOrderItem;
 use App\Models\InventoryItem;
 use App\Models\OperatingUnit;
 use App\Models\Role;
@@ -11,6 +13,7 @@ use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
+use App\Services\ImportOrderStateService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -57,21 +60,21 @@ beforeEach(function () {
 
     $this->rawMaterial = InventoryItem::create([
         'name' => 'Polyol Resin',
-        'sku' => 'RAW-POL-001',
+        'code' => 'RAW-POL-001',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
     ]);
 
     $this->packaging = InventoryItem::create([
         'name' => 'Cardboard Box',
-        'sku' => 'PKG-BOX-001',
+        'code' => 'PKG-BOX-001',
         'item_type' => 'packaging',
         'unit_of_measure' => 'each',
     ]);
 
     $this->foamBlock = InventoryItem::create([
         'name' => 'Foam Block A',
-        'sku' => 'FOAM-A-001',
+        'code' => 'FOAM-A-001',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
     ]);
@@ -116,7 +119,7 @@ it('returns items in index and show responses', function () {
     expect($list['data'][0]['items']['data'][0]['inventory_item']['name'])->toBe('Polyol Resin');
     expect((float) $list['data'][0]['items']['data'][0]['line_total'])->toBe(100.0);
 
-    $orderId = \App\Models\ImportOrder::first()->id;
+    $orderId = ImportOrder::first()->id;
 
     $show = $this->actingAs($this->owner)->getJson("/api/v1/import-orders/{$orderId}")->json();
     expect((float) $show['data']['items']['data'][0]['quantity'])->toBe(100.0);
@@ -211,7 +214,7 @@ it('calculates total cost correctly for multi-item orders and payment requests',
     expect($order->totalCost())->toBe(1625.0);
 
     // Transition to pending payment should request exactly totalCost ($1,625), NOT $1,706,250
-    $stateService = app(\App\Services\ImportOrderStateService::class);
+    $stateService = app(ImportOrderStateService::class);
     $order = $stateService->transitionToPendingPayment($order);
 
     $paymentRequest = $order->paymentRequests()->first();
@@ -225,10 +228,10 @@ it('lets an owner update line items of a draft import order', function () {
         'currency' => 'USD',
         'negotiated_price' => 1500.0,
         'quantity' => 1000.0,
-        'status' => \App\Enums\ImportOrderStatus::Draft,
+        'status' => ImportOrderStatus::Draft,
     ]);
 
-    \App\Models\ImportOrderItem::create([
+    ImportOrderItem::create([
         'import_order_id' => $order->id,
         'inventory_item_id' => $this->rawMaterial->id,
         'quantity' => 1000,
@@ -266,7 +269,7 @@ it('rejects editing items if the import order is not in draft status', function 
         'currency' => 'USD',
         'negotiated_price' => 1500.0,
         'quantity' => 1000.0,
-        'status' => \App\Enums\ImportOrderStatus::PendingPayment,
+        'status' => ImportOrderStatus::PendingPayment,
     ]);
 
     $updatePayload = [
@@ -288,7 +291,7 @@ it('rejects updating items with a non-procurement item type', function () {
         'currency' => 'USD',
         'negotiated_price' => 1500.0,
         'quantity' => 1000.0,
-        'status' => \App\Enums\ImportOrderStatus::Draft,
+        'status' => ImportOrderStatus::Draft,
     ]);
 
     $updatePayload = [

@@ -69,7 +69,7 @@ beforeEach(function () {
 
     $this->rawMaterial = InventoryItem::create([
         'name' => 'Polyol Resin',
-        'sku' => 'RAW-POL-001',
+        'code' => 'RAW-POL-001',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
     ]);

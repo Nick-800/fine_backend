@@ -121,7 +121,7 @@ test('sales fulfillment and payment directly routes to client linked account', f
 
     $item = InventoryItem::create([
         'name' => 'Foam Block',
-        'sku' => 'FB-01',
+        'code' => 'FB-01',
         'item_type' => 'furniture_finished_good',
         'unit_of_measure' => 'piece',
     ]);

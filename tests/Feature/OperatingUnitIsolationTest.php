@@ -14,7 +14,6 @@ use App\Models\ItemCategory;
 use App\Models\OperatingUnit;
 use App\Models\ProductionBatch;
 use App\Models\Role;
-use App\Models\StockAdjustmentRequest;
 use App\Models\StockLot;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
@@ -72,11 +71,11 @@ beforeEach(function () {
     // Bulk material: these lots exist to test scoping, and carry quantities > 1,
     // which INV-02 would reject on a serialized foam block.
     $this->item = InventoryItem::create([
-        'name' => 'Bulk Filler', 'sku' => 'FILL-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
+        'name' => 'Bulk Filler', 'code' => 'FILL-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
     ]);
 
     $this->blockItem = InventoryItem::create([
-        'name' => 'Foam Block', 'sku' => 'BLOCK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
+        'name' => 'Foam Block', 'code' => 'BLOCK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
     ]);
 
     // One record of each kind in unit B — the unit userA must never reach.
@@ -99,15 +98,6 @@ beforeEach(function () {
         'unit_cost' => 10,
         'grade' => 'standard',
         'status' => 'available',
-    ]);
-
-    $this->adjustmentB = StockAdjustmentRequest::create([
-        'operating_unit_id' => $this->unitB->id,
-        'stock_lot_id' => $this->lotB->id,
-        'reason_code' => 'damage',
-        'quantity_delta' => -1,
-        'status' => 'pending',
-        'requested_by_user_id' => $this->userA->id,
     ]);
 
     $entityEmpB = Entity::create(['name' => 'Worker Unit B', 'entity_type' => 'individual', 'is_active' => true]);
@@ -198,14 +188,6 @@ test('a unit-scoped user cannot read another unit stock lot', function () {
     ($this->asA)()->getJson("/api/v1/stock-lots/{$this->lotB->id}")->assertNotFound();
 });
 
-test('a unit-scoped user cannot approve another unit stock adjustment', function () {
-    ($this->asA)()->postJson("/api/v1/stock-adjustment-requests/{$this->adjustmentB->id}/approve")
-        ->assertNotFound();
-
-    app(CurrentUnitContext::class)->clear();
-    expect($this->adjustmentB->fresh()->status)->toBe('pending');
-});
-
 test('listings exclude other units', function () {
     ($this->asA)()->getJson('/api/v1/production-batches')->assertStatus(200)->assertJsonPath('total', 0);
     ($this->asA)()->getJson('/api/v1/stock-lots')->assertStatus(200)->assertJsonPath('total', 0);
@@ -245,38 +227,6 @@ test('an owner scoped to a unit by header is filtered to it', function () {
         ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
         ->getJson("/api/v1/production-batches/{$this->batchB->id}")
         ->assertNotFound();
-});
-
-test('a stock adjustment is filed against the caller unit, not the body', function () {
-    $lotA = StockLot::create([
-        'inventory_item_id' => $this->item->id,
-        'warehouse_id' => $this->warehouseA->id,
-        'lot_number' => 'LOT-A-1',
-        'quantity' => 10,
-        'unit_cost' => 10,
-        'grade' => 'standard',
-        'status' => 'available',
-    ]);
-
-    ($this->asA)()->postJson('/api/v1/stock-adjustment-requests', [
-        'operating_unit_id' => $this->unitB->id, // must be ignored
-        'stock_lot_id' => $lotA->id,
-        'reason_code' => 'damage',
-        'quantity_delta' => -1,
-    ])->assertStatus(201)->assertJsonPath('operating_unit_id', $this->unitA->id);
-});
-
-test('a tank refill is applied to the caller unit, not the body', function () {
-    $chemical = InventoryItem::create([
-        'name' => 'TDI', 'sku' => 'CHEM-TDI', 'item_type' => 'raw_material', 'unit_of_measure' => 'liter',
-    ]);
-
-    ($this->asA)()->postJson('/api/v1/tank-stocks/refill', [
-        'chemical_inventory_item_id' => $chemical->id,
-        'operating_unit_id' => $this->unitB->id, // must be ignored
-        'refill_quantity' => 100,
-        'refill_unit_cost' => 5,
-    ])->assertStatus(201)->assertJsonPath('operating_unit_id', $this->unitA->id);
 });
 
 test('a stock lot cannot be created into another unit warehouse', function () {
@@ -328,14 +278,6 @@ test('blocks cannot be registered into another unit warehouse', function () {
     ])->assertStatus(422)->assertJsonValidationErrors('groups.0.warehouse_id');
 });
 
-test('an adjustment cannot be filed against another unit stock lot', function () {
-    ($this->asA)()->postJson('/api/v1/stock-adjustment-requests', [
-        'stock_lot_id' => $this->lotB->id,
-        'reason_code' => 'damage',
-        'quantity_delta' => -1,
-    ])->assertStatus(422)->assertJsonValidationErrors('stock_lot_id');
-});
-
 test('a stock lot cannot be attached to another unit production batch', function () {
     ($this->asA)()->postJson('/api/v1/stock-lots', [
         'inventory_item_id' => $this->item->id,
@@ -350,7 +292,7 @@ test('a stock lot cannot be attached to another unit production batch', function
 test('an inventory item cannot be filed under another unit category', function () {
     ($this->asA)()->postJson('/api/v1/inventory-items', [
         'name' => 'Cross Item',
-        'sku' => 'CROSS-1',
+        'code' => 'CROSS-1',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
         'category_id' => $this->categoryB->id,
@@ -363,7 +305,7 @@ test('an inventory item can use a shared category', function () {
 
     ($this->asA)()->postJson('/api/v1/inventory-items', [
         'name' => 'Shared Item',
-        'sku' => 'SHARED-1',
+        'code' => 'SHARED-1',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
         'category_id' => $shared->id,

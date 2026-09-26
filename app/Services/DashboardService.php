@@ -15,7 +15,6 @@ use App\Models\OperatingUnit;
 use App\Models\OverheadAllocation;
 use App\Models\PayrollRun;
 use App\Models\ProductionBatch;
-use App\Models\ProductionOrder;
 use App\Models\SalesOrder;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -132,7 +131,6 @@ final class DashboardService
             'import_orders' => $this->statusBreakdown(ImportOrder::withoutGlobalScopes()),
             'foam_batches' => $this->statusBreakdown(ProductionBatch::withoutGlobalScopes()),
             'cutter_work_orders' => $this->statusBreakdown(CutterWorkOrder::withoutGlobalScopes()),
-            'furniture_orders' => $this->statusBreakdown(ProductionOrder::withoutGlobalScopes()),
             'sales_orders' => $this->statusBreakdown(SalesOrder::withoutGlobalScopes()),
         ];
     }

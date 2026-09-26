@@ -17,6 +17,7 @@ final class SalesOrderLine extends Model
         'sales_order_id',
         'inventory_item_id',
         'stock_lot_id',
+        'bundle_id',
         'quantity',
         'unit_price',
         'unit_cost_actual',
@@ -41,6 +42,11 @@ final class SalesOrderLine extends Model
     public function stockLot(): BelongsTo
     {
         return $this->belongsTo(StockLot::class);
+    }
+
+    public function bundle(): BelongsTo
+    {
+        return $this->belongsTo(Bundle::class);
     }
 
     public function lineTotal(): float

@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 final class InventoryItem extends Model
@@ -19,7 +18,7 @@ final class InventoryItem extends Model
     protected $fillable = [
         'category_id',
         'name',
-        'sku',
+        'code',
         'item_type',
         'unit_of_measure',
         'primary_uom',
@@ -27,12 +26,32 @@ final class InventoryItem extends Model
         'container_capacity',
         'empty_container_item_id',
         'default_attributes',
+        'length_m',
+        'width_m',
+        'height_m',
+        'volume_m3',
     ];
 
     protected $casts = [
         'default_attributes' => 'array',
         'container_capacity' => 'decimal:4',
+        'length_m' => 'decimal:3',
+        'width_m' => 'decimal:3',
+        'height_m' => 'decimal:3',
+        'volume_m3' => 'decimal:4',
     ];
+
+    protected static function booted(): void
+    {
+        self::saving(function (InventoryItem $item): void {
+            if ($item->length_m !== null && $item->width_m !== null && $item->height_m !== null) {
+                $item->volume_m3 = round(
+                    (float) $item->length_m * (float) $item->width_m * (float) $item->height_m,
+                    4
+                );
+            }
+        });
+    }
 
     /**
      * The item representing this product's empty container, credited back to
@@ -51,15 +70,5 @@ final class InventoryItem extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(ItemCategory::class, 'category_id');
-    }
-
-    public function attributeDefinitions(): BelongsToMany
-    {
-        return $this->belongsToMany(
-            InventoryAttributeDefinition::class,
-            'inventory_item_attribute_definitions',
-            'inventory_item_id',
-            'attribute_definition_id'
-        );
     }
 }

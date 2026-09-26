@@ -64,7 +64,7 @@ beforeEach(function () {
 
     $this->foamItem = InventoryItem::create([
         'name' => 'Foam Block',
-        'sku' => 'FOAM-BLK',
+        'code' => 'FOAM-BLK',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
     ]);
@@ -156,7 +156,7 @@ it('snapshot fields stay locked even if the block unit_cost changes later', func
 it('advancing to in_production consumes the reserved block and creates a FoamBlockConsumption', function () {
     $pieceItem = InventoryItem::create([
         'name' => 'Cut Piece',
-        'sku' => 'PIECE-PROD',
+        'code' => 'PIECE-PROD',
         'item_type' => 'cut_template_piece',
         'unit_of_measure' => 'each',
     ]);
@@ -206,7 +206,7 @@ it('advancing to in_production consumes the reserved block and creates a FoamBlo
 it('completing the order produces pieces that carry source_stock_lot_id + source_block dims', function () {
     $pieceItem = InventoryItem::create([
         'name' => 'Cut Piece',
-        'sku' => 'PIECE-001',
+        'code' => 'PIECE-001',
         'item_type' => 'cut_template_piece',
         'unit_of_measure' => 'each',
     ]);
@@ -398,7 +398,7 @@ it('can detach an attached block before production', function () {
 it('prevents transitioning to in_production if no block has been chosen', function () {
     $pieceItem = InventoryItem::create([
         'name' => 'Piece',
-        'sku' => 'PC-001',
+        'code' => 'PC-001',
         'item_type' => 'cut_template_piece',
         'unit_of_measure' => 'each',
     ]);
@@ -433,4 +433,3 @@ it('prevents transitioning to in_production if no block has been chosen', functi
     $transRes->assertStatus(422)
         ->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
 });
-

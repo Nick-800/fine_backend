@@ -24,7 +24,6 @@ use App\Models\EntityRole;
 use App\Models\FxRate;
 use App\Models\GoodsReceipt;
 use App\Models\ImportOrder;
-use App\Models\InventoryAttributeDefinition;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
 use App\Models\JournalEntry;
@@ -34,16 +33,13 @@ use App\Models\PaymentRequest;
 use App\Models\Permission;
 use App\Models\ProductionBatch;
 use App\Models\Role;
-use App\Models\StockAdjustmentRequest;
 use App\Models\StockLot;
 use App\Models\Supplier;
-use App\Models\TankStock;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
 use App\Services\AccountingService;
-use App\Services\ConsumptionReportService;
 use App\Services\OperatingUnitService;
 use App\Services\ProductionBatchService;
 use Illuminate\Database\Seeder;
@@ -225,57 +221,40 @@ class SystemBootstrapSeeder extends Seeder
             ItemCategory::firstOrCreate(['code' => $row['code']], $row + ['operating_unit_id' => null]);
         }
 
-        // Attribute definitions
-        $attributes = [
-            ['name' => 'Pressure', 'slug' => 'pressure_kpa', 'data_type' => 'number', 'unit_of_measure' => 'kPa', 'sort_order' => 1],
-            ['name' => 'Density', 'slug' => 'density_kg_m3', 'data_type' => 'number', 'unit_of_measure' => 'kg/m³', 'sort_order' => 2],
-            ['name' => 'Colour', 'slug' => 'colour', 'data_type' => 'select', 'options' => ['white', 'orange', 'green', 'blue', 'brown'], 'sort_order' => 3],
-            ['name' => 'Purity', 'slug' => 'purity_pct', 'data_type' => 'number', 'unit_of_measure' => '%', 'sort_order' => 4],
-            ['name' => 'Viscosity', 'slug' => 'viscosity_cps', 'data_type' => 'number', 'unit_of_measure' => 'cPs', 'sort_order' => 5],
-        ];
-        foreach ($attributes as $attr) {
-            InventoryAttributeDefinition::firstOrCreate(['slug' => $attr['slug']], $attr);
-        }
-
         // Container items
         $containers = [
-            ['name' => 'Empty Barrel 40L', 'sku' => 'BARREL-40-EMPTY', 'item_type' => 'barrel', 'unit_of_measure' => 'each'],
-            ['name' => 'Empty Barrel 200L', 'sku' => 'BARREL-200-EMPTY', 'item_type' => 'barrel', 'unit_of_measure' => 'each'],
-            ['name' => 'Pallet', 'sku' => 'PALLET-STD', 'item_type' => 'pallet', 'unit_of_measure' => 'each'],
+            ['name' => 'Empty Barrel 40L', 'code' => 'BARREL-40-EMPTY', 'item_type' => 'barrel', 'unit_of_measure' => 'each'],
+            ['name' => 'Empty Barrel 200L', 'code' => 'BARREL-200-EMPTY', 'item_type' => 'barrel', 'unit_of_measure' => 'each'],
+            ['name' => 'Pallet', 'code' => 'PALLET-STD', 'item_type' => 'pallet', 'unit_of_measure' => 'each'],
         ];
         foreach ($containers as $c) {
             InventoryItem::firstOrCreate(
-                ['sku' => $c['sku']],
+                ['code' => $c['code']],
                 $c + ['category_id' => ItemCategory::where('code', 'CAT-CONT')->value('id')],
             );
         }
 
         $chemicalCategoryId = ItemCategory::where('code', 'CAT-CHEM')->value('id');
-        $emptyBarrel40 = InventoryItem::where('sku', 'BARREL-40-EMPTY')->first();
-        $emptyBarrel200 = InventoryItem::where('sku', 'BARREL-200-EMPTY')->first();
+        $emptyBarrel40 = InventoryItem::where('code', 'BARREL-40-EMPTY')->first();
+        $emptyBarrel200 = InventoryItem::where('code', 'BARREL-200-EMPTY')->first();
         $foamWarehouse = Warehouse::where('operating_unit_id', $foamUnit->id)->first();
 
         // Chemicals + opening lots
         $chemicals = [
-            ['name' => 'Polyol 15%', 'sku' => 'CHEM-POLYOL-15', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 3.10, 'barrels' => 6],
-            ['name' => 'Polyol 45%', 'sku' => 'CHEM-POLYOL-45', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 3.45, 'barrels' => 6],
-            ['name' => 'TDI (Sabec)', 'sku' => 'CHEM-TDI-SABEC', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 5.20, 'barrels' => 8],
-            ['name' => 'Amine A33', 'sku' => 'CHEM-AMINE-A33', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 12.00, 'barrels' => 2],
-            ['name' => 'Catalyst T-9', 'sku' => 'CHEM-T9', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 18.50, 'barrels' => 2],
-            ['name' => 'Silicone JC-7858', 'sku' => 'CHEM-SIL-JC7858', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 9.75, 'barrels' => 3],
-            ['name' => 'Methylene Chloride', 'sku' => 'CHEM-MC', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 2.40, 'barrels' => 3],
-        ];
-
-        $attributeModels = [
-            'purity_pct' => InventoryAttributeDefinition::where('slug', 'purity_pct')->first(),
-            'viscosity_cps' => InventoryAttributeDefinition::where('slug', 'viscosity_cps')->first(),
+            ['name' => 'Polyol 15%', 'code' => 'CHEM-POLYOL-15', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 3.10, 'barrels' => 6],
+            ['name' => 'Polyol 45%', 'code' => 'CHEM-POLYOL-45', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 3.45, 'barrels' => 6],
+            ['name' => 'TDI (Sabec)', 'code' => 'CHEM-TDI-SABEC', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 5.20, 'barrels' => 8],
+            ['name' => 'Amine A33', 'code' => 'CHEM-AMINE-A33', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 12.00, 'barrels' => 2],
+            ['name' => 'Catalyst T-9', 'code' => 'CHEM-T9', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 18.50, 'barrels' => 2],
+            ['name' => 'Silicone JC-7858', 'code' => 'CHEM-SIL-JC7858', 'capacity' => 40, 'empty' => $emptyBarrel40, 'cost' => 9.75, 'barrels' => 3],
+            ['name' => 'Methylene Chloride', 'code' => 'CHEM-MC', 'capacity' => 200, 'empty' => $emptyBarrel200, 'cost' => 2.40, 'barrels' => 3],
         ];
 
         foreach ($chemicals as $index => $chemical) {
-            $item = InventoryItem::firstOrCreate(['sku' => $chemical['sku']], [
+            $item = InventoryItem::firstOrCreate(['code' => $chemical['code']], [
                 'category_id' => $chemicalCategoryId,
                 'name' => $chemical['name'],
-                'sku' => $chemical['sku'],
+                'code' => $chemical['code'],
                 'item_type' => 'raw_material',
                 'unit_of_measure' => 'liter',
                 'primary_uom' => 'barrel',
@@ -284,15 +263,8 @@ class SystemBootstrapSeeder extends Seeder
                 'empty_container_item_id' => $chemical['empty']->id,
             ]);
 
-            if ($attributeModels['purity_pct'] !== null && $attributeModels['viscosity_cps'] !== null) {
-                $item->attributeDefinitions()->syncWithoutDetaching([
-                    $attributeModels['purity_pct']->id,
-                    $attributeModels['viscosity_cps']->id,
-                ]);
-            }
-
             StockLot::firstOrCreate(
-                ['lot_number' => sprintf('LOT-%s-%03d', $chemical['sku'], $index + 1)],
+                ['lot_number' => sprintf('LOT-%s-%03d', $chemical['code'], $index + 1)],
                 [
                     'id' => (string) Str::uuid(),
                     'inventory_item_id' => $item->id,
@@ -308,79 +280,40 @@ class SystemBootstrapSeeder extends Seeder
 
         // Foam outputs
         $foamCategoryId = ItemCategory::where('code', 'CAT-FOAM')->value('id');
-        $foamBlock = InventoryItem::firstOrCreate(['sku' => 'BLOCK-WHITE-1214'], [
+        InventoryItem::firstOrCreate(['code' => 'BLOCK-WHITE-1214'], [
             'category_id' => $foamCategoryId,
             'name' => 'Foam Block — White 12-14',
-            'sku' => 'BLOCK-WHITE-1214',
+            'code' => 'BLOCK-WHITE-1214',
             'item_type' => 'foam_block',
             'unit_of_measure' => 'm3',
         ]);
-        $attributeDensity = InventoryAttributeDefinition::where('slug', 'density_kg_m3')->first();
-        $attributeColour = InventoryAttributeDefinition::where('slug', 'colour')->first();
-        if ($attributeDensity !== null && $attributeColour !== null) {
-            $foamBlock->attributeDefinitions()->syncWithoutDetaching([$attributeDensity->id, $attributeColour->id]);
-        }
 
-        InventoryItem::firstOrCreate(['sku' => 'SCRAP-FILL'], [
+        InventoryItem::firstOrCreate(['code' => 'SCRAP-FILL'], [
             'category_id' => $foamCategoryId,
             'name' => 'Foam Scrap Fill',
-            'sku' => 'SCRAP-FILL',
+            'code' => 'SCRAP-FILL',
             'item_type' => 'byproduct_fill',
             'unit_of_measure' => 'm3',
         ]);
 
-        InventoryItem::firstOrCreate(['sku' => 'SLICE-STD'], [
+        InventoryItem::firstOrCreate(['code' => 'SLICE-STD'], [
             'category_id' => $foamCategoryId,
             'name' => 'Foam Slice',
-            'sku' => 'SLICE-STD',
+            'code' => 'SLICE-STD',
             'item_type' => 'slice',
             'unit_of_measure' => 'each',
         ]);
 
-        // Tank stocks for primary chemicals
-        foreach (['CHEM-POLYOL-15', 'CHEM-POLYOL-45', 'CHEM-TDI-SABEC', 'CHEM-MC'] as $sku) {
-            $item = InventoryItem::where('sku', $sku)->first();
-            if ($item === null) {
-                continue;
-            }
-            $lotCost = (float) StockLot::where('inventory_item_id', $item->id)->value('unit_cost');
-            TankStock::firstOrCreate(
-                ['chemical_inventory_item_id' => $item->id, 'operating_unit_id' => $foamUnit->id],
-                [
-                    'id' => (string) Str::uuid(),
-                    'quantity_on_hand' => 2500,
-                    'weighted_avg_unit_cost' => $lotCost,
-                ],
-            );
-        }
-
-        // A pending adjustment so the approval queue is not empty
-        $requester = User::where('email', 'foam@erp.com')->first();
-        $polyolLot = StockLot::whereHas('inventoryItem', fn ($q) => $q->where('sku', 'CHEM-POLYOL-15'))->first();
-        if ($requester !== null && $polyolLot !== null && StockAdjustmentRequest::where('stock_lot_id', $polyolLot->id)->doesntExist()) {
-            StockAdjustmentRequest::create([
-                'id' => (string) Str::uuid(),
-                'operating_unit_id' => $foamUnit->id,
-                'stock_lot_id' => $polyolLot->id,
-                'reason_code' => 'spill_loss',
-                'quantity_delta' => -12.5,
-                'notes' => 'Spill during transfer to tank.',
-                'status' => 'pending',
-                'requested_by_user_id' => $requester->id,
-            ]);
-        }
-
         // Opening inventory journal so GL agrees with stock ledger.
         if (Account::where('account_code', '111')->exists() && ! $this->openingInventoryAlreadyPosted($foamUnit)) {
             $lotValue = (float) StockLot::query()->selectRaw('COALESCE(SUM(quantity * unit_cost), 0) as v')->value('v');
-            $tankValue = (float) TankStock::query()->selectRaw('COALESCE(SUM(quantity_on_hand * weighted_avg_unit_cost), 0) as v')->value('v');
-            $openingValue = round($lotValue + $tankValue, 4);
+            $openingValue = round($lotValue, 4);
 
             if ($openingValue > 0) {
                 app(AccountingService::class)->postJournal(
                     'Opening inventory balances (bootstrap)',
                     [
-                        ['account_code' => '111', 'debit' => $openingValue, 'operating_unit_id' => $foamUnit->id, 'memo' => 'seeded chemical lots + tank charges'],
+                        ['account_code' => '111', 'debit' => $openingValue, 'operating_unit_id' => $foamUnit->id, 'memo' => 'seeded chemical lots'],
                         ['account_code' => '31', 'credit' => $openingValue, 'operating_unit_id' => $foamUnit->id],
                     ],
                 );
@@ -692,11 +625,10 @@ class SystemBootstrapSeeder extends Seeder
         }
 
         $batchService = app(ProductionBatchService::class);
-        $consumptionService = app(ConsumptionReportService::class);
 
         $warehouse = Warehouse::where('operating_unit_id', $foamUnit->id)->first();
-        $blockItem = InventoryItem::where('sku', 'BLOCK-WHITE-1214')->first();
-        $scrapItem = InventoryItem::where('sku', 'SCRAP-FILL')->first();
+        $blockItem = InventoryItem::where('code', 'BLOCK-WHITE-1214')->first();
+        $scrapItem = InventoryItem::where('code', 'SCRAP-FILL')->first();
 
         if ($warehouse === null || $blockItem === null || $scrapItem === null) {
             return;
@@ -721,13 +653,6 @@ class SystemBootstrapSeeder extends Seeder
 
         $batchService->transition($batch, ProductionBatchStatus::Configured);
         $batchService->transition($batch->fresh(), ProductionBatchStatus::Running);
-
-        $consumptionService->record($batch->fresh(), [
-            ['chemical_inventory_item_id' => InventoryItem::where('sku', 'CHEM-POLYOL-15')->value('id'), 'quantity_consumed' => 899],
-            ['chemical_inventory_item_id' => InventoryItem::where('sku', 'CHEM-POLYOL-45')->value('id'), 'quantity_consumed' => 899],
-            ['chemical_inventory_item_id' => InventoryItem::where('sku', 'CHEM-TDI-SABEC')->value('id'), 'quantity_consumed' => 1129],
-            ['chemical_inventory_item_id' => InventoryItem::where('sku', 'CHEM-MC')->value('id'), 'quantity_consumed' => 270],
-        ]);
 
         foreach ([ProductionBatchStatus::Consumed, ProductionBatchStatus::Curing, ProductionBatchStatus::ReadyForGrading] as $status) {
             $batchService->transition($batch->fresh(), $status);

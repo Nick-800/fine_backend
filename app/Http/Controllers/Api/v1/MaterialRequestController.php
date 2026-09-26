@@ -10,7 +10,6 @@ use App\Models\CutterWorkOrder;
 use App\Models\ImportOrder;
 use App\Models\MaterialRequest;
 use App\Models\ProductionBatch;
-use App\Models\ProductionOrder;
 use App\Services\MaterialResolutionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -58,7 +57,7 @@ final class MaterialRequestController extends Controller
     public function fulfill(Request $request, string $id): JsonResponse
     {
         $validated = $request->validate([
-            'fulfilled_by_type' => ['required', 'string', 'in:cutter_work_order,production_batch,production_order,procurement_request'],
+            'fulfilled_by_type' => ['required', 'string', 'in:cutter_work_order,production_batch,procurement_request'],
             'fulfilled_by_id' => ['required', 'uuid'],
             'notes' => ['nullable', 'string'],
         ]);
@@ -66,7 +65,6 @@ final class MaterialRequestController extends Controller
         $modelClass = match ($validated['fulfilled_by_type']) {
             'cutter_work_order' => CutterWorkOrder::class,
             'production_batch' => ProductionBatch::class,
-            'production_order' => ProductionOrder::class,
             'procurement_request' => ImportOrder::class,
             default => throw new InvalidArgumentException('Unknown fulfilled_by_type'),
         };

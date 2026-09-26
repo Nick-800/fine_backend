@@ -116,16 +116,6 @@ final class EmployeeController extends Controller
         );
     }
 
-    public function laborLogs(Request $request, string $id): JsonResponse
-    {
-        $employee = Employee::findOrFail($id);
-
-        return response()->json(
-            $employee->laborLogs()->with('productionOrder:id,order_number')
-                ->orderByDesc('logged_at')->paginate($request->integer('per_page', 25))
-        );
-    }
-
     public function payslips(Request $request, string $id): JsonResponse
     {
         $employee = Employee::findOrFail($id);
@@ -133,6 +123,17 @@ final class EmployeeController extends Controller
         return response()->json(
             $employee->payslips()->with('payrollRun:id,period,status')
                 ->latest()->paginate($request->integer('per_page', 24))
+        );
+    }
+
+    public function laborLogs(Request $request, string $id): JsonResponse
+    {
+        $employee = Employee::findOrFail($id);
+
+        return response()->json(
+            $employee->load(['laborLogs' => fn ($q) => $q->with('productionOrder:id,order_number')->latest('logged_at')])
+                ->laborLogs
+                ->paginate($request->integer('per_page', 24))
         );
     }
 

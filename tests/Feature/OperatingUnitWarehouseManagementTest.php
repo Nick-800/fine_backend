@@ -134,7 +134,7 @@ test('cannot delete warehouse if it still holds stock lots', function () {
     ]);
 
     $item = InventoryItem::create([
-        'sku' => 'POLY-01',
+        'code' => 'POLY-01',
         'name' => 'Polyol',
         'category_id' => $category->id,
         'item_type' => 'raw_material',

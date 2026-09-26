@@ -54,7 +54,7 @@ beforeEach(function () {
 
     $this->blockItem = InventoryItem::create([
         'name' => 'Foam Block White',
-        'sku' => 'BLOCK-WHITE',
+        'code' => 'BLOCK-WHITE',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
     ]);
@@ -72,7 +72,7 @@ beforeEach(function () {
 
     $this->scrapItem = InventoryItem::create([
         'name' => 'Foam Scrap Fill',
-        'sku' => 'SCRAP-FILL',
+        'code' => 'SCRAP-FILL',
         'item_type' => 'byproduct_fill',
         'unit_of_measure' => 'm3',
     ]);
@@ -430,7 +430,7 @@ test('a foam block lot cannot carry a quantity other than one', function () {
 
 test('a non-serialized item may carry any quantity', function () {
     $bulk = InventoryItem::create([
-        'name' => 'Polyol', 'sku' => 'CHEM-POLY', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
+        'name' => 'Polyol', 'code' => 'CHEM-POLY', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
     ]);
 
     ($this->api)()->postJson('/api/v1/stock-lots', [

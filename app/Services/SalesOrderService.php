@@ -251,6 +251,7 @@ class SalesOrderService
                 $order->lines()->create([
                     'inventory_item_id' => $item['inventory_item_id'],
                     'stock_lot_id' => $item['stock_lot_id'] ?? null,
+                    'bundle_id' => $item['bundle_id'] ?? null,
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
                 ]);
@@ -344,7 +345,7 @@ class SalesOrderService
                     'operating_unit_id' => $request->requesting_unit_id,
                     'stock_lot_id' => $received->id,
                     'to_warehouse_id' => $targetWarehouse->id,
-                    'sku' => $line->inventoryItem?->sku ?? 'ITEM',
+                    'sku' => $line->inventoryItem?->code ?? 'ITEM',
                     'movement_type' => 'transfer',
                     'quantity_delta' => (float) $line->quantity,
                     'unit_cost' => (float) $received->unit_cost,
@@ -441,7 +442,7 @@ class SalesOrderService
                     'operating_unit_id' => $order->buyer_unit_id,
                     'stock_lot_id' => $received->id,
                     'to_warehouse_id' => $buyerWarehouse->id,
-                    'sku' => $line->inventoryItem?->sku ?? 'ITEM',
+                    'sku' => $line->inventoryItem?->code ?? 'ITEM',
                     'movement_type' => 'transfer',
                     'quantity_delta' => (float) $line->quantity,
                     'unit_cost' => (float) $line->unit_cost_actual,
@@ -516,7 +517,7 @@ class SalesOrderService
             'operating_unit_id' => $unitId,
             'stock_lot_id' => $lot->id,
             'from_warehouse_id' => $lot->warehouse_id,
-            'sku' => $lot->inventoryItem?->sku ?? 'ITEM',
+            'sku' => $lot->inventoryItem?->code ?? 'ITEM',
             'movement_type' => 'sale',
             'quantity_delta' => -$quantity,
             'unit_cost' => (float) $lot->unit_cost,
@@ -555,7 +556,7 @@ class SalesOrderService
         $available = (float) $lots->sum('quantity');
 
         if ($available < $quantity) {
-            $sku = $lots->first()?->inventoryItem?->sku ?? $itemId;
+            $sku = $lots->first()?->inventoryItem?->code ?? $itemId;
 
             throw new InsufficientComponentStockException(
                 "Stock cannot cover the sale — {$sku}: need {$quantity}, have {$available}."
@@ -589,7 +590,7 @@ class SalesOrderService
                 'operating_unit_id' => $unitId,
                 'stock_lot_id' => $lot->id,
                 'from_warehouse_id' => $lot->warehouse_id,
-                'sku' => $lot->inventoryItem?->sku ?? 'ITEM',
+                'sku' => $lot->inventoryItem?->code ?? 'ITEM',
                 'movement_type' => 'sale',
                 'quantity_delta' => -$take,
                 'unit_cost' => (float) $lot->unit_cost,

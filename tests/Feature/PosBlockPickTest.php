@@ -59,7 +59,7 @@ beforeEach(function () {
     ]);
 
     $this->foamItem = InventoryItem::create([
-        'name' => 'Foam Block Standard', 'sku' => 'FB-STD', 'item_type' => 'foam_block', 'unit_of_measure' => 'each',
+        'name' => 'Foam Block Standard', 'code' => 'FB-STD', 'item_type' => 'foam_block', 'unit_of_measure' => 'each',
     ]);
 
     $this->api = fn () => $this->actingAs($this->user)
@@ -183,7 +183,7 @@ test('POS rejects stock_lot_id from a different operating unit', function () {
 
 test('POS rejects a stock_lot_id whose inventory_item_id does not match the line', function () {
     $otherItem = InventoryItem::create([
-        'name' => 'Sofa', 'sku' => 'SOFA-1',
+        'name' => 'Sofa', 'code' => 'SOFA-1',
         'item_type' => 'furniture_finished_good', 'unit_of_measure' => 'each',
     ]);
     $wrongLot = StockLot::create([
@@ -230,7 +230,7 @@ test('available-foam-blocks lists only status=available, uncut, foam-block lots,
     $small = ($this->makeBlock)('006-35-191', 100, ['volume_m3' => 0.5]);
     $otherItem = ($this->makeBlock)('007-35-191', 100, ['volume_m3' => 1.0]);
     $otherItem->update(['inventory_item_id' => InventoryItem::create([
-        'name' => 'Sofa', 'sku' => 'SOFA-1',
+        'name' => 'Sofa', 'code' => 'SOFA-1',
         'item_type' => 'furniture_finished_good', 'unit_of_measure' => 'each',
     ])->id]);
     $consumed = ($this->makeBlock)('008-35-191', 100, ['volume_m3' => 0.1]);

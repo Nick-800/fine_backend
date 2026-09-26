@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\v1\AuditLogController;
 use App\Http\Controllers\Api\v1\AuthController;
 use App\Http\Controllers\Api\v1\BankHoldController;
 use App\Http\Controllers\Api\v1\BomController;
+use App\Http\Controllers\Api\v1\BundleController;
 use App\Http\Controllers\Api\v1\CashAccountController;
 use App\Http\Controllers\Api\v1\ClientController;
 use App\Http\Controllers\Api\v1\ConsumptionReportController;
@@ -154,6 +155,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('/reports/income-statement', [FinancialReportController::class, 'incomeStatement']);
                 Route::get('/reports/balance-sheet', [FinancialReportController::class, 'balanceSheet']);
                 Route::get('/reports/unit-profitability', [FinancialReportController::class, 'unitProfitability']);
+                Route::get('/reports/bundle-sales', [BundleController::class, 'salesReport']);
                 Route::get('/overhead-expenses', [OverheadExpenseController::class, 'index']);
                 Route::get('/fixed-assets', [FixedAssetController::class, 'index']);
                 Route::get('/fixed-assets/{id}', [FixedAssetController::class, 'show']);
@@ -300,6 +302,7 @@ Route::prefix('v1')->group(function () {
             // Inventory, Stock Lots, Tanks & Work Orders
             Route::middleware('require.role:owner,foam-manager,foam-operator,cutter-manager,cutter-operator,furniture-manager,assembler,store-manager,pos-cashier,procurement-manager,treasury-officer,accounting-manager,unit_manager,manager,inventory-manager')->group(function () {
                 Route::apiResource('item-categories', ItemCategoryController::class);
+                Route::apiResource('bundles', BundleController::class);
                 Route::get('/attribute-definitions', [InventoryAttributeController::class, 'index']);
                 Route::post('/attribute-definitions', [InventoryAttributeController::class, 'store']);
                 Route::get('/item-categories/{categoryId}/attribute-definitions', [InventoryAttributeController::class, 'indexForCategory']);

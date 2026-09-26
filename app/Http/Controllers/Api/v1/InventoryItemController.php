@@ -15,7 +15,7 @@ class InventoryItemController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = InventoryItem::with(['category', 'attributeDefinitions']);
+        $query = InventoryItem::with(['category']);
 
         if ($request->has('category_id') && filled($request->query('category_id'))) {
             $query->where('category_id', $request->query('category_id'));
@@ -29,7 +29,7 @@ class InventoryItemController extends Controller
             $search = (string) $request->query('search');
             $query->where(function ($q) use ($search): void {
                 $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('sku', 'like', "%{$search}%");
+                    ->orWhere('code', 'like', "%{$search}%");
             });
         }
 
@@ -48,7 +48,7 @@ class InventoryItemController extends Controller
         $validated = $request->validate([
             'category_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(ItemCategory::class, 'category')],
             'name' => ['required', 'string', 'max:255'],
-            'sku' => ['required', 'string', 'max:100', 'unique:inventory_items,sku'],
+            'code' => ['required', 'string', 'max:100', 'unique:inventory_items,code'],
             'item_type' => ['required', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
             'unit_of_measure' => ['required', 'string'],
             'primary_uom' => ['nullable', 'string'],
@@ -58,22 +58,21 @@ class InventoryItemController extends Controller
             'container_capacity' => ['nullable', 'numeric', 'gt:0'],
             'empty_container_item_id' => ['nullable', 'uuid', 'exists:inventory_items,id'],
             'default_attributes' => ['nullable', 'array'],
-            'attribute_definition_ids' => ['nullable', 'array'],
-            'attribute_definition_ids.*' => ['uuid', 'exists:inventory_attribute_definitions,id'],
+            // Same column names as StockLot's own length_m/width_m/height_m,
+            // which carries them per physical lot instead of per catalog item.
+            'length_m' => ['nullable', 'numeric', 'min:0'],
+            'width_m' => ['nullable', 'numeric', 'min:0'],
+            'height_m' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $item = InventoryItem::create($validated);
 
-        if (! empty($validated['attribute_definition_ids'])) {
-            $item->attributeDefinitions()->sync($validated['attribute_definition_ids']);
-        }
-
-        return response()->json($item->load(['category', 'attributeDefinitions']), 201);
+        return response()->json($item->load(['category']), 201);
     }
 
     public function show(string $id): JsonResponse
     {
-        $item = InventoryItem::with(['category', 'attributeDefinitions'])->findOrFail($id);
+        $item = InventoryItem::with(['category'])->findOrFail($id);
 
         return response()->json($item);
     }
@@ -85,7 +84,7 @@ class InventoryItemController extends Controller
         $validated = $request->validate([
             'category_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(ItemCategory::class, 'category')],
             'name' => ['sometimes', 'string', 'max:255'],
-            'sku' => ['sometimes', 'string', 'max:100', "unique:inventory_items,sku,{$id}"],
+            'code' => ['sometimes', 'string', 'max:100', "unique:inventory_items,code,{$id}"],
             'item_type' => ['sometimes', 'string', 'in:raw_material,foam_block,cut_template_piece,slice,byproduct_fill,furniture_finished_good,packaging,barrel,pallet'],
             'unit_of_measure' => ['sometimes', 'string'],
             'primary_uom' => ['nullable', 'string'],
@@ -95,17 +94,14 @@ class InventoryItemController extends Controller
             'container_capacity' => ['nullable', 'numeric', 'gt:0'],
             'empty_container_item_id' => ['nullable', 'uuid', 'exists:inventory_items,id'],
             'default_attributes' => ['nullable', 'array'],
-            'attribute_definition_ids' => ['nullable', 'array'],
-            'attribute_definition_ids.*' => ['uuid', 'exists:inventory_attribute_definitions,id'],
+            'length_m' => ['nullable', 'numeric', 'min:0'],
+            'width_m' => ['nullable', 'numeric', 'min:0'],
+            'height_m' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $item->update($validated);
 
-        if (array_key_exists('attribute_definition_ids', $validated)) {
-            $item->attributeDefinitions()->sync($validated['attribute_definition_ids'] ?? []);
-        }
-
-        return response()->json($item->load(['category', 'attributeDefinitions']));
+        return response()->json($item->load(['category']));
     }
 
     public function destroy(string $id): JsonResponse

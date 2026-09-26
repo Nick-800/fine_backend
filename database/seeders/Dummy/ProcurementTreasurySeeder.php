@@ -62,7 +62,7 @@ class ProcurementTreasurySeeder extends Seeder
             ImportOrderStatus::Received,
         ];
 
-        $chemicalItem = InventoryItem::where('sku', 'CHEM-POLYOL-15')->first();
+        $chemicalItem = InventoryItem::where('code', 'CHEM-POLYOL-15')->first();
 
         $treasuryOfficer = User::where('email', 'treasury@erp.com')->first();
 
