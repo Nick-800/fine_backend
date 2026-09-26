@@ -69,6 +69,7 @@ class SystemBootstrapSeeder extends Seeder
     public function run(): void
     {
         $this->seedCompany();
+        $this->call(ReferenceLookupSeeder::class);
         $this->seedRolesAndPermissions();
         $this->seedChartOfAccounts();
         $this->seedBlueprints();

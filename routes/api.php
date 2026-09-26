@@ -44,6 +44,7 @@ use App\Http\Controllers\Api\v1\PosController;
 use App\Http\Controllers\Api\v1\ProductController;
 use App\Http\Controllers\Api\v1\ProductionBatchController;
 use App\Http\Controllers\Api\v1\ProductionOrderController;
+use App\Http\Controllers\Api\v1\ReferenceLookupController;
 use App\Http\Controllers\Api\v1\RoleController;
 use App\Http\Controllers\Api\v1\SalesOrderController;
 use App\Http\Controllers\Api\v1\StockAdjustmentRequestController;
@@ -73,6 +74,16 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['ensure.password.updated', 'scope.unit'])->group(function () {
             // Entity lookups (used by the domain "select existing entity" picker).
             Route::get('/entities', [EntityLookupController::class, 'index']);
+
+            // Reference Lookups (Data Settings)
+            Route::get('/reference-lookups/{category}', [ReferenceLookupController::class, 'index']);
+            Route::get('/reference-lookups/{category}/{id}', [ReferenceLookupController::class, 'show']);
+            Route::middleware('require.role:owner,admin')->group(function () {
+                Route::post('/reference-lookups/{category}', [ReferenceLookupController::class, 'store']);
+                Route::put('/reference-lookups/{category}/{id}', [ReferenceLookupController::class, 'update']);
+                Route::delete('/reference-lookups/{category}/{id}', [ReferenceLookupController::class, 'destroy']);
+                Route::patch('/reference-lookups/{category}/{id}/toggle-active', [ReferenceLookupController::class, 'toggleActive']);
+            });
 
             // Operating Units index (accessible to any authenticated user to view accessible units)
             Route::get('/operating-units', [OperatingUnitController::class, 'index'])->name('operating-units.index');
