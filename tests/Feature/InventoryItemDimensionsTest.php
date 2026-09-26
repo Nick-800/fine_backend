@@ -47,7 +47,7 @@ beforeEach(function () {
     ]);
 });
 
-test('creating an inventory item with nominal dimensions computes nominal_volume_m3', function () {
+test('creating an inventory item with dimensions computes volume_m3', function () {
     $response = $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->postJson('/api/v1/inventory-items', [
@@ -55,16 +55,16 @@ test('creating an inventory item with nominal dimensions computes nominal_volume
             'code' => 'FOAM-1412',
             'item_type' => 'foam_block',
             'unit_of_measure' => 'm3',
-            'nominal_length_m' => 1.00,
-            'nominal_width_m' => 2.00,
-            'nominal_height_m' => 2.40,
+            'length_m' => 1.00,
+            'width_m' => 2.00,
+            'height_m' => 2.40,
         ]);
 
     $response->assertStatus(201);
-    expect((float) InventoryItem::find($response->json('id'))->nominal_volume_m3)->toBe(4.8);
+    expect((float) InventoryItem::find($response->json('id'))->volume_m3)->toBe(4.8);
 });
 
-test('creating an inventory item with only some nominal dimensions leaves nominal_volume_m3 null', function () {
+test('creating an inventory item with only some dimensions leaves volume_m3 null', function () {
     $response = $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->postJson('/api/v1/inventory-items', [
@@ -72,13 +72,13 @@ test('creating an inventory item with only some nominal dimensions leaves nomina
             'code' => 'FOAM-PARTIAL',
             'item_type' => 'foam_block',
             'unit_of_measure' => 'm3',
-            'nominal_length_m' => 1.00,
+            'length_m' => 1.00,
         ]);
 
-    $response->assertStatus(201)->assertJsonPath('nominal_volume_m3', null);
+    $response->assertStatus(201)->assertJsonPath('volume_m3', null);
 });
 
-test('rejects a negative nominal dimension', function () {
+test('rejects a negative dimension', function () {
     $response = $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->postJson('/api/v1/inventory-items', [
@@ -86,31 +86,31 @@ test('rejects a negative nominal dimension', function () {
             'code' => 'FOAM-NEG',
             'item_type' => 'foam_block',
             'unit_of_measure' => 'm3',
-            'nominal_width_m' => -1,
+            'width_m' => -1,
         ]);
 
-    $response->assertStatus(422)->assertJsonValidationErrors(['nominal_width_m']);
+    $response->assertStatus(422)->assertJsonValidationErrors(['width_m']);
 });
 
-test('updating an inventory item nominal dimensions recomputes nominal_volume_m3', function () {
+test('updating an inventory item dimensions recompute volume_m3', function () {
     $item = InventoryItem::create([
         'name' => 'قالب 14-12',
         'code' => 'FOAM-1412',
         'item_type' => 'foam_block',
         'unit_of_measure' => 'm3',
-        'nominal_length_m' => 1.00,
-        'nominal_width_m' => 2.00,
-        'nominal_height_m' => 2.40,
+        'length_m' => 1.00,
+        'width_m' => 2.00,
+        'height_m' => 2.40,
     ]);
 
-    expect((float) $item->fresh()->nominal_volume_m3)->toBe(4.8);
+    expect((float) $item->fresh()->volume_m3)->toBe(4.8);
 
     $response = $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->putJson("/api/v1/inventory-items/{$item->id}", [
-            'nominal_height_m' => 1.20,
+            'height_m' => 1.20,
         ]);
 
     $response->assertStatus(200);
-    expect((float) $item->fresh()->nominal_volume_m3)->toBe(2.4);
+    expect((float) $item->fresh()->volume_m3)->toBe(2.4);
 });

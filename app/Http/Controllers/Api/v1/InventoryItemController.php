@@ -58,11 +58,11 @@ class InventoryItemController extends Controller
             'container_capacity' => ['nullable', 'numeric', 'gt:0'],
             'empty_container_item_id' => ['nullable', 'uuid', 'exists:inventory_items,id'],
             'default_attributes' => ['nullable', 'array'],
-            // Spec size for the SKU, not a measured one — see StockLot's own
-            // length_m/width_m/height_m for the actual-measured counterpart.
-            'nominal_length_m' => ['nullable', 'numeric', 'min:0'],
-            'nominal_width_m' => ['nullable', 'numeric', 'min:0'],
-            'nominal_height_m' => ['nullable', 'numeric', 'min:0'],
+            // Same column names as StockLot's own length_m/width_m/height_m,
+            // which carries them per physical lot instead of per catalog item.
+            'length_m' => ['nullable', 'numeric', 'min:0'],
+            'width_m' => ['nullable', 'numeric', 'min:0'],
+            'height_m' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $item = InventoryItem::create($validated);
@@ -94,9 +94,9 @@ class InventoryItemController extends Controller
             'container_capacity' => ['nullable', 'numeric', 'gt:0'],
             'empty_container_item_id' => ['nullable', 'uuid', 'exists:inventory_items,id'],
             'default_attributes' => ['nullable', 'array'],
-            'nominal_length_m' => ['nullable', 'numeric', 'min:0'],
-            'nominal_width_m' => ['nullable', 'numeric', 'min:0'],
-            'nominal_height_m' => ['nullable', 'numeric', 'min:0'],
+            'length_m' => ['nullable', 'numeric', 'min:0'],
+            'width_m' => ['nullable', 'numeric', 'min:0'],
+            'height_m' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $item->update($validated);

@@ -26,27 +26,27 @@ final class InventoryItem extends Model
         'container_capacity',
         'empty_container_item_id',
         'default_attributes',
-        'nominal_length_m',
-        'nominal_width_m',
-        'nominal_height_m',
-        'nominal_volume_m3',
+        'length_m',
+        'width_m',
+        'height_m',
+        'volume_m3',
     ];
 
     protected $casts = [
         'default_attributes' => 'array',
         'container_capacity' => 'decimal:4',
-        'nominal_length_m' => 'decimal:3',
-        'nominal_width_m' => 'decimal:3',
-        'nominal_height_m' => 'decimal:3',
-        'nominal_volume_m3' => 'decimal:4',
+        'length_m' => 'decimal:3',
+        'width_m' => 'decimal:3',
+        'height_m' => 'decimal:3',
+        'volume_m3' => 'decimal:4',
     ];
 
     protected static function booted(): void
     {
         self::saving(function (InventoryItem $item): void {
-            if ($item->nominal_length_m !== null && $item->nominal_width_m !== null && $item->nominal_height_m !== null) {
-                $item->nominal_volume_m3 = round(
-                    (float) $item->nominal_length_m * (float) $item->nominal_width_m * (float) $item->nominal_height_m,
+            if ($item->length_m !== null && $item->width_m !== null && $item->height_m !== null) {
+                $item->volume_m3 = round(
+                    (float) $item->length_m * (float) $item->width_m * (float) $item->height_m,
                     4
                 );
             }
