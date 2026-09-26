@@ -43,4 +43,14 @@ final class Account extends Model
     {
         return $this->hasMany(JournalLine::class);
     }
+
+    public function clients(): HasMany
+    {
+        return $this->hasMany(Client::class);
+    }
+
+    public function suppliers(): HasMany
+    {
+        return $this->hasMany(Supplier::class);
+    }
 }

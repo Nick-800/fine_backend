@@ -18,6 +18,7 @@ final class Supplier extends Model
 
     protected $fillable = [
         'operating_unit_id',
+        'account_id',
         'name',
         'contact',
         'default_currency',
@@ -27,6 +28,11 @@ final class Supplier extends Model
     public function operatingUnit(): BelongsTo
     {
         return $this->belongsTo(OperatingUnit::class);
+    }
+
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(Account::class);
     }
 
     public function importOrders(): HasMany

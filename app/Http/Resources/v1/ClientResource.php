@@ -19,6 +19,11 @@ final class ClientResource extends JsonResource
             'current_balance' => (float) ($this->current_balance ?? 0),
             'payment_terms_days' => $this->payment_terms_days,
             'account_id' => $this->account_id,
+            'account' => $this->whenLoaded('account', fn () => $this->account ? [
+                'id' => $this->account->id,
+                'account_code' => $this->account->account_code,
+                'name' => $this->account->name,
+            ] : null),
             'status' => $this->status->value ?? $this->status,
             'record_version' => $this->record_version,
             'entity' => new EntityResource($this->whenLoaded('entity')),

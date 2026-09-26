@@ -15,6 +15,7 @@ use App\Models\GoodsReceipt;
 use App\Models\ImportOrder;
 use App\Models\LandedCostLine;
 use App\Models\PaymentRequest;
+use App\Models\Supplier;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -248,12 +249,20 @@ final class ImportOrderStateService
             // clears 1500 with the same settled amount, so it nets exactly).
             $functionalCurrency = $order->operatingUnit?->company?->default_currency ?? 'LYD';
 
+            $supplierAccountCode = '15';
+            if ($order?->supplier_id !== null) {
+                $supplier = Supplier::with('account')->find($order->supplier_id);
+                if ($supplier?->account?->account_code) {
+                    $supplierAccountCode = $supplier->account->account_code;
+                }
+            }
+
             if ($settled > 0) {
                 $this->accountingService->postJournal(
                     "Import payment executed — {$order->supplier?->name}",
                     [
                         [
-                            'account_code' => '15', // Advances to Suppliers
+                            'account_code' => $supplierAccountCode, // Advances to Suppliers (or linked supplier account)
                             'debit' => $settled,
                             'operating_unit_id' => $order->operating_unit_id,
                             'memo' => $order->supplier?->name,
@@ -507,8 +516,16 @@ final class ImportOrderStateService
             ];
         }
 
+        $supplierAccountCode = '15';
+        if ($order->supplier_id !== null) {
+            $supplier = Supplier::with('account')->find($order->supplier_id);
+            if ($supplier?->account?->account_code) {
+                $supplierAccountCode = $supplier->account->account_code;
+            }
+        }
+
         $lines[] = [
-            'account_code' => '15', // Advances to Suppliers — cleared
+            'account_code' => $supplierAccountCode, // Advances to Suppliers (or linked supplier account) — cleared
             'credit' => $settled,
             'operating_unit_id' => $order->operating_unit_id,
             'memo' => $order->supplier?->name,

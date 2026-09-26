@@ -177,17 +177,23 @@ class SalesOrderService
                 : SalesOrderStatus::PartiallyPaid;
             $locked->save();
 
+            $clientAccountCode = '13';
             if ($locked->client_id !== null) {
-                $client = Client::whereKey($locked->client_id)->lockForUpdate()->first();
-                $client->current_balance = round((float) $client->current_balance - $amount, 4);
-                $client->save();
+                $client = Client::with('account')->whereKey($locked->client_id)->lockForUpdate()->first();
+                if ($client !== null) {
+                    $client->current_balance = round((float) $client->current_balance - $amount, 4);
+                    $client->save();
+                    if ($client->account?->account_code) {
+                        $clientAccountCode = $client->account->account_code;
+                    }
+                }
             }
 
             $this->accountingService->postJournal(
                 "Payment on sales order {$locked->order_number}",
                 [
                     ['account_code' => '12', 'debit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
-                    ['account_code' => '13', 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
+                    ['account_code' => $clientAccountCode, 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
                 ],
                 'SalesOrder',
                 $locked->id,
@@ -600,10 +606,18 @@ class SalesOrderService
     {
         $price = (float) $order->total_amount;
 
+        $clientAccountCode = '13';
+        if ($order->client_id !== null) {
+            $client = Client::with('account')->find($order->client_id);
+            if ($client?->account?->account_code) {
+                $clientAccountCode = $client->account->account_code;
+            }
+        }
+
         // Revenue is owed by the buyer; cost leaves stock. Both sides in one
         // balanced entry (SALE-07).
         $lines = [
-            ['account_code' => '13', 'debit' => $price, 'operating_unit_id' => $order->operating_unit_id],
+            ['account_code' => $clientAccountCode, 'debit' => $price, 'operating_unit_id' => $order->operating_unit_id],
             ['account_code' => '41', 'credit' => $price, 'operating_unit_id' => $order->operating_unit_id],
         ];
 

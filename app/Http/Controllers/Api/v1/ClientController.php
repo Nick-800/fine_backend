@@ -12,6 +12,7 @@ use App\Http\Resources\v1\ClientResource;
 use App\Models\Client;
 use App\Models\Entity;
 use App\Models\Scopes\OperatingUnitScope;
+use App\Services\CoaLinkService;
 use App\Services\EntityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,7 +26,7 @@ final class ClientController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Client::with(['entity.primaryContact', 'operatingUnit']);
+        $query = Client::with(['entity.primaryContact', 'operatingUnit', 'account']);
 
         // Unit drill-down is only honoured for company-wide roles; a unit
         // caller's listing stays inside their ambient unit scope.
@@ -44,9 +45,9 @@ final class ClientController extends Controller
     /**
      * Store a newly created client.
      */
-    public function store(StoreClientRequest $request, EntityService $entityService): JsonResponse
+    public function store(StoreClientRequest $request, EntityService $entityService, CoaLinkService $coaLinkService): JsonResponse
     {
-        $client = DB::transaction(function () use ($request, $entityService) {
+        $client = DB::transaction(function () use ($request, $entityService, $coaLinkService) {
             $entityId = $request->entity_id;
 
             if (! $entityId) {
@@ -81,16 +82,21 @@ final class ClientController extends Controller
                 }
             }
 
+            $accountId = $coaLinkService->resolveOrProvisionAccount(
+                $request->only(['coa_action', 'account_id', 'new_account']),
+                $request->user()?->company_id
+            );
+
             $client = Client::create([
                 'entity_id' => $entityId,
                 'operating_unit_id' => $request->operating_unit_id,
                 'credit_limit' => $request->input('credit_limit', 0),
                 'payment_terms_days' => $request->input('payment_terms_days', 30),
-                'account_id' => $request->account_id,
+                'account_id' => $accountId,
                 'status' => $request->input('status', 'active'),
             ]);
 
-            return $client->load(['entity.primaryContact', 'operatingUnit']);
+            return $client->load(['entity.primaryContact', 'operatingUnit', 'account']);
         });
 
         return (new ClientResource($client))
@@ -103,7 +109,7 @@ final class ClientController extends Controller
      */
     public function show(string $id): ClientResource
     {
-        $client = Client::with(['entity.primaryContact', 'operatingUnit'])->findOrFail($id);
+        $client = Client::with(['entity.primaryContact', 'operatingUnit', 'account'])->findOrFail($id);
 
         return new ClientResource($client);
     }
@@ -111,7 +117,7 @@ final class ClientController extends Controller
     /**
      * Update the specified client.
      */
-    public function update(Request $request, string $id): ClientResource
+    public function update(Request $request, string $id, CoaLinkService $coaLinkService): ClientResource
     {
         $client = Client::findOrFail($id);
 
@@ -120,20 +126,36 @@ final class ClientController extends Controller
             'credit_limit' => 'sometimes|numeric|min:0',
             'payment_terms_days' => 'sometimes|integer|min:0',
             'account_id' => 'nullable|uuid|exists:accounts,id',
+            'coa_action' => 'nullable|string|in:create_new,link_existing,none',
+            'new_account' => 'nullable|array',
+            'new_account.parent_account_id' => 'required_if:coa_action,create_new|nullable|uuid|exists:accounts,id',
+            'new_account.account_code' => 'required_if:coa_action,create_new|nullable|string|max:50|unique:accounts,account_code',
+            'new_account.name' => 'required_if:coa_action,create_new|nullable|string|max:255',
+            'new_account.currency' => 'nullable|string|size:3',
             'status' => 'sometimes|required|string',
             'record_version' => 'required|integer',
         ]);
 
-        $client->update($request->only(
+        $accountId = $client->account_id;
+        if ($request->has('coa_action') || $request->has('account_id')) {
+            $accountId = $coaLinkService->resolveOrProvisionAccount(
+                $request->only(['coa_action', 'account_id', 'new_account']),
+                $request->user()?->company_id
+            );
+        }
+
+        $data = $request->only(
             'operating_unit_id',
             'credit_limit',
             'payment_terms_days',
-            'account_id',
             'status',
             'record_version'
-        ));
+        );
+        $data['account_id'] = $accountId;
 
-        return new ClientResource($client->load(['entity', 'operatingUnit']));
+        $client->update($data);
+
+        return new ClientResource($client->load(['entity', 'operatingUnit', 'account']));
     }
 
     /**
