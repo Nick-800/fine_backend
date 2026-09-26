@@ -105,3 +105,29 @@ it('filters entities by entity_type and role_type', function (): void {
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.name', 'Org A');
 });
+
+it('creates client with city and includes city in response', function (): void {
+    $response = $this->actingAs($this->admin)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->postJson('/api/v1/clients', [
+            'name' => 'Al-Sahara Trading',
+            'operating_unit_id' => $this->unit->id,
+            'entity_type' => 'organization',
+            'city' => 'طبرق',
+            'address' => 'شارع الميناء',
+            'credit_limit' => 50000,
+            'payment_terms_days' => 45,
+        ]);
+
+    $response->assertStatus(201)
+        ->assertJsonPath('data.entity.name', 'Al-Sahara Trading')
+        ->assertJsonPath('data.entity.city', 'طبرق')
+        ->assertJsonPath('data.entity.address', 'شارع الميناء');
+
+    $listResponse = $this->actingAs($this->admin)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->getJson('/api/v1/clients');
+
+    $listResponse->assertStatus(200)
+        ->assertJsonPath('data.0.entity.city', 'طبرق');
+});

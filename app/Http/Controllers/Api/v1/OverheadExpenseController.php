@@ -48,7 +48,7 @@ final class OverheadExpenseController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'category' => 'required|string|in:water,electricity,rent,maintenance,other',
+            'category' => 'required|string|max:50',
             'description' => 'nullable|string|max:500',
             'amount' => 'required|numeric|min:0.0001',
             'expense_date' => 'required|date|before_or_equal:today',

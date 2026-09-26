@@ -25,7 +25,7 @@ final class ClientController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Client::with(['entity', 'operatingUnit']);
+        $query = Client::with(['entity.primaryContact', 'operatingUnit']);
 
         // Unit drill-down is only honoured for company-wide roles; a unit
         // caller's listing stays inside their ambient unit scope.
@@ -67,6 +67,20 @@ final class ClientController extends Controller
                 $entityService->ensureEntityRole($entity, EntityRoleType::Client, $request->operating_unit_id);
             }
 
+            if ($request->filled('city') || $request->filled('address')) {
+                $entity = Entity::find($entityId);
+                if ($entity) {
+                    $entity->contacts()->updateOrCreate(
+                        ['is_primary' => true],
+                        [
+                            'city' => $request->input('city'),
+                            'address' => $request->input('address'),
+                            'country' => 'LY',
+                        ]
+                    );
+                }
+            }
+
             $client = Client::create([
                 'entity_id' => $entityId,
                 'operating_unit_id' => $request->operating_unit_id,
@@ -76,7 +90,7 @@ final class ClientController extends Controller
                 'status' => $request->input('status', 'active'),
             ]);
 
-            return $client->load(['entity', 'operatingUnit']);
+            return $client->load(['entity.primaryContact', 'operatingUnit']);
         });
 
         return (new ClientResource($client))
@@ -89,7 +103,7 @@ final class ClientController extends Controller
      */
     public function show(string $id): ClientResource
     {
-        $client = Client::with(['entity', 'operatingUnit'])->findOrFail($id);
+        $client = Client::with(['entity.primaryContact', 'operatingUnit'])->findOrFail($id);
 
         return new ClientResource($client);
     }

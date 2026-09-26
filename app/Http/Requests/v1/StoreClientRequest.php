@@ -28,6 +28,8 @@ final class StoreClientRequest extends FormRequest
             'payment_terms_days' => ['nullable', 'integer', 'min:0'],
             'account_id' => ['nullable', 'uuid', 'exists:accounts,id'],
             'status' => ['nullable', Rule::enum(ClientStatus::class)],
+            'city' => ['nullable', 'string', 'max:100'],
+            'address' => ['nullable', 'string', 'max:500'],
         ];
     }
 }
