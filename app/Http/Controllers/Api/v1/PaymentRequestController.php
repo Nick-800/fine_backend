@@ -122,6 +122,7 @@ final class PaymentRequestController extends Controller
             'exact_amount_used_lyd' => 'required_without:fx_rate_used|nullable|numeric|min:0',
             'bank_reference' => 'nullable|string',
             'extra_allocation_note' => 'nullable|string|max:500',
+            'payment_source_account_id' => 'required|uuid|exists:accounts,id',
         ]);
 
         // FX-04 / FX-24: variance is measured in LYD against the booked
@@ -157,7 +158,8 @@ final class PaymentRequestController extends Controller
                 $fxRateUsed,
                 $exactUsed,
                 $request->input('bank_reference'),
-                $request->input('extra_allocation_note')
+                $request->input('extra_allocation_note'),
+                $request->input('payment_source_account_id'),
             );
         } catch (InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage(), 'code' => 'INVALID_PAYMENT_OPERATION'], 422);

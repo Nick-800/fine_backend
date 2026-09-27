@@ -53,6 +53,7 @@ final class PurchaseOrderController extends Controller
             'landedCostLines',
             'goodsReceipt',
             'items.inventoryItem',
+            'paymentSourceAccount',
         ]);
 
         if ($request->has('operating_unit_id')) {
@@ -328,10 +329,14 @@ final class PurchaseOrderController extends Controller
      */
     public function payLocal(Request $request, string $id): JsonResponse
     {
+        $validated = $request->validate([
+            'payment_source_account_id' => 'required|uuid|exists:accounts,id',
+        ]);
+
         $order = PurchaseOrder::findOrFail($id);
 
         try {
-            $this->stateService->payLocal($order);
+            $this->stateService->payLocal($order, $validated['payment_source_account_id']);
         } catch (InvalidArgumentException $e) {
             return response()->json([
                 'message' => $e->getMessage(),
@@ -353,6 +358,7 @@ final class PurchaseOrderController extends Controller
                 'goodsReceipt',
                 'items.inventoryItem',
                 'arrivedWarehouse',
+                'paymentSourceAccount',
             ])),
         ]);
     }
@@ -381,6 +387,7 @@ final class PurchaseOrderController extends Controller
             'landedCostLines',
             'goodsReceipt',
             'items.inventoryItem',
+            'paymentSourceAccount',
         ])->findOrFail($id);
 
         return new PurchaseOrderResource($order);
@@ -410,6 +417,7 @@ final class PurchaseOrderController extends Controller
             'exact_amount_used_lyd' => 'nullable|numeric|min:0',
             'bank_reference' => 'nullable|string',
             'extra_allocation_note' => 'nullable|string|max:500',
+            'payment_source_account_id' => 'required_if:action,execute_payment|nullable|uuid|exists:accounts,id',
             'warehouse_id' => ['required_if:action,arrived_at_warehouse,receive_goods', 'nullable', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
             'received_qty' => 'required_if:action,receive_goods|nullable|numeric|min:0.0001',
             'condition_notes' => 'nullable|string',
@@ -487,6 +495,7 @@ final class PurchaseOrderController extends Controller
                 'goodsReceipt',
                 'items.inventoryItem',
                 'arrivedWarehouse',
+                'paymentSourceAccount',
             ])),
         ]);
     }
@@ -529,7 +538,8 @@ final class PurchaseOrderController extends Controller
             $fxRateUsed,
             $exactUsed,
             $request->input('bank_reference'),
-            $request->input('extra_allocation_note')
+            $request->input('extra_allocation_note'),
+            $request->input('payment_source_account_id'),
         );
     }
 }

@@ -25,6 +25,7 @@ final class PurchaseOrder extends Model
     protected $fillable = [
         'operating_unit_id',
         'supplier_id',
+        'payment_source_account_id',
         'currency',
         'kind',
         'negotiated_price',
@@ -63,6 +64,11 @@ final class PurchaseOrder extends Model
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    public function paymentSourceAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'payment_source_account_id');
     }
 
     public function paymentRequests(): HasMany
