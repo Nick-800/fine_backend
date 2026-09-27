@@ -296,7 +296,7 @@ test('payableAccountCode: falls back to 21 when no supplier account_id', functio
     expect($order->payableAccountCode())->toBe('21');
 });
 
-test('?market=local filter returns only local POs (index)', function () {
+test('?kind=local filter returns only local POs (index)', function () {
     // Make one local and one foreign PO
     $local = makeLocalOrder();
     PurchaseOrder::create([
@@ -307,14 +307,14 @@ test('?market=local filter returns only local POs (index)', function () {
 
     $response = $this->actingAs($this->globalUser)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
-        ->getJson('/api/v1/purchase-orders?market=local');
+        ->getJson('/api/v1/purchase-orders?kind=local');
 
     $response->assertStatus(200);
     expect(collect($response->json('data'))->pluck('id'))->toContain($local->id)
         ->and(collect($response->json('data'))->count())->toBe(1);
 });
 
-test('?market=foreign filter returns only foreign POs', function () {
+test('?kind=foreign filter returns only foreign POs', function () {
     $local = makeLocalOrder();
     $foreign = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id, 'supplier_id' => $this->supplier->id,
@@ -324,7 +324,7 @@ test('?market=foreign filter returns only foreign POs', function () {
 
     $response = $this->actingAs($this->globalUser)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
-        ->getJson('/api/v1/purchase-orders?market=foreign');
+        ->getJson('/api/v1/purchase-orders?kind=foreign');
 
     $response->assertStatus(200);
     expect(collect($response->json('data'))->pluck('id'))->toContain($foreign->id)

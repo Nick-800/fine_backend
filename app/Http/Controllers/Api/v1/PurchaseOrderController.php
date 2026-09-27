@@ -64,12 +64,19 @@ final class PurchaseOrderController extends Controller
         }
 
         // ACC-03 / Wave 5: tab split between foreign (FX, land-cost) and
-        // local (LYD, no FX). The `market` param filters by the new `kind`
-        // column on purchase_orders.
-        if ($request->filled('market')) {
-            $kind = $request->query('market') === 'local' ? 'local' : 'foreign';
-            $query->where('kind', $kind);
+        // local (LYD, no FX). The `kind` query param filters by the
+        // discriminator column on purchase_orders. Accepts `foreign` or
+        // `local`; anything else is ignored.
+        $kindFilter = $request->query('kind');
+        if (in_array($kindFilter, ['foreign', 'local'], true)) {
+            $query->where('kind', $kindFilter);
         }
+
+        // Cap the response size to keep the renderer's main thread responsive.
+        // Clients pass `?per_page=N` to override (max 500); default 100.
+        $perPage = (int) $request->query('per_page', 100);
+        $perPage = max(1, min($perPage, 500));
+        $query->limit($perPage);
 
         return PurchaseOrderResource::collection($query->latest()->get());
     }
