@@ -22,6 +22,7 @@ final class FixedAsset extends Model
 
     protected $fillable = [
         'company_id',
+        'account_id',
         'operating_unit_id',
         'name',
         'asset_code',
@@ -64,6 +65,11 @@ final class FixedAsset extends Model
     public function operatingUnit(): BelongsTo
     {
         return $this->belongsTo(OperatingUnit::class);
+    }
+
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(Account::class);
     }
 
     public function depreciationEntries(): HasMany

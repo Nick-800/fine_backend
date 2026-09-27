@@ -8,6 +8,7 @@ use App\Enums\DepreciationMethod;
 use App\Enums\FixedAssetStatus;
 use App\Enums\OverheadPaymentSource;
 use App\Exceptions\InvalidStateTransitionException;
+use App\Models\Account;
 use App\Models\DepreciationEntry;
 use App\Models\FixedAsset;
 use Illuminate\Support\Carbon;
@@ -29,7 +30,7 @@ final class FixedAssetService
      * @param array{company_id: string, operating_unit_id?: string|null, name: string,
      *     asset_code: string, acquisition_cost: float, acquisition_date: string,
      *     depreciation_method: string, useful_life_years: int, salvage_value?: float,
-     *     payment_source: string} $data
+     *     payment_source: string, account_id?: string|null} $data
      */
     public function acquire(array $data): FixedAsset
     {
@@ -37,9 +38,22 @@ final class FixedAssetService
             throw new InvalidArgumentException('Salvage value must be below the acquisition cost.');
         }
 
-        return DB::transaction(function () use ($data) {
+        // If a per-asset sub-account is linked, use its code on the debit
+        // side; otherwise fall back to the universal "14" Fixed Assets
+        // account (pre-existing behaviour for assets without a COA link).
+        $debitAccountCode = '14';
+        if (! empty($data['account_id'])) {
+            $linked = Account::query()->whereKey($data['account_id'])->first();
+            if ($linked === null) {
+                throw new InvalidArgumentException('Linked account does not exist.');
+            }
+            $debitAccountCode = (string) $linked->account_code;
+        }
+
+        return DB::transaction(function () use ($data, $debitAccountCode) {
             $asset = FixedAsset::create([
                 'company_id' => $data['company_id'],
+                'account_id' => $data['account_id'] ?? null,
                 'operating_unit_id' => $data['operating_unit_id'] ?? null,
                 'name' => $data['name'],
                 'asset_code' => $data['asset_code'],
@@ -57,7 +71,7 @@ final class FixedAssetService
                 "Asset acquired: {$asset->name} ({$asset->asset_code})",
                 [
                     [
-                        'account_code' => '14', // Fixed Assets
+                        'account_code' => $debitAccountCode,
                         'debit' => (float) $asset->acquisition_cost,
                         'operating_unit_id' => $asset->operating_unit_id,
                         'memo' => $asset->name,
