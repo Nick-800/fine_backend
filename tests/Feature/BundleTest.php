@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Models\Account;
 use App\Models\Bundle;
+use App\Models\CashAccount;
+use App\Models\Client;
 use App\Models\Company;
+use App\Models\Entity;
 use App\Models\InventoryItem;
 use App\Models\OperatingUnit;
 use App\Models\Role;
@@ -14,6 +18,7 @@ use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
+use App\Services\AccountingService;
 use App\Support\CurrentUnitContext;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -150,26 +155,8 @@ test('deleting a bundle soft-deletes it while historical sales_order_lines keep 
     expect(Bundle::find($bundle->id))->toBeNull();
 });
 
-test('creating a sales order with a bundle_id on a line persists it without affecting totals', function () {
-    $bundle = Bundle::create(['name' => 'Bedroom Set']);
-    $bundle->items()->create(['inventory_item_id' => $this->mattress->id]);
-
-    $response = ($this->asA)()->postJson('/api/v1/sales-orders', [
-        'order_number' => 'SO-API-1',
-        'buyer_type' => 'internal_unit',
-        'buyer_unit_id' => $this->unitB->id,
-        'lines' => [
-            ['inventory_item_id' => $this->mattress->id, 'bundle_id' => $bundle->id, 'quantity' => 1, 'unit_price' => 500],
-        ],
-    ]);
-
-    $response->assertStatus(201);
-    $line = SalesOrderLine::where('sales_order_id', $response->json('id'))->first();
-    expect($line->bundle_id)->toBe($bundle->id);
-});
-
-test('POS checkout accepts and persists bundle_id per item', function () {
-    $bundle = Bundle::create(['name' => 'Bedroom Set']);
+test('a bundle sells as one line carrying its name: revenue at checkout, nothing issued yet', function () {
+    $bundle = Bundle::create(['name' => 'جلسة عربية']);
     $bundle->items()->create(['inventory_item_id' => $this->mattress->id]);
 
     $warehouse = Warehouse::create(['operating_unit_id' => $this->unitA->id, 'name' => 'Showroom Floor', 'code' => 'WH-A']);
@@ -182,17 +169,65 @@ test('POS checkout accepts and persists bundle_id per item', function () {
         'status' => 'available',
     ]);
 
-    $response = ($this->asA)()->postJson('/api/v1/pos/sales', [
-        'order_number' => 'POS-BUNDLE-1',
-        'payment_method' => 'cash',
-        'items' => [
-            ['inventory_item_id' => $this->mattress->id, 'bundle_id' => $bundle->id, 'quantity' => 1, 'unit_price' => 500],
-        ],
+    $client = Client::create([
+        'entity_id' => Entity::create(['entity_type' => 'individual', 'name' => 'Walk-in Ali'])->id,
+        'operating_unit_id' => $this->unitA->id,
+    ]);
+    $drawer = CashAccount::create([
+        'operating_unit_id' => $this->unitA->id, 'name' => 'Drawer', 'kind' => 'cash',
+        'account_id' => Account::where('account_code', '121102')->value('id'),
     ]);
 
-    $response->assertStatus(201);
-    $order = SalesOrder::find($response->json('id'));
-    expect($order->lines()->first()->bundle_id)->toBe($bundle->id);
+    $sale = ($this->asA)()->postJson('/api/v1/sales', [
+        'client_id' => $client->id,
+        'payment_method' => 'cash',
+        'cash_account_id' => $drawer->id,
+        'lines' => [['line_type' => 'bundle', 'bundle_id' => $bundle->id, 'quantity' => 1, 'unit_price' => 2500]],
+    ])->assertCreated()
+        ->assertJsonPath('status', 'open')
+        ->assertJsonPath('fulfillment_status', 'awaiting_definition')
+        ->json();
+
+    $line = SalesOrderLine::where('sales_order_id', $sale['id'])->sole();
+    expect($line->line_type)->toBe('bundle')
+        ->and($line->description)->toBe('جلسة عربية')
+        ->and($line->bundle_id)->toBe($bundle->id)
+        ->and($line->inventory_item_id)->toBeNull();
+
+    // No piece has left stock — they are defined and issued after checkout.
+    expect((float) StockLot::where('lot_number', 'LOT-MATT-1')->value('quantity'))->toBe(5.0);
+
+    $tb = app(AccountingService::class)->trialBalance();
+    $byCode = collect($tb['rows'])->keyBy('account_code');
+    expect($tb['balanced'])->toBeTrue()
+        ->and((float) $byCode['41']['credit'])->toBe(2500.0)
+        ->and($byCode->has('51'))->toBeFalse();
+
+    // The client's invoice shows the bundle as a single item.
+    $invoice = ($this->asA)()->getJson("/api/v1/sales/{$sale['id']}/invoice")->assertSuccessful()->json();
+    expect($invoice['lines'])->toHaveCount(1)
+        ->and($invoice['lines'][0]['description'])->toBe('جلسة عربية')
+        ->and($invoice['lines'][0]['line_type'])->toBe('bundle')
+        ->and($invoice['lines'][0]['sku'])->toBeNull()
+        ->and((float) $invoice['lines'][0]['line_total'])->toBe(2500.0);
+});
+
+test('a bundle kept to another unit cannot be sold here', function () {
+    $bundleB = ($this->asB)()->postJson('/api/v1/bundles', [
+        'name' => 'Showroom B promo',
+        'items' => [['inventory_item_id' => $this->mattress->id]],
+    ])->assertCreated()->json();
+
+    $client = Client::create([
+        'entity_id' => Entity::create(['entity_type' => 'individual', 'name' => 'Walk-in Sara'])->id,
+        'operating_unit_id' => $this->unitA->id,
+    ]);
+
+    ($this->asA)()->postJson('/api/v1/sales', [
+        'client_id' => $client->id,
+        'payment_method' => 'receivable',
+        'lines' => [['line_type' => 'bundle', 'bundle_id' => $bundleB['id'], 'quantity' => 1, 'unit_price' => 900]],
+    ])->assertUnprocessable()->assertJsonPath('code', 'BUNDLE_NOT_FOUND');
 });
 
 test('bundle sales report aggregates orders count, quantity and revenue per bundle', function () {
@@ -200,14 +235,14 @@ test('bundle sales report aggregates orders count, quantity and revenue per bund
     $bundle->items()->create(['inventory_item_id' => $this->mattress->id]);
 
     $order1 = SalesOrder::create([
-        'operating_unit_id' => $this->unitA->id, 'order_number' => 'SO-1', 'buyer_type' => 'client', 'channel' => 'pos',
+        'operating_unit_id' => $this->unitA->id, 'order_number' => 'SO-1', 'buyer_type' => 'client', 'channel' => 'pos', 'status' => 'open',
     ]);
     $order1->lines()->create([
         'inventory_item_id' => $this->mattress->id, 'bundle_id' => $bundle->id, 'quantity' => 2, 'unit_price' => 300,
     ]);
 
     $order2 = SalesOrder::create([
-        'operating_unit_id' => $this->unitA->id, 'order_number' => 'SO-2', 'buyer_type' => 'client', 'channel' => 'pos',
+        'operating_unit_id' => $this->unitA->id, 'order_number' => 'SO-2', 'buyer_type' => 'client', 'channel' => 'pos', 'status' => 'open',
     ]);
     $order2->lines()->create([
         'inventory_item_id' => $this->mattress->id, 'bundle_id' => $bundle->id, 'quantity' => 1, 'unit_price' => 300,
@@ -229,7 +264,7 @@ test('bundle sales report is scoped by operating unit', function () {
     $bundle->items()->create(['inventory_item_id' => $this->mattress->id]);
 
     $orderB = SalesOrder::create([
-        'operating_unit_id' => $this->unitB->id, 'order_number' => 'SO-B-1', 'buyer_type' => 'client', 'channel' => 'pos',
+        'operating_unit_id' => $this->unitB->id, 'order_number' => 'SO-B-1', 'buyer_type' => 'client', 'channel' => 'pos', 'status' => 'open',
     ]);
     $orderB->lines()->create([
         'inventory_item_id' => $this->mattress->id, 'bundle_id' => $bundle->id, 'quantity' => 1, 'unit_price' => 300,

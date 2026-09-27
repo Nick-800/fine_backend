@@ -45,7 +45,7 @@ final class Bundle extends Model
 
     public function items(): HasMany
     {
-        return $this->hasMany(BundleItem::class);
+        return $this->hasMany(BundleItem::class)->orderBy('position');
     }
 
     public function operatingUnit(): BelongsTo

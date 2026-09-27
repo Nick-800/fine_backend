@@ -10,6 +10,7 @@ use App\Models\OperatingUnit;
 use App\Models\OverheadExpense;
 use App\Models\PayrollRun;
 use App\Models\ProductionBatch;
+use App\Models\Quotation;
 use App\Models\Role;
 use App\Models\StockLot;
 use App\Models\User;
@@ -76,5 +77,8 @@ class AppServiceProvider extends ServiceProvider
 
         // Phase 09: payroll moves wages — same treatment.
         PayrollRun::observe(AuditObserver::class);
+
+        // Phase 07: a quotation is the price the client was promised.
+        Quotation::observe(AuditObserver::class);
     }
 }

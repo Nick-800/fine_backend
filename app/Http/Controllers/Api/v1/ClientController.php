@@ -14,6 +14,8 @@ use App\Models\Entity;
 use App\Models\Scopes\OperatingUnitScope;
 use App\Services\CoaLinkService;
 use App\Services\EntityService;
+use App\Support\CurrentUnitContext;
+use App\Support\SalesAccounts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -45,9 +47,18 @@ final class ClientController extends Controller
     /**
      * Store a newly created client.
      */
-    public function store(StoreClientRequest $request, EntityService $entityService, CoaLinkService $coaLinkService): JsonResponse
+    public function store(StoreClientRequest $request, EntityService $entityService, CoaLinkService $coaLinkService, CurrentUnitContext $unitContext): JsonResponse
     {
-        $client = DB::transaction(function () use ($request, $entityService, $coaLinkService) {
+        $operatingUnitId = $request->operating_unit_id ?? $unitContext->getUnitId();
+
+        if ($operatingUnitId === null) {
+            return response()->json([
+                'message' => 'Select an operating unit before registering a client.',
+                'code' => 'OPERATING_UNIT_REQUIRED',
+            ], 422);
+        }
+
+        $client = DB::transaction(function () use ($request, $entityService, $coaLinkService, $operatingUnitId) {
             $entityId = $request->entity_id;
 
             if (! $entityId) {
@@ -60,20 +71,21 @@ final class ClientController extends Controller
                         'entity_type' => $request->input('entity_type', EntityType::Organization),
                         'tax_number' => $request->tax_number,
                     ],
-                    operatingUnitId: $request->operating_unit_id
+                    operatingUnitId: $operatingUnitId
                 );
                 $entityId = $entity->id;
             } else {
                 $entity = Entity::findOrFail($entityId);
-                $entityService->ensureEntityRole($entity, EntityRoleType::Client, $request->operating_unit_id);
+                $entityService->ensureEntityRole($entity, EntityRoleType::Client, $operatingUnitId);
             }
 
-            if ($request->filled('city') || $request->filled('address')) {
+            if ($request->filled('city') || $request->filled('address') || $request->filled('phone')) {
                 $entity = Entity::find($entityId);
                 if ($entity) {
                     $entity->contacts()->updateOrCreate(
                         ['is_primary' => true],
                         [
+                            'phone' => $request->input('phone'),
                             'city' => $request->input('city'),
                             'address' => $request->input('address'),
                             'country' => 'LY',
@@ -82,14 +94,21 @@ final class ClientController extends Controller
                 }
             }
 
+            // Every client gets its own receivable account under 122 unless
+            // the caller chose otherwise — sales on credit post to it.
             $accountId = $coaLinkService->resolveOrProvisionAccount(
-                $request->only(['coa_action', 'account_id', 'new_account']),
+                [
+                    ...$request->only(['coa_action', 'account_id', 'new_account']),
+                    'coa_action' => $request->input('coa_action') ?? ($request->filled('account_id') ? null : 'auto'),
+                    'auto_parent_code' => SalesAccounts::RECEIVABLE_FALLBACK,
+                    'auto_name' => 'عميل - '.Entity::find($entityId)?->name,
+                ],
                 $request->user()?->company_id
             );
 
             $client = Client::create([
                 'entity_id' => $entityId,
-                'operating_unit_id' => $request->operating_unit_id,
+                'operating_unit_id' => $operatingUnitId,
                 'credit_limit' => $request->input('credit_limit', 0),
                 'payment_terms_days' => $request->input('payment_terms_days', 30),
                 'account_id' => $accountId,

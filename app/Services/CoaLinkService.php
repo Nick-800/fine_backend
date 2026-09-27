@@ -18,6 +18,8 @@ final class CoaLinkService
      * @param  array{
      *     coa_action?: string|null,
      *     account_id?: string|null,
+     *     auto_parent_code?: string|null,
+     *     auto_name?: string|null,
      *     new_account?: array{
      *         parent_account_id: string,
      *         account_code: string,
@@ -43,12 +45,56 @@ final class CoaLinkService
             return $this->provisionSubAccount($payload['new_account'], $companyId);
         }
 
+        if ($coaAction === 'auto') {
+            // No chart yet (fresh install) → leave unlinked; postings fall
+            // back to the parent header instead of refusing the record.
+            if (empty($payload['auto_parent_code']) || empty($payload['auto_name'])
+                || ! Account::where('account_code', $payload['auto_parent_code'])->exists()) {
+                return null;
+            }
+
+            return $this->provisionNextSubAccount($payload['auto_parent_code'], $payload['auto_name'], $companyId);
+        }
+
         // Fallback for direct account_id submission
         if (isset($payload['account_id'])) {
             return $payload['account_id'];
         }
 
         return null;
+    }
+
+    /**
+     * Provision a sub-account under the parent code with the next free code —
+     * the parent code plus a 3-digit running number, the same scheme the
+     * desktop CoaAccountSelector suggests (122 → 122001, 122002, …).
+     */
+    public function provisionNextSubAccount(string $parentCode, string $name, ?string $companyId = null): string
+    {
+        return DB::transaction(function () use ($parentCode, $name, $companyId): string {
+            $parent = Account::where('account_code', $parentCode)->lockForUpdate()->first();
+
+            if ($parent === null) {
+                throw new InvalidArgumentException("Parent account '{$parentCode}' does not exist.");
+            }
+
+            $highest = Account::where('parent_account_id', $parent->id)
+                ->pluck('account_code')
+                ->filter(fn (string $code): bool => str_starts_with($code, $parentCode))
+                ->map(fn (string $code): int => (int) substr($code, strlen($parentCode)))
+                ->max() ?? 0;
+
+            $next = $highest + 1;
+            while (Account::where('account_code', $parentCode.str_pad((string) $next, 3, '0', STR_PAD_LEFT))->exists()) {
+                $next++;
+            }
+
+            return $this->provisionSubAccount([
+                'parent_account_id' => $parent->id,
+                'account_code' => $parentCode.str_pad((string) $next, 3, '0', STR_PAD_LEFT),
+                'name' => $name,
+            ], $companyId);
+        });
     }
 
     /**

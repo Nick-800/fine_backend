@@ -2,13 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Models\Account;
+use App\Models\Bundle;
+use App\Models\CashAccount;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\CreditApprovalRequest;
 use App\Models\Entity;
 use App\Models\InventoryItem;
+use App\Models\JournalEntry;
 use App\Models\OperatingUnit;
 use App\Models\Role;
+use App\Models\SalePayment;
 use App\Models\SalesOrder;
 use App\Models\StockLot;
 use App\Models\UnitBlueprint;
@@ -16,8 +21,11 @@ use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
 use App\Services\AccountingService;
+use Carbon\CarbonImmutable;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -56,6 +64,15 @@ beforeEach(function () {
         'current_balance' => 0,
     ]);
 
+    $this->drawer = CashAccount::create([
+        'operating_unit_id' => $this->store->id, 'name' => 'خزينة الصالة', 'kind' => 'cash',
+        'account_id' => Account::where('account_code', '121102')->value('id'),
+    ]);
+    $this->bank = CashAccount::create([
+        'operating_unit_id' => $this->store->id, 'name' => 'مصرف الجمهورية', 'kind' => 'bank',
+        'account_id' => Account::where('account_code', '1212')->value('id'),
+    ]);
+
     $this->sofa = InventoryItem::create([
         'name' => 'Sofa', 'code' => 'SOFA-1', 'item_type' => 'furniture_finished_good', 'unit_of_measure' => 'each',
     ]);
@@ -70,183 +87,281 @@ beforeEach(function () {
         'status' => 'available',
     ]);
 
-    $this->api = fn () => $this->actingAs($this->user)
+    $this->api = fn (?User $as = null) => $this->actingAs($as ?? $this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->store->id]);
 
-    $this->makeOrder = fn (array $overrides = [], float $qty = 2, float $price = 400) => ($this->api)()
-        ->postJson('/api/v1/sales-orders', array_merge([
-            'order_number' => 'SO-'.fake()->unique()->numberBetween(1000, 9999),
-            'buyer_type' => 'client',
+    // A cash sale of sofas to the client, overridable per test.
+    $this->sell = fn (array $overrides = [], float $qty = 1, float $price = 450) => ($this->api)()
+        ->postJson('/api/v1/sales', array_merge([
             'client_id' => $this->client->id,
+            'payment_method' => 'cash',
+            'cash_account_id' => $this->drawer->id,
             'lines' => [[
                 'inventory_item_id' => $this->sofa->id,
                 'quantity' => $qty,
                 'unit_price' => $price,
             ]],
-        ], $overrides))->json();
+        ], $overrides));
+
+    $this->balances = function (): Collection {
+        $tb = app(AccountingService::class)->trialBalance();
+        expect($tb['balanced'])->toBeTrue();
+
+        return collect($tb['rows'])->keyBy('account_code');
+    };
 });
 
-test('a sale within the credit limit confirms on submit', function () {
-    $order = ($this->makeOrder)([], 2, 400); // 800 <= limit 1000
+test('a cash sale is one atomic step: stock out, cash into the chosen treasury, revenue and cost booked', function () {
+    $sale = ($this->sell)()
+        ->assertCreated()
+        ->assertJsonPath('status', 'completed')
+        ->assertJsonPath('fulfillment_status', 'delivered')
+        ->assertJsonPath('payment_method', 'cash')
+        ->assertJsonPath('channel', 'pos')
+        ->json();
 
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/submit")
-        ->assertStatus(200)
-        ->assertJsonPath('status', 'confirmed');
+    expect($sale['order_number'])->toBe('S-'.now()->format('Y').'-00001')
+        ->and((float) StockLot::where('lot_number', 'FG-STOCK-1')->value('quantity'))->toBe(4.0);
+
+    // Cash 450 into the showroom treasury (121102), revenue 450, COGS 150 out of 1134.
+    $byCode = ($this->balances)();
+    expect((float) $byCode['121102']['debit'])->toBe(450.0)
+        ->and((float) $byCode['41']['credit'])->toBe(450.0)
+        ->and((float) $byCode['51']['debit'])->toBe(150.0)
+        ->and((float) $byCode['1134']['credit'])->toBe(150.0)
+        ->and($byCode->has('12'))->toBeFalse();
+
+    $payment = SalePayment::sole();
+    expect((float) $payment->amount)->toBe(450.0)
+        ->and($payment->cash_account_id)->toBe($this->drawer->id)
+        ->and($payment->journal_entry_id)->not->toBeNull();
 });
 
-test('a sale over the limit escalates instead of confirming', function () {
-    // SALE-01/02: 2 × 600 = 1200 > limit 1000 → blocked pending approval.
-    $order = ($this->makeOrder)([], 2, 600);
+test('a bank sale lands in the bank account', function () {
+    ($this->sell)(['payment_method' => 'bank', 'cash_account_id' => $this->bank->id])->assertCreated();
 
-    $res = ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/submit")
-        ->assertStatus(200)
+    expect((float) ($this->balances)()['1212']['debit'])->toBe(450.0);
+});
+
+test('revenue goes to the unit own sales account when it has one', function () {
+    $this->store->update(['revenue_account_id' => Account::where('account_code', '40202')->value('id')]);
+
+    ($this->sell)()->assertCreated();
+
+    $byCode = ($this->balances)();
+    expect((float) $byCode['40202']['credit'])->toBe(450.0)
+        ->and($byCode->has('41'))->toBeFalse();
+});
+
+test('every sale needs a registered buyer, a payment method and a usable treasury', function () {
+    ($this->sell)(['client_id' => null])
+        ->assertUnprocessable()->assertJsonPath('code', 'BUYER_REQUIRED');
+
+    ($this->sell)(['payment_method' => null])
+        ->assertUnprocessable()->assertJsonPath('code', 'PAYMENT_METHOD_REQUIRED');
+
+    ($this->sell)(['cash_account_id' => null])
+        ->assertUnprocessable()->assertJsonPath('code', 'TREASURY_REQUIRED');
+
+    ($this->sell)(['cash_account_id' => $this->bank->id])
+        ->assertUnprocessable()->assertJsonPath('code', 'TREASURY_KIND_MISMATCH');
+
+    $loose = CashAccount::create(['operating_unit_id' => $this->store->id, 'name' => 'Loose', 'kind' => 'cash']);
+    ($this->sell)(['cash_account_id' => $loose->id])
+        ->assertUnprocessable()->assertJsonPath('code', 'TREASURY_NOT_LINKED');
+
+    // Nothing sold, nothing moved.
+    expect(SalesOrder::count())->toBe(0)
+        ->and((float) StockLot::where('lot_number', 'FG-STOCK-1')->value('quantity'))->toBe(5.0);
+});
+
+test('a client registered in another unit cannot be sold to here', function () {
+    $otherEntity = Entity::create(['entity_type' => 'individual', 'name' => 'Elsewhere']);
+    $other = Client::create(['entity_id' => $otherEntity->id, 'operating_unit_id' => $this->furnitureUnit->id]);
+
+    ($this->sell)(['client_id' => $other->id])
+        ->assertUnprocessable()->assertJsonPath('code', 'CLIENT_NOT_FOUND');
+});
+
+test('retrying a checkout with the same request id returns the same sale instead of selling twice', function () {
+    $requestId = (string) Str::uuid();
+
+    $first = ($this->sell)(['client_request_id' => $requestId])->assertCreated()->json('id');
+    $second = ($this->sell)(['client_request_id' => $requestId])->assertCreated()->json('id');
+
+    expect($second)->toBe($first)
+        ->and(SalesOrder::count())->toBe(1)
+        ->and((float) StockLot::where('lot_number', 'FG-STOCK-1')->value('quantity'))->toBe(4.0);
+});
+
+test('a receivable sale within the limit books the client receivable under 122 and raises the balance', function () {
+    ($this->sell)(['payment_method' => 'receivable', 'cash_account_id' => null], 2, 400)
+        ->assertCreated()
+        ->assertJsonPath('status', 'open')
+        ->assertJsonPath('amount_paid', '0.0000');
+
+    expect((float) $this->client->fresh()->current_balance)->toBe(800.0)
+        ->and(SalePayment::count())->toBe(0);
+
+    // Never inventory header 13 — the client has no own account, so the 122 header.
+    $byCode = ($this->balances)();
+    expect((float) $byCode['122']['debit'])->toBe(800.0)
+        ->and($byCode->has('13'))->toBeFalse();
+});
+
+test('a receivable sale over the limit waits for a manager with nothing moved', function () {
+    // SALE-01/02: 2 × 600 = 1200 > limit 1000.
+    $sale = ($this->sell)(['payment_method' => 'receivable', 'cash_account_id' => null], 2, 600)
+        ->assertCreated()
         ->assertJsonPath('status', 'pending_approval')
         ->json();
 
-    expect((float) $res['credit_approval_request']['amount_over_limit'])->toBe(200.0);
+    expect((float) $sale['credit_approval_request']['amount_over_limit'])->toBe(200.0)
+        ->and((float) StockLot::where('lot_number', 'FG-STOCK-1')->value('quantity'))->toBe(5.0)
+        ->and(JournalEntry::count())->toBe(0)
+        ->and((float) $this->client->fresh()->current_balance)->toBe(0.0);
 
-    // The order cannot be fulfilled while blocked.
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/fulfill")
-        ->assertStatus(422)
-        ->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
+    // No invoice for a sale that has not happened.
+    ($this->api)()->getJson("/api/v1/sales/{$sale['id']}/invoice")
+        ->assertUnprocessable()->assertJsonPath('code', 'NOT_SOLD');
 });
 
-test('approving the escalation unblocks the order and rejecting kills it', function () {
-    $first = ($this->makeOrder)([], 2, 600);
-    ($this->api)()->postJson("/api/v1/sales-orders/{$first['id']}/submit");
+test('approving an over-limit sale completes it; rejecting kills it', function () {
+    $first = ($this->sell)(['payment_method' => 'receivable', 'cash_account_id' => null], 2, 600)->json();
+    $approval = CreditApprovalRequest::where('sales_order_id', $first['id'])->sole();
 
-    $approval = CreditApprovalRequest::first();
+    ($this->api)()->getJson('/api/v1/credit-approval-requests?status=pending')
+        ->assertSuccessful()->assertJsonPath('total', 1);
 
-    ($this->api)()->putJson("/api/v1/credit-approval-requests/{$approval->id}/approve")
-        ->assertStatus(200);
+    ($this->api)()->putJson("/api/v1/credit-approval-requests/{$approval->id}/approve")->assertSuccessful();
 
-    expect(SalesOrder::find($first['id'])->status->value)->toBe('confirmed');
+    expect(SalesOrder::find($first['id'])->status->value)->toBe('open')
+        ->and((float) StockLot::where('lot_number', 'FG-STOCK-1')->value('quantity'))->toBe(3.0)
+        ->and((float) $this->client->fresh()->current_balance)->toBe(1200.0);
 
-    $second = ($this->makeOrder)([], 2, 700);
-    ($this->api)()->postJson("/api/v1/sales-orders/{$second['id']}/submit");
+    $second = ($this->sell)(['payment_method' => 'receivable', 'cash_account_id' => null], 1, 700)->json();
+    $approval2 = CreditApprovalRequest::where('sales_order_id', $second['id'])->sole();
 
-    $approval2 = CreditApprovalRequest::where('sales_order_id', $second['id'])->first();
-    ($this->api)()->putJson("/api/v1/credit-approval-requests/{$approval2->id}/reject")
-        ->assertStatus(200);
+    ($this->api)()->putJson("/api/v1/credit-approval-requests/{$approval2->id}/reject")->assertSuccessful();
 
-    expect(SalesOrder::find($second['id'])->status->value)->toBe('rejected');
+    expect(SalesOrder::find($second['id'])->status->value)->toBe('rejected')
+        ->and((float) StockLot::where('lot_number', 'FG-STOCK-1')->value('quantity'))->toBe(3.0);
+
+    // A decided request cannot be decided again.
+    ($this->api)()->putJson("/api/v1/credit-approval-requests/{$approval2->id}/approve")
+        ->assertUnprocessable()->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
 });
 
-test('fulfillment issues stock, raises the client balance, and posts AR and COGS', function () {
-    $order = ($this->makeOrder)([], 2, 400);
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/submit");
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/fulfill")
-        ->assertStatus(200)
-        ->assertJsonPath('status', 'fulfilled');
+test('a cashier sells but cannot approve credit', function () {
+    $cashier = User::factory()->create(['must_change_password' => false]);
+    $cashierRole = Role::create(['name' => 'Cashier', 'slug' => 'pos-cashier']);
+    UserRole::create(['user_id' => $cashier->id, 'role_id' => $cashierRole->id, 'operating_unit_id' => $this->store->id]);
 
-    // 2 of 5 sofas gone.
-    expect((float) StockLot::where('lot_number', 'FG-STOCK-1')->value('quantity'))->toBe(3.0)
-        // SALE-06: the client now owes the invoice.
-        ->and((float) $this->client->fresh()->current_balance)->toBe(800.0);
+    $sale = ($this->api)($cashier)->postJson('/api/v1/sales', [
+        'client_id' => $this->client->id,
+        'payment_method' => 'receivable',
+        'lines' => [['inventory_item_id' => $this->sofa->id, 'quantity' => 2, 'unit_price' => 600]],
+    ])->assertCreated()->json();
 
-    $tb = app(AccountingService::class)->trialBalance();
-    $byCode = collect($tb['rows'])->keyBy('account_code');
+    $approval = CreditApprovalRequest::where('sales_order_id', $sale['id'])->sole();
 
-    // AR 800, revenue 800, COGS 2×150=300 out of FG-Furniture.
-    expect($tb['balanced'])->toBeTrue()
-        ->and((float) $byCode['13']['debit'])->toBe(800.0)
-        ->and((float) $byCode['41']['credit'])->toBe(800.0)
-        ->and((float) $byCode['51']['debit'])->toBe(300.0)
-        ->and((float) $byCode['1134']['credit'])->toBe(300.0);
+    ($this->api)($cashier)->putJson("/api/v1/credit-approval-requests/{$approval->id}/approve")
+        ->assertForbidden()->assertJsonPath('code', 'ACCESS_DENIED');
 });
 
-test('payments settle the balance and split paid from partially paid', function () {
-    $order = ($this->makeOrder)([], 2, 400);
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/submit");
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/fulfill");
+test('collections settle a receivable into a chosen treasury', function () {
+    $sale = ($this->sell)(['payment_method' => 'receivable', 'cash_account_id' => null], 2, 400)->json();
 
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/record-payment", [
-        'amount' => 500, 'payment_method' => 'cash',
-    ])->assertStatus(200)->assertJsonPath('status', 'partially_paid');
+    ($this->api)()->postJson("/api/v1/sales/{$sale['id']}/payments", [
+        'amount' => 500, 'method' => 'cash', 'cash_account_id' => $this->drawer->id,
+    ])->assertSuccessful()->assertJsonPath('status', 'open');
 
     expect((float) $this->client->fresh()->current_balance)->toBe(300.0);
 
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/record-payment", [
-        'amount' => 300,
-    ])->assertStatus(200)->assertJsonPath('status', 'paid');
+    ($this->api)()->postJson("/api/v1/sales/{$sale['id']}/payments", [
+        'amount' => 300, 'method' => 'bank', 'cash_account_id' => $this->bank->id,
+    ])->assertSuccessful()->assertJsonPath('status', 'completed');
 
-    expect((float) $this->client->fresh()->current_balance)->toBe(0.0);
+    expect((float) $this->client->fresh()->current_balance)->toBe(0.0)
+        ->and(SalePayment::count())->toBe(2);
 
-    // Overpayment is refused.
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/record-payment", ['amount' => 1])
-        ->assertStatus(422);
+    ($this->api)()->postJson("/api/v1/sales/{$sale['id']}/payments", [
+        'amount' => 1, 'method' => 'cash', 'cash_account_id' => $this->drawer->id,
+    ])->assertUnprocessable()->assertJsonPath('code', 'PAYMENT_EXCEEDS_OUTSTANDING');
+
+    $byCode = ($this->balances)();
+    expect((float) $byCode['122']['balance'])->toBe(0.0)
+        ->and((float) $byCode['121102']['debit'])->toBe(500.0)
+        ->and((float) $byCode['1212']['debit'])->toBe(300.0);
 });
 
-test('an internal transfer skips credit, moves stock between units, and posts at cost', function () {
-    // SALE-03/08: even an absurd value sails past the credit gate.
-    $order = ($this->makeOrder)([
-        'buyer_type' => 'internal_unit',
+test('a paid sale has nothing to collect', function () {
+    $sale = ($this->sell)()->json();
+
+    ($this->api)()->postJson("/api/v1/sales/{$sale['id']}/payments", [
+        'amount' => 10, 'method' => 'cash', 'cash_account_id' => $this->drawer->id,
+    ])->assertUnprocessable()->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
+});
+
+test('an internal transfer skips credit and payment and moves stock at cost, keeping each piece size', function () {
+    $piece = InventoryItem::create([
+        'name' => 'Cut piece D25', 'code' => 'CUT-D25', 'item_type' => 'cut_template_piece', 'unit_of_measure' => 'each',
+    ]);
+    $lot = StockLot::create([
+        'inventory_item_id' => $piece->id, 'warehouse_id' => $this->storeWarehouse->id,
+        'lot_number' => 'CUT-1', 'quantity' => 1, 'unit_cost' => 80, 'status' => 'available',
+        'length_m' => 2, 'width_m' => 0.7, 'height_m' => 0.1,
+    ]);
+
+    // SALE-03/08: typed prices are ignored — the transfer is at cost.
+    ($this->api)()->postJson('/api/v1/sales', [
         'buyer_unit_id' => $this->furnitureUnit->id,
-        'client_id' => null,
-    ], 2, 99999);
+        'lines' => [
+            ['inventory_item_id' => $this->sofa->id, 'quantity' => 2, 'unit_price' => 99999],
+            ['inventory_item_id' => $piece->id, 'stock_lot_id' => $lot->id, 'quantity' => 1, 'unit_price' => 0],
+        ],
+    ])->assertCreated()
+        ->assertJsonPath('status', 'completed')
+        ->assertJsonPath('buyer_type', 'internal_unit')
+        ->assertJsonPath('total_amount', '380.0000');
 
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/submit")
-        ->assertStatus(200)
-        ->assertJsonPath('status', 'confirmed');
+    $received = StockLot::withoutGlobalScopes()->where('warehouse_id', $this->furnitureWarehouse->id)->get();
+    $sofas = $received->firstWhere('inventory_item_id', $this->sofa->id);
+    $cutPiece = $received->firstWhere('inventory_item_id', $piece->id);
 
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/fulfill")->assertStatus(200);
+    expect((float) $sofas->quantity)->toBe(2.0)
+        ->and((float) $sofas->unit_cost)->toBe(150.0)
+        ->and((float) $cutPiece->length_m)->toBe(2.0)
+        ->and((float) $cutPiece->width_m)->toBe(0.7)
+        ->and((float) $cutPiece->height_m)->toBe(0.1)
+        ->and($cutPiece->source_stock_lot_id)->toBe($lot->id);
 
-    // Stock left the store and arrived in the furniture unit at cost.
-    $received = StockLot::withoutGlobalScopes()
-        ->where('warehouse_id', $this->furnitureWarehouse->id)->first();
-
-    expect($received)->not->toBeNull()
-        ->and((float) $received->quantity)->toBe(2.0)
-        ->and((float) $received->unit_cost)->toBe(150.0);
-
-    // No AR, no revenue — only subledger movement, netting to zero per account.
-    $tb = app(AccountingService::class)->trialBalance();
-    $byCode = collect($tb['rows'])->keyBy('account_code');
-
-    expect($tb['balanced'])->toBeTrue()
-        ->and($byCode->has('13'))->toBeFalse()
+    // No receivable, no revenue — only subledger movement, netting to zero per account.
+    $byCode = ($this->balances)();
+    expect($byCode->has('122'))->toBeFalse()
         ->and($byCode->has('41'))->toBeFalse()
-        ->and((float) $byCode['1134']['balance'])->toBe(0.0);
-
-    // And no balance moved on any client.
-    expect((float) $this->client->fresh()->current_balance)->toBe(0.0);
-
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/complete")
-        ->assertStatus(200)->assertJsonPath('status', 'completed');
+        ->and((float) $byCode['1134']['balance'])->toBe(0.0)
+        ->and((float) $byCode['1132']['balance'])->toBe(0.0)
+        ->and((float) $this->client->fresh()->current_balance)->toBe(0.0);
 });
 
-test('pos checkout is one atomic step and the drawer report sees it', function () {
-    // SALE-09: no draft, no fulfil step — sold means done.
-    ($this->api)()->postJson('/api/v1/pos/sales', [
-        'order_number' => 'POS-1001',
-        'payment_method' => 'cash',
-        'items' => [[
-            'inventory_item_id' => $this->sofa->id, 'quantity' => 1, 'unit_price' => 450,
-        ]],
-    ])->assertStatus(201)
-        ->assertJsonPath('status', 'paid')
-        ->assertJsonPath('channel', 'pos');
+test('an internal transfer carries inventory items only', function () {
+    $bundle = Bundle::create(['name' => 'Arabic sofa']);
 
-    expect((float) StockLot::where('lot_number', 'FG-STOCK-1')->value('quantity'))->toBe(4.0);
+    ($this->api)()->postJson('/api/v1/sales', [
+        'buyer_unit_id' => $this->furnitureUnit->id,
+        'lines' => [['line_type' => 'bundle', 'bundle_id' => $bundle->id, 'quantity' => 1, 'unit_price' => 0]],
+    ])->assertUnprocessable()->assertJsonPath('code', 'INTERNAL_BUNDLE_NOT_ALLOWED');
 
-    // Cash 450 in, revenue 450, COGS 150 — and the trial balance holds.
-    $tb = app(AccountingService::class)->trialBalance();
-    $byCode = collect($tb['rows'])->keyBy('account_code');
-
-    expect($tb['balanced'])->toBeTrue()
-        ->and((float) $byCode['12']['debit'])->toBe(450.0)
-        ->and((float) $byCode['41']['credit'])->toBe(450.0);
-
-    $report = ($this->api)()->getJson('/api/v1/pos/daily-report')->assertStatus(200)->json();
-
-    expect($report['sales_count'])->toBe(1)
-        ->and((float) $report['total'])->toBe(450.0)
-        ->and((float) $report['by_method']['cash']['total'])->toBe(450.0);
+    ($this->api)()->postJson('/api/v1/sales', [
+        'buyer_unit_id' => $this->store->id,
+        'lines' => [['inventory_item_id' => $this->sofa->id, 'quantity' => 1]],
+    ])->assertUnprocessable()->assertJsonPath('code', 'SELF_TRANSFER');
 });
 
 test('a finished_good item leaves stock from the same account intake put it into', function () {
     // The mapping drift: intake filed `finished_good` under 1134 but the
-    // sale used to credit the 1110 default — value entered one account and
+    // sale used to credit the 111 default — value entered one account and
     // left another. Both sides must agree on 1134.
     $good = InventoryItem::create([
         'name' => 'Mattress', 'code' => 'MATT-1', 'item_type' => 'finished_good', 'unit_of_measure' => 'each',
@@ -259,77 +374,75 @@ test('a finished_good item leaves stock from the same account intake put it into
         'quantity' => 2,
         'unit_cost' => 200,
         'source' => 'opening_balance',
-    ])->assertStatus(201);
+    ])->assertCreated();
 
-    ($this->api)()->postJson('/api/v1/pos/sales', [
-        'order_number' => 'POS-3001',
-        'payment_method' => 'cash',
-        'items' => [['inventory_item_id' => $good->id, 'quantity' => 1, 'unit_price' => 350]],
-    ])->assertStatus(201);
+    ($this->sell)(['lines' => [['inventory_item_id' => $good->id, 'quantity' => 1, 'unit_price' => 350]]])
+        ->assertCreated();
 
-    $tb = app(AccountingService::class)->trialBalance();
-    $byCode = collect($tb['rows'])->keyBy('account_code');
-
-    // 1134 took 400 in at intake and released 200 at cost on the sale;
-    // 1110 must be untouched by either side (it may have no row at all).
-    expect($tb['balanced'])->toBeTrue()
-        ->and((float) $byCode['1134']['debit'])->toBe(400.0)
+    $byCode = ($this->balances)();
+    expect((float) $byCode['1134']['debit'])->toBe(400.0)
         ->and((float) $byCode['1134']['credit'])->toBe(200.0)
         ->and((float) ($byCode['111']['debit'] ?? 0))->toBe(0.0)
         ->and((float) ($byCode['111']['credit'] ?? 0))->toBe(0.0);
 });
 
-test('closing the register records the drawer count against system cash', function () {
-    ($this->api)()->postJson('/api/v1/pos/sales', [
-        'order_number' => 'POS-2001',
-        'payment_method' => 'cash',
-        'items' => [['inventory_item_id' => $this->sofa->id, 'quantity' => 1, 'unit_price' => 450]],
-    ])->assertStatus(201);
+test('a sale that stock cannot cover is refused whole', function () {
+    ($this->sell)([], 9, 400)
+        ->assertUnprocessable()
+        ->assertJsonPath('code', 'INSUFFICIENT_COMPONENT_STOCK');
 
-    // Card takings must not inflate the expected drawer cash.
-    ($this->api)()->postJson('/api/v1/pos/sales', [
-        'order_number' => 'POS-2002',
-        'payment_method' => 'card',
-        'items' => [['inventory_item_id' => $this->sofa->id, 'quantity' => 1, 'unit_price' => 300]],
-    ])->assertStatus(201);
+    expect(SalesOrder::count())->toBe(0)
+        ->and((float) StockLot::where('lot_number', 'FG-STOCK-1')->value('quantity'))->toBe(5.0)
+        ->and(JournalEntry::count())->toBe(0);
+});
 
-    $close = ($this->api)()->postJson('/api/v1/pos/daily-close', ['counted_cash' => 440])
-        ->assertStatus(201)->json();
+test('closing the register counts cash received, not bank or receivable', function () {
+    ($this->sell)()->assertCreated();                                                            // cash 450
+    ($this->sell)(['payment_method' => 'bank', 'cash_account_id' => $this->bank->id], 1, 300)->assertCreated();
+    $credit = ($this->sell)(['payment_method' => 'receivable', 'cash_account_id' => null], 1, 200)->json();
 
-    expect((float) $close['expected_cash'])->toBe(450.0)
-        ->and((float) $close['counted_cash'])->toBe(440.0)
+    // A cash collection on a receivable is drawer cash too.
+    ($this->api)()->postJson("/api/v1/sales/{$credit['id']}/payments", [
+        'amount' => 100, 'method' => 'cash', 'cash_account_id' => $this->drawer->id,
+    ])->assertSuccessful();
+
+    $report = ($this->api)()->getJson('/api/v1/pos/daily-report')->assertSuccessful()->json();
+    expect($report['sales_count'])->toBe(3)
+        ->and((float) $report['total'])->toBe(950.0)
+        ->and((float) $report['by_method']['receivable']['total'])->toBe(200.0)
+        ->and((float) $report['collected']['cash']['total'])->toBe(550.0)
+        ->and((float) $report['collected']['bank']['total'])->toBe(300.0)
+        ->and((float) $report['expected_cash'])->toBe(550.0);
+
+    $close = ($this->api)()->postJson('/api/v1/pos/daily-close', ['counted_cash' => 540])
+        ->assertCreated()->json();
+
+    expect((float) $close['expected_cash'])->toBe(550.0)
         ->and((float) $close['difference'])->toBe(-10.0)
-        ->and($close['sales_count'])->toBe(2)
-        ->and((float) $close['total_sales'])->toBe(750.0);
+        ->and($close['sales_count'])->toBe(3)
+        ->and((float) $close['total_sales'])->toBe(950.0);
 
-    // The saved close is readable back for the same day.
     ($this->api)()->getJson('/api/v1/pos/daily-close')
-        ->assertStatus(200)
+        ->assertSuccessful()
         ->assertJsonPath('data.id', $close['id']);
 });
 
-test('a register day cannot be closed twice', function () {
-    ($this->api)()->postJson('/api/v1/pos/daily-close', ['counted_cash' => 0])->assertStatus(201);
+test('the register day follows the company timezone, not UTC', function () {
+    // 22:30 UTC on the 27th is 00:30 on the 28th in Tripoli (UTC+2).
+    $this->travelTo(CarbonImmutable::parse('2026-09-27 22:30:00', 'UTC'));
+    ($this->sell)()->assertCreated();
 
-    ($this->api)()->postJson('/api/v1/pos/daily-close', ['counted_cash' => 0])
-        ->assertStatus(422)
-        ->assertJsonPath('code', 'POS_DAY_ALREADY_CLOSED');
+    expect(($this->api)()->getJson('/api/v1/pos/daily-report?date=2026-09-28')->json('sales_count'))->toBe(1)
+        ->and(($this->api)()->getJson('/api/v1/pos/daily-report?date=2026-09-27')->json('sales_count'))->toBe(0)
+        ->and(($this->api)()->getJson('/api/v1/pos/daily-report')->json('date'))->toBe('2026-09-28');
 });
 
-test('a sale that stock cannot cover is refused whole', function () {
-    $order = ($this->makeOrder)([], 2, 400);
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/submit");
+test('a register day cannot be closed twice', function () {
+    ($this->api)()->postJson('/api/v1/pos/daily-close', ['counted_cash' => 0])->assertCreated();
 
-    // Drain the shelf behind the order's back.
-    StockLot::where('lot_number', 'FG-STOCK-1')->update(['quantity' => 1]);
-
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/fulfill")
-        ->assertStatus(422)
-        ->assertJsonPath('code', 'INSUFFICIENT_COMPONENT_STOCK');
-
-    // Nothing was drawn, order still confirmed.
-    expect((float) StockLot::where('lot_number', 'FG-STOCK-1')->value('quantity'))->toBe(1.0)
-        ->and(SalesOrder::find($order['id'])->status->value)->toBe('confirmed');
+    ($this->api)()->postJson('/api/v1/pos/daily-close', ['counted_cash' => 0])
+        ->assertUnprocessable()
+        ->assertJsonPath('code', 'POS_DAY_ALREADY_CLOSED');
 });
 
 test('an internal restock request needs approval before it can move stock', function () {
@@ -347,17 +460,17 @@ test('an internal restock request needs approval before it can move stock', func
         'request_number' => 'RSR-1001',
         'source_unit_id' => $this->furnitureUnit->id,
         'lines' => [['inventory_item_id' => $this->sofa->id, 'quantity' => 4]],
-    ])->assertStatus(201)->assertJsonPath('status', 'pending_approval')->json();
+    ])->assertCreated()->assertJsonPath('status', 'pending_approval')->json();
 
     // SALE-05: fulfilling before approval is refused.
     ($this->api)()->postJson("/api/v1/internal-restock-requests/{$restock['id']}/fulfill")
-        ->assertStatus(422);
+        ->assertUnprocessable();
 
     ($this->api)()->putJson("/api/v1/internal-restock-requests/{$restock['id']}/approve")
-        ->assertStatus(200);
+        ->assertSuccessful();
 
     ($this->api)()->postJson("/api/v1/internal-restock-requests/{$restock['id']}/fulfill")
-        ->assertStatus(200)
+        ->assertSuccessful()
         ->assertJsonPath('status', 'fulfilled');
 
     // 4 left the furniture unit, 4 arrived in the store at cost.
@@ -369,22 +482,34 @@ test('an internal restock request needs approval before it can move stock', func
     expect((float) $arrived->quantity)->toBe(4.0)
         ->and((float) $arrived->unit_cost)->toBe(140.0);
 
-    expect(app(AccountingService::class)->trialBalance()['balanced'])->toBeTrue();
+    ($this->balances)();
 });
 
-test('the invoice reflects the fulfilled order', function () {
-    $order = ($this->makeOrder)([], 2, 400);
+test('the invoice reflects the sale, with the sku and the treasury', function () {
+    $sale = ($this->sell)(['payment_method' => 'receivable', 'cash_account_id' => null], 2, 400)->json();
 
-    // No invoice before fulfillment.
-    ($this->api)()->getJson("/api/v1/sales-orders/{$order['id']}/invoice")->assertStatus(422);
-
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/submit");
-    ($this->api)()->postJson("/api/v1/sales-orders/{$order['id']}/fulfill");
-
-    $invoice = ($this->api)()->getJson("/api/v1/sales-orders/{$order['id']}/invoice")
-        ->assertStatus(200)->json();
+    $invoice = ($this->api)()->getJson("/api/v1/sales/{$sale['id']}/invoice")->assertSuccessful()->json();
 
     expect($invoice['buyer'])->toBe('Sahara Trading')
+        ->and($invoice['invoice_number'])->toBe('INV-'.$sale['order_number'])
+        ->and($invoice['payment_method'])->toBe('receivable')
+        ->and($invoice['lines'][0]['sku'])->toBe('SOFA-1')
+        ->and($invoice['lines'][0]['description'])->toBe('Sofa')
         ->and((float) $invoice['total_amount'])->toBe(800.0)
         ->and((float) $invoice['outstanding'])->toBe(800.0);
+});
+
+test('the sales list is paginated and filterable', function () {
+    ($this->sell)()->assertCreated();
+    ($this->sell)(['payment_method' => 'receivable', 'cash_account_id' => null], 1, 200)->assertCreated();
+
+    ($this->api)()->getJson('/api/v1/sales?per_page=1')
+        ->assertSuccessful()
+        ->assertJsonPath('total', 2)
+        ->assertJsonCount(1, 'data');
+
+    ($this->api)()->getJson('/api/v1/sales?payment_method=receivable')
+        ->assertSuccessful()
+        ->assertJsonPath('total', 1)
+        ->assertJsonPath('data.0.client.entity.name', 'Sahara Trading');
 });
