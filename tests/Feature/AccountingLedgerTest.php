@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
 use App\Services\AccountingService;
+use Database\Seeders\ChartOfAccountsSeeder;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -354,4 +355,37 @@ test('account ledger supports date range and text search filtering', function ()
         ->assertStatus(200);
     expect($resSearchMemo->json('total'))->toBe(1)
         ->and($resSearchMemo->json('data.0.journal_entry.reference'))->toBe($entry1->reference);
+});
+
+test('chart of accounts seeds accounts 6 and 7 without a parent account', function () {
+    $account5 = Account::where('account_code', '5')->firstOrFail();
+    $account6 = Account::where('account_code', '6')->firstOrFail();
+    $account7 = Account::where('account_code', '7')->firstOrFail();
+    $account601 = Account::where('account_code', '601')->firstOrFail();
+    $account701 = Account::where('account_code', '701')->firstOrFail();
+
+    expect($account6->parent_account_id)->toBeNull()
+        ->and($account7->parent_account_id)->toBeNull()
+        ->and($account601->parent_account_id)->toBe($account6->id)
+        ->and($account701->parent_account_id)->toBe($account7->id);
+
+    $res = ($this->api)()->getJson('/api/v1/accounts')->assertStatus(200);
+    $data = collect($res->json('data'));
+
+    $res6 = $data->firstWhere('account_code', '6');
+    $res7 = $data->firstWhere('account_code', '7');
+
+    expect($res6['parent_account_id'])->toBeNull()
+        ->and($res6['is_main'])->toBeTrue()
+        ->and($res7['parent_account_id'])->toBeNull()
+        ->and($res7['is_main'])->toBeTrue();
+
+    // Verify idempotent re-seeding clears any legacy parent_account_id
+    $account6->update(['parent_account_id' => $account5->id]);
+    $account7->update(['parent_account_id' => $account5->id]);
+
+    $this->seed(ChartOfAccountsSeeder::class);
+
+    expect($account6->fresh()->parent_account_id)->toBeNull()
+        ->and($account7->fresh()->parent_account_id)->toBeNull();
 });

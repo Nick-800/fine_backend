@@ -10,6 +10,7 @@ use App\Enums\PaymentRoute;
 use App\Enums\PurchaseOrderKind;
 use App\Enums\PurchaseOrderStatus;
 use App\Exceptions\InvalidStateTransitionException;
+use App\Models\Account;
 use App\Models\BankHold;
 use App\Models\FxRate;
 use App\Models\GoodsReceipt;
@@ -243,9 +244,10 @@ final class PurchaseOrderStateService
         ?float $fxRateUsed = null,
         ?float $exactAmountUsedLyd = null,
         ?string $bankReference = null,
-        ?string $extraAllocationNote = null
+        ?string $extraAllocationNote = null,
+        ?string $paymentSourceAccountId = null,
     ): PaymentRequest {
-        return DB::transaction(function () use ($paymentRequest, $fxRateUsed, $exactAmountUsedLyd, $bankReference, $extraAllocationNote) {
+        return DB::transaction(function () use ($paymentRequest, $fxRateUsed, $exactAmountUsedLyd, $bankReference, $extraAllocationNote, $paymentSourceAccountId) {
             if ($paymentRequest->status !== PaymentRequestStatus::Pending) {
                 throw new InvalidStateTransitionException('Payment request is not pending.');
             }
@@ -291,6 +293,23 @@ final class PurchaseOrderStateService
                 }
             }
 
+            // Resolve the payment source account. When supplied, use its
+            // account_code on the credit side; otherwise fall back to the
+            // universal '12' Cash and Bank (legacy behaviour for callers
+            // that haven't been updated yet).
+            $creditAccountCode = '12';
+            if (! empty($paymentSourceAccountId)) {
+                $linked = Account::query()->whereKey($paymentSourceAccountId)->first();
+                if ($linked === null) {
+                    throw new InvalidArgumentException('Linked payment source account does not exist.');
+                }
+                $creditAccountCode = (string) $linked->account_code;
+
+                // Persist on the order for audit / replay.
+                $order->payment_source_account_id = $linked->id;
+                $order->save();
+            }
+
             if ($settled > 0) {
                 $this->accountingService->postJournal(
                     "Import payment executed — {$order->supplier?->name}",
@@ -302,7 +321,7 @@ final class PurchaseOrderStateService
                             'memo' => $order->supplier?->name,
                         ],
                         [
-                            'account_code' => '12', // Cash and Bank
+                            'account_code' => $creditAccountCode,
                             'credit' => $settled,
                             'operating_unit_id' => $order->operating_unit_id,
                             'memo' => $paymentRequest->route->value.' route',
@@ -524,9 +543,11 @@ final class PurchaseOrderStateService
 
     /**
      * Wave 5 (local flow): record a payment on a received local order.
-     * Transitions to `paid`; auto-closes when fully received + paid.
+     * Posts a DR supplier advance / CR chosen payment source journal,
+     * persists the source account on the order, then transitions to `paid`;
+     * auto-closes when fully received + paid.
      */
-    public function payLocal(PurchaseOrder $order): PurchaseOrder
+    public function payLocal(PurchaseOrder $order, string $paymentSourceAccountId): PurchaseOrder
     {
         if ($order->kind !== PurchaseOrderKind::Local) {
             throw new InvalidArgumentException('payLocal is only for local purchase orders.');
@@ -538,7 +559,48 @@ final class PurchaseOrderStateService
             );
         }
 
-        return DB::transaction(function () use ($order) {
+        $source = Account::query()->whereKey($paymentSourceAccountId)->first();
+        if ($source === null) {
+            throw new InvalidArgumentException('Linked payment source account does not exist.');
+        }
+
+        // Resolve the supplier advance code: linked sub-account if present,
+        // otherwise the universal '15' Advances to Suppliers.
+        $supplierAccountCode = '15';
+        if ($order->supplier_id !== null) {
+            $supplier = Supplier::with('account')->find($order->supplier_id);
+            if ($supplier?->account?->account_code) {
+                $supplierAccountCode = $supplier->account->account_code;
+            }
+        }
+
+        $totalLyd = (float) $order->totalCost();
+
+        return DB::transaction(function () use ($order, $source, $supplierAccountCode, $totalLyd) {
+            if ($totalLyd > 0) {
+                $this->accountingService->postJournal(
+                    "Local PO paid — {$order->supplier?->name}",
+                    [
+                        [
+                            'account_code' => $supplierAccountCode,
+                            'debit' => $totalLyd,
+                            'operating_unit_id' => $order->operating_unit_id,
+                            'memo' => $order->supplier?->name,
+                        ],
+                        [
+                            'account_code' => (string) $source->account_code,
+                            'credit' => $totalLyd,
+                            'operating_unit_id' => $order->operating_unit_id,
+                            'memo' => $source->name,
+                        ],
+                    ],
+                    'PurchaseOrder',
+                    $order->id,
+                    $order->operatingUnit?->company_id,
+                );
+            }
+
+            $order->payment_source_account_id = $source->id;
             $order->status = PurchaseOrderStatus::Paid;
             $order->save();
 

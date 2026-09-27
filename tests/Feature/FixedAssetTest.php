@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\FixedAssetStatus;
 use App\Exceptions\InvalidStateTransitionException;
+use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\OperatingUnit;
@@ -278,4 +279,140 @@ test('the trial balance stays balanced through acquire, depreciate and dispose',
         ->assertStatus(200)->json();
 
     expect($tb['balanced'])->toBeTrue();
+});
+
+test('acquiring an asset with coa_action=none posts to the universal 14 account and leaves account_id null', function () {
+    $res = $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/fixed-assets', [
+            'name' => 'Forklift',
+            'asset_code' => 'FA-COA-NONE',
+            'acquisition_cost' => 8000.0,
+            'acquisition_date' => '2026-02-10',
+            'depreciation_method' => 'straight_line',
+            'useful_life_years' => 5,
+            'salvage_value' => 500.0,
+            'payment_source' => 'cash',
+            'operating_unit_id' => $this->unit->id,
+            'coa_action' => 'none',
+        ])
+        ->assertStatus(201)
+        ->json();
+
+    expect($res['account_id'])->toBeNull();
+
+    $entry = JournalEntry::where('source_document_type', 'FixedAsset')
+        ->where('source_document_id', $res['id'])->sole();
+    $debit = $entry->lines()->with('account')->get()
+        ->firstWhere(fn ($l) => (float) $l->debit > 0);
+
+    expect($debit->account->account_code)->toBe('14');
+});
+
+test('acquiring an asset with coa_action=link_existing uses the linked account', function () {
+    // Provision a fresh sub-account under "14" (الأصول الثابتة) to link against.
+    $parent = Account::where('account_code', '14')->firstOrFail();
+    $subAccount = Account::create([
+        'chart_of_accounts_id' => $parent->chart_of_accounts_id,
+        'account_code' => '14001',
+        'name' => 'رافعة شوكية - فرع طرابلس',
+        'type' => 'asset',
+        'currency' => 'LYD',
+        'parent_account_id' => $parent->id,
+    ]);
+
+    $res = $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/fixed-assets', [
+            'name' => 'Forklift',
+            'asset_code' => 'FA-COA-LINK',
+            'acquisition_cost' => 8000.0,
+            'acquisition_date' => '2026-02-10',
+            'depreciation_method' => 'straight_line',
+            'useful_life_years' => 5,
+            'salvage_value' => 500.0,
+            'payment_source' => 'cash',
+            'operating_unit_id' => $this->unit->id,
+            'coa_action' => 'link_existing',
+            'account_id' => $subAccount->id,
+        ])
+        ->assertStatus(201)
+        ->json();
+
+    expect($res['account_id'])->toBe($subAccount->id);
+
+    $entry = JournalEntry::where('source_document_type', 'FixedAsset')
+        ->where('source_document_id', $res['id'])->sole();
+    $debit = $entry->lines()->with('account')->get()
+        ->firstWhere(fn ($l) => (float) $l->debit > 0);
+
+    expect($debit->account_id)->toBe($subAccount->id);
+});
+
+test('acquiring an asset with coa_action=create_new provisions a sub-account under 14 and links it', function () {
+    $parent = Account::where('account_code', '14')->firstOrFail();
+
+    $res = $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/fixed-assets', [
+            'name' => 'Forklift',
+            'asset_code' => 'FA-COA-NEW',
+            'acquisition_cost' => 8000.0,
+            'acquisition_date' => '2026-02-10',
+            'depreciation_method' => 'straight_line',
+            'useful_life_years' => 5,
+            'salvage_value' => 500.0,
+            'payment_source' => 'cash',
+            'operating_unit_id' => $this->unit->id,
+            'coa_action' => 'create_new',
+            'new_account' => [
+                'parent_account_id' => $parent->id,
+                'account_code' => '14002',
+                'name' => 'رافعة شوكية - فرع طرابلس',
+            ],
+        ])
+        ->assertStatus(201)
+        ->json();
+
+    expect($res['account_id'])->not->toBeNull();
+
+    $linked = Account::find($res['account_id']);
+    expect($linked->account_code)->toBe('14002')
+        ->and($linked->parent_account_id)->toBe($parent->id);
+
+    $entry = JournalEntry::where('source_document_type', 'FixedAsset')
+        ->where('source_document_id', $res['id'])->sole();
+    $debit = $entry->lines()->with('account')->get()
+        ->firstWhere(fn ($l) => (float) $l->debit > 0);
+
+    expect($debit->account_id)->toBe($linked->id);
+});
+
+test('link_existing requires account_id and create_new requires new_account fields', function () {
+    $payload = [
+        'name' => 'Forklift',
+        'asset_code' => 'FA-COA-INVALID',
+        'acquisition_cost' => 8000.0,
+        'acquisition_date' => '2026-02-10',
+        'depreciation_method' => 'straight_line',
+        'useful_life_years' => 5,
+        'salvage_value' => 500.0,
+        'payment_source' => 'cash',
+        'operating_unit_id' => $this->unit->id,
+    ];
+
+    $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/fixed-assets', $payload + ['coa_action' => 'link_existing'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['account_id']);
+
+    $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/fixed-assets', $payload + [
+            'coa_action' => 'create_new',
+            'new_account' => ['parent_account_id' => '00000000-0000-0000-0000-000000000000'],
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['new_account.account_code', 'new_account.name']);
 });

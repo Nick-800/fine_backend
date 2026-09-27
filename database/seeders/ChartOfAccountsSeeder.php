@@ -123,7 +123,7 @@ class ChartOfAccountsSeeder extends Seeder
             ['40502', 'مردودات مشتريات — مقص فاين', 'expense', '405'],
             ['406', 'مصاريف الشراء والنقل', 'expense', '5'],
 
-            ['6', 'المصاريف التشغيلية والإدارية', 'expense', '5'],
+            ['6', 'المصاريف التشغيلية والإدارية', 'expense', null],
             ['601', 'مرتبات ومكافآت', 'expense', '6'],
             ['60101', 'مرتبات ومكافآت — مصنع الإسفنج', 'expense', '601'],
             ['60102', 'مرتبات ومكافآت — مقص فاين', 'expense', '601'],
@@ -163,10 +163,40 @@ class ChartOfAccountsSeeder extends Seeder
             ['62202', 'صيانة وتشغيل — مقص فاين', 'expense', '622'],
             ['624', 'دعاية وإعلان وتسويق', 'expense', '6'],
 
-            ['7', 'العمليات الصناعية', 'expense', '5'],
+            ['7', 'العمليات الصناعية', 'expense', null],
             ['701', 'العمليات الصناعية — مصنع الإسفنج', 'expense', '7'],
             ['702', 'العمليات الصناعية — مقص فاين', 'expense', '7'],
         ];
+
+        $catalogByCode = [];
+        foreach ($catalog as $row) {
+            $catalogByCode[(string) $row[0]] = $row;
+        }
+
+        $jsonPath = database_path('data/chart_of_accounts.json');
+        if (file_exists($jsonPath)) {
+            $raw = json_decode((string) file_get_contents($jsonPath), true);
+            if (is_array($raw) && ! empty($raw)) {
+                foreach ($raw as $item) {
+                    $code = (string) ($item['account_code'] ?? $item[0]);
+                    $name = (string) ($item['name'] ?? $item[1]);
+                    $type = (string) ($item['type'] ?? $item[2]);
+                    $parentCode = isset($item['parent_code'])
+                        ? ($item['parent_code'] !== null ? (string) $item['parent_code'] : null)
+                        : ($item[3] ?? null);
+                    $currency = (string) ($item['currency'] ?? $item[4] ?? $company->default_currency ?? 'LYD');
+
+                    // Ensure accounts 6 and 7 remain parentless root accounts
+                    if (in_array($code, ['6', '7'], true)) {
+                        $parentCode = null;
+                    }
+
+                    $catalogByCode[$code] = [$code, $name, $type, $parentCode, $currency];
+                }
+            }
+        }
+
+        $catalog = array_values($catalogByCode);
 
         $targetCodes = array_column($catalog, 0);
 
@@ -189,7 +219,13 @@ class ChartOfAccountsSeeder extends Seeder
             $created[$acc->account_code] = $acc;
         }
 
-        foreach ($catalog as [$code, $name, $type, $parentCode]) {
+        foreach ($catalog as $row) {
+            $code = $row[0];
+            $name = $row[1];
+            $type = $row[2];
+            $parentCode = $row[3] ?? null;
+            $currency = $row[4] ?? $company->default_currency ?? 'LYD';
+
             $parentId = $parentCode !== null && isset($created[$parentCode])
                 ? $created[$parentCode]->id
                 : null;
@@ -202,7 +238,7 @@ class ChartOfAccountsSeeder extends Seeder
                 [
                     'name' => $name,
                     'type' => $type,
-                    'currency' => $company->default_currency ?? 'LYD',
+                    'currency' => $currency,
                     'parent_account_id' => $parentId,
                 ],
             );
@@ -211,12 +247,17 @@ class ChartOfAccountsSeeder extends Seeder
         }
 
         // Final pass: ensure all parent references are linked properly
-        foreach ($catalog as [$code, $name, $type, $parentCode]) {
-            if ($parentCode !== null && isset($created[$parentCode])) {
-                $account = $created[$code];
-                if ($account->parent_account_id !== $created[$parentCode]->id) {
-                    $account->update(['parent_account_id' => $created[$parentCode]->id]);
-                }
+        foreach ($catalog as $row) {
+            $code = $row[0];
+            $parentCode = $row[3] ?? null;
+
+            $expectedParentId = $parentCode !== null && isset($created[$parentCode])
+                ? $created[$parentCode]->id
+                : null;
+
+            $account = $created[$code];
+            if ($account->parent_account_id !== $expectedParentId) {
+                $account->update(['parent_account_id' => $expectedParentId]);
             }
         }
 

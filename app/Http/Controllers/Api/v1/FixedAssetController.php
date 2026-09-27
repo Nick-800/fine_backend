@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\FixedAsset;
 use App\Models\Scopes\OperatingUnitOrSharedScope;
+use App\Services\CoaLinkService;
 use App\Services\FixedAssetService;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
@@ -23,11 +24,12 @@ final class FixedAssetController extends Controller
     public function __construct(
         private readonly FixedAssetService $assetService,
         private readonly CurrentUnitContext $unitContext,
+        private readonly CoaLinkService $coaLinkService,
     ) {}
 
     public function index(Request $request): JsonResponse
     {
-        $query = FixedAsset::with('operatingUnit')->orderBy('asset_code');
+        $query = FixedAsset::with(['operatingUnit', 'account'])->orderBy('asset_code');
 
         // The register is an accounting view: a company-wide caller sees all
         // units' assets, same escape hatch as the reports.
@@ -46,7 +48,7 @@ final class FixedAssetController extends Controller
     {
         return response()->json(
             $this->findAsset($request, $id)
-                ->load(['operatingUnit', 'depreciationEntries' => fn ($q) => $q->orderByDesc('period')])
+                ->load(['operatingUnit', 'account', 'depreciationEntries' => fn ($q) => $q->orderByDesc('period')])
         );
     }
 
@@ -63,6 +65,16 @@ final class FixedAssetController extends Controller
             'payment_source' => 'required|string|in:cash,payable',
             'is_company_wide' => 'sometimes|boolean',
             'operating_unit_id' => 'sometimes|nullable|uuid|exists:operating_units,id',
+            // COA link (mirrors client/supplier pattern). Optional — when
+            // omitted, the asset is recorded against the universal "14"
+            // Fixed Assets account, same as before this feature landed.
+            'coa_action' => 'sometimes|string|in:create_new,link_existing,none',
+            'account_id' => 'required_if:coa_action,link_existing|nullable|uuid|exists:accounts,id',
+            'new_account' => 'required_if:coa_action,create_new|nullable|array',
+            'new_account.parent_account_id' => 'required_if:coa_action,create_new|nullable|uuid|exists:accounts,id',
+            'new_account.account_code' => 'required_if:coa_action,create_new|nullable|string|max:50|unique:accounts,account_code',
+            'new_account.name' => 'required_if:coa_action,create_new|nullable|string|max:255',
+            'new_account.currency' => 'nullable|string|size:3',
         ]);
 
         $companyId = Company::query()->value('id');
@@ -75,9 +87,18 @@ final class FixedAssetController extends Controller
             ? null
             : ($validated['operating_unit_id'] ?? $this->unitContext->getUnitId());
 
+        // Resolve the COA link: either link an existing account or provision
+        // a new sub-account under the chosen parent (preferred parent is "14"
+        // — Fixed Assets). `coa_action = none` or omitted leaves it null.
+        $accountId = $this->coaLinkService->resolveOrProvisionAccount(
+            $request->only(['coa_action', 'account_id', 'new_account']),
+            $companyId,
+        );
+
         try {
             $asset = $this->assetService->acquire([
                 'company_id' => $companyId,
+                'account_id' => $accountId,
                 'operating_unit_id' => $unitId,
                 'name' => $validated['name'],
                 'asset_code' => $validated['asset_code'],
@@ -92,7 +113,7 @@ final class FixedAssetController extends Controller
             return response()->json(['message' => $e->getMessage(), 'code' => 'INVALID_ASSET'], 422);
         }
 
-        return response()->json($asset->load('operatingUnit'), 201);
+        return response()->json($asset->load(['operatingUnit', 'account']), 201);
     }
 
     public function depreciate(Request $request, string $id): JsonResponse

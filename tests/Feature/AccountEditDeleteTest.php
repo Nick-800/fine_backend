@@ -91,11 +91,11 @@ test('a sub-account can be renamed', function () {
 test('a sub-account can have its code changed', function () {
     ($this->api)()->putJson("/api/v1/accounts/{$this->sub->id}", [
         'name' => 'Raw Material Inventory',
-        'account_code' => '1111',
+        'account_code' => '11199',
     ])->assertStatus(200);
 
     $fresh = $this->sub->fresh();
-    expect($fresh->account_code)->toBe('1111')
+    expect($fresh->account_code)->toBe('11199')
         ->and((string) $fresh->name)->toBe('Raw Material Inventory');
 });
 
@@ -165,14 +165,18 @@ test('a sub-account with children cannot be deleted', function () {
 });
 
 test('an empty sub-account can be deleted', function () {
-    // 1110 has no children and no journal lines — clean delete target.
-    expect($this->sub->children()->exists())->toBeFalse();
-    expect($this->sub->journalLines()->exists())->toBeFalse();
+    $target = Account::whereDoesntHave('children')
+        ->whereDoesntHave('journalLines')
+        ->whereNotNull('parent_account_id')
+        ->firstOrFail();
 
-    ($this->api)()->deleteJson("/api/v1/accounts/{$this->sub->id}")
+    expect($target->children()->exists())->toBeFalse();
+    expect($target->journalLines()->exists())->toBeFalse();
+
+    ($this->api)()->deleteJson("/api/v1/accounts/{$target->id}")
         ->assertStatus(200);
 
-    expect(Account::find($this->sub->id))->toBeNull();
+    expect(Account::find($target->id))->toBeNull();
 });
 
 test('a new main account can be created via the store endpoint', function () {

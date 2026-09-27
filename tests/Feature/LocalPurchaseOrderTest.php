@@ -10,6 +10,7 @@ use App\Models\ChartOfAccounts;
 use App\Models\Company;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
+use App\Models\JournalEntry;
 use App\Models\OperatingUnit;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
@@ -229,7 +230,8 @@ test('payLocal: received → paid → closed (auto-close on full receipt + paid)
     $order->save();
     makeLocalItem($order, 10, 10);
 
-    $result = $this->stateService->payLocal($order);
+    $source = Account::where('account_code', '1211')->firstOrFail();
+    $result = $this->stateService->payLocal($order, $source->id);
 
     expect($result->status)->toBe(PurchaseOrderStatus::Closed);
 });
@@ -240,7 +242,8 @@ test('payLocal: does not auto-close when items not fully received', function () 
     $order->save();
     makeLocalItem($order, 10, 5);
 
-    $result = $this->stateService->payLocal($order);
+    $source = Account::where('account_code', '1211')->firstOrFail();
+    $result = $this->stateService->payLocal($order, $source->id);
 
     expect($result->status)->toBe(PurchaseOrderStatus::Paid);
 });
@@ -254,16 +257,18 @@ test('payLocal: refuses non-local POs', function () {
     ]);
     expect($order->kind)->toBe(PurchaseOrderKind::Foreign);
 
+    $source = Account::where('account_code', '1211')->firstOrFail();
     $this->expectException(InvalidArgumentException::class);
-    $this->stateService->payLocal($order);
+    $this->stateService->payLocal($order, $source->id);
 });
 
 test('payLocal: refuses non-received state', function () {
     $order = makeLocalOrder();
     // status is Draft, not Received
 
+    $source = Account::where('account_code', '1211')->firstOrFail();
     $this->expectException(InvalidStateTransitionException::class);
-    $this->stateService->payLocal($order);
+    $this->stateService->payLocal($order, $source->id);
 });
 
 test('isFullyReceived: true for empty order', function () {
@@ -393,14 +398,57 @@ test('payLocal endpoint: transitions received → paid → closed (full receipt)
     $order->status = PurchaseOrderStatus::Received;
     $order->save();
     makeLocalItem($order, 10, 10);
+    $source = Account::where('account_code', '1211')->firstOrFail();
 
     $response = $this->actingAs($this->globalUser)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
-        ->postJson("/api/v1/purchase-orders/{$order->id}/pay-local");
+        ->postJson("/api/v1/purchase-orders/{$order->id}/pay-local", [
+            'payment_source_account_id' => $source->id,
+        ]);
 
     $response->assertStatus(200);
     $order->refresh();
-    expect($order->status)->toBe(PurchaseOrderStatus::Closed);
+    expect($order->status)->toBe(PurchaseOrderStatus::Closed)
+        ->and($order->payment_source_account_id)->toBe($source->id);
+});
+
+test('payLocal endpoint: requires payment_source_account_id', function () {
+    $order = makeLocalOrder();
+    $order->status = PurchaseOrderStatus::Received;
+    $order->save();
+    makeLocalItem($order, 10, 10);
+
+    $response = $this->actingAs($this->globalUser)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson("/api/v1/purchase-orders/{$order->id}/pay-local", []);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['payment_source_account_id']);
+});
+
+test('payLocal: posts DR supplier advance / CR chosen source journal and persists the source on the order', function () {
+    $order = makeLocalOrder();
+    $order->status = PurchaseOrderStatus::Received;
+    $order->save();
+    makeLocalItem($order, 10, 10);
+    $source = Account::where('account_code', '1211')->firstOrFail();
+
+    $updated = $this->stateService->payLocal($order, $source->id);
+
+    expect($updated->payment_source_account_id)->toBe($source->id)
+        ->and($updated->status)->toBe(PurchaseOrderStatus::Closed);
+
+    $entry = JournalEntry::where('source_document_type', 'PurchaseOrder')
+        ->where('source_document_id', $updated->id)
+        ->latest()->first();
+    expect($entry)->not->toBeNull();
+
+    $lines = $entry->lines()->with('account')->get();
+    $debit = $lines->firstWhere(fn ($l) => (float) $l->debit > 0);
+    $credit = $lines->firstWhere(fn ($l) => (float) $l->credit > 0);
+
+    expect($debit->account->account_code)->toBe('15')
+        ->and($credit->account_id)->toBe($source->id);
 });
 
 test('approve endpoint: draft → approved', function () {

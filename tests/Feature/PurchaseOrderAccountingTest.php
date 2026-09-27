@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\PaymentRoute;
 use App\Enums\PurchaseOrderStatus;
+use App\Models\Account;
 use App\Models\BankHold;
 use App\Models\Company;
 use App\Models\FxRate;
@@ -311,6 +312,7 @@ test('payments execute over both routes and refuse to execute twice', function (
     // The flat route the desktop treasury screen calls.
     ($this->api)()->postJson("/api/v1/payment-requests/{$requestId}/execute", [
         'fx_rate_used' => 5.0,
+        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
     ])->assertStatus(200);
 
     expect($order->fresh()->status->value)->toBe('paid');
@@ -318,12 +320,14 @@ test('payments execute over both routes and refuse to execute twice', function (
     // Executing an already-paid request is a state refusal.
     ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/payment-requests/{$requestId}/process", [
         'fx_rate_used' => 5.0,
+        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
     ])->assertStatus(422)->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
 
     // And the nested route rejects a request id that belongs to another order.
     $other = ($this->orderReadyToComplete)();
     ($this->api)()->postJson("/api/v1/purchase-orders/{$other->id}/payment-requests/{$requestId}/process", [
         'fx_rate_used' => 5.0,
+        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
     ])->assertStatus(404);
 });
 
@@ -415,12 +419,14 @@ test('executing a market payment with non-zero extra allocation requires a note'
 
     ($this->api)()->postJson("/api/v1/payment-requests/{$requestId}/execute", [
         'fx_rate_used' => 5.2,
+        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
     ])->assertStatus(422)
         ->assertJsonValidationErrors(['extra_allocation_note']);
 
     ($this->api)()->postJson("/api/v1/payment-requests/{$requestId}/execute", [
         'fx_rate_used' => 5.2,
         'extra_allocation_note' => 'تم الشراء من الصرّاف بسبب تأخر الاعتماد البنكي.',
+        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
     ])->assertStatus(200);
 
     $pr = PaymentRequest::find($requestId);
@@ -445,6 +451,7 @@ test('executing a payment with zero extra allocation accepts an empty note', fun
 
     ($this->api)()->postJson("/api/v1/payment-requests/{$requestId}/execute", [
         'fx_rate_used' => 5.0,
+        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
     ])->assertStatus(200);
 
     $pr = PaymentRequest::find($requestId);
@@ -607,4 +614,41 @@ test('a select_route call that switches from Bank to Market after a hold is refu
     $fresh = $order->fresh();
     expect($fresh->paymentRequests()->sole()->route)->toBe(PaymentRoute::Bank)
         ->and($fresh->paymentRequests()->sole()->bankHold)->not->toBeNull();
+});
+
+test('execute_payment with payment_source_account_id posts credit to the chosen account instead of hardcoded 12', function () {
+    $source = Account::where('account_code', '1212')->firstOrFail(); // bank account
+
+    $order = PurchaseOrder::create([
+        'operating_unit_id' => $this->unit->id,
+        'supplier_id' => $this->supplier->id,
+        'currency' => 'USD',
+        'negotiated_price' => 100,
+        'quantity' => 10,
+        'booked_fx_rate' => 5.0,
+        'status' => PurchaseOrderStatus::Draft,
+    ]);
+    $this->stateService->transitionToPendingPayment($order);
+    // amount_requested is FC = 1000 USD. fx_rate_used 5.0 → settled 5000 LYD = booked 5000 LYD → no variance.
+    $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
+
+    $order->refresh();
+    ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/transition", [
+        'action' => 'execute_payment',
+        'fx_rate_used' => 5.0,
+        'payment_source_account_id' => $source->id,
+    ])->assertStatus(200);
+
+    $order->refresh();
+    expect($order->payment_source_account_id)->toBe($source->id)
+        ->and($order->status)->toBe(PurchaseOrderStatus::Paid);
+
+    $entry = JournalEntry::where('source_document_type', 'PaymentRequest')
+        ->latest()->first();
+    expect($entry)->not->toBeNull();
+
+    $credit = $entry->lines()->with('account')->get()
+        ->firstWhere(fn ($l) => (float) $l->credit > 0);
+    expect($credit->account_id)->toBe($source->id)
+        ->and($credit->account->account_code)->toBe('1212');
 });
