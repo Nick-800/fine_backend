@@ -123,7 +123,7 @@ class ChartOfAccountsSeeder extends Seeder
             ['40502', 'مردودات مشتريات — مقص فاين', 'expense', '405'],
             ['406', 'مصاريف الشراء والنقل', 'expense', '5'],
 
-            ['6', 'المصاريف التشغيلية والإدارية', 'expense', '5'],
+            ['6', 'المصاريف التشغيلية والإدارية', 'expense', null],
             ['601', 'مرتبات ومكافآت', 'expense', '6'],
             ['60101', 'مرتبات ومكافآت — مصنع الإسفنج', 'expense', '601'],
             ['60102', 'مرتبات ومكافآت — مقص فاين', 'expense', '601'],
@@ -163,7 +163,7 @@ class ChartOfAccountsSeeder extends Seeder
             ['62202', 'صيانة وتشغيل — مقص فاين', 'expense', '622'],
             ['624', 'دعاية وإعلان وتسويق', 'expense', '6'],
 
-            ['7', 'العمليات الصناعية', 'expense', '5'],
+            ['7', 'العمليات الصناعية', 'expense', null],
             ['701', 'العمليات الصناعية — مصنع الإسفنج', 'expense', '7'],
             ['702', 'العمليات الصناعية — مقص فاين', 'expense', '7'],
         ];
@@ -212,11 +212,13 @@ class ChartOfAccountsSeeder extends Seeder
 
         // Final pass: ensure all parent references are linked properly
         foreach ($catalog as [$code, $name, $type, $parentCode]) {
-            if ($parentCode !== null && isset($created[$parentCode])) {
-                $account = $created[$code];
-                if ($account->parent_account_id !== $created[$parentCode]->id) {
-                    $account->update(['parent_account_id' => $created[$parentCode]->id]);
-                }
+            $expectedParentId = $parentCode !== null && isset($created[$parentCode])
+                ? $created[$parentCode]->id
+                : null;
+
+            $account = $created[$code];
+            if ($account->parent_account_id !== $expectedParentId) {
+                $account->update(['parent_account_id' => $expectedParentId]);
             }
         }
 
