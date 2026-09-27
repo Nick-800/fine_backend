@@ -311,8 +311,8 @@ test('acquiring an asset with coa_action=none posts to the universal 14 account 
 
 test('acquiring an asset with coa_action=link_existing uses the linked account', function () {
     // Provision a fresh sub-account under "14" (الأصول الثابتة) to link against.
-    $parent = \App\Models\Account::where('account_code', '14')->firstOrFail();
-    $subAccount = \App\Models\Account::create([
+    $parent = Account::where('account_code', '14')->firstOrFail();
+    $subAccount = Account::create([
         'chart_of_accounts_id' => $parent->chart_of_accounts_id,
         'account_code' => '14001',
         'name' => 'رافعة شوكية - فرع طرابلس',

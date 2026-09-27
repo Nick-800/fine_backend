@@ -168,6 +168,36 @@ class ChartOfAccountsSeeder extends Seeder
             ['702', 'العمليات الصناعية — مقص فاين', 'expense', '7'],
         ];
 
+        $catalogByCode = [];
+        foreach ($catalog as $row) {
+            $catalogByCode[(string) $row[0]] = $row;
+        }
+
+        $jsonPath = database_path('data/chart_of_accounts.json');
+        if (file_exists($jsonPath)) {
+            $raw = json_decode((string) file_get_contents($jsonPath), true);
+            if (is_array($raw) && ! empty($raw)) {
+                foreach ($raw as $item) {
+                    $code = (string) ($item['account_code'] ?? $item[0]);
+                    $name = (string) ($item['name'] ?? $item[1]);
+                    $type = (string) ($item['type'] ?? $item[2]);
+                    $parentCode = isset($item['parent_code'])
+                        ? ($item['parent_code'] !== null ? (string) $item['parent_code'] : null)
+                        : ($item[3] ?? null);
+                    $currency = (string) ($item['currency'] ?? $item[4] ?? $company->default_currency ?? 'LYD');
+
+                    // Ensure accounts 6 and 7 remain parentless root accounts
+                    if (in_array($code, ['6', '7'], true)) {
+                        $parentCode = null;
+                    }
+
+                    $catalogByCode[$code] = [$code, $name, $type, $parentCode, $currency];
+                }
+            }
+        }
+
+        $catalog = array_values($catalogByCode);
+
         $targetCodes = array_column($catalog, 0);
 
         // Remove any legacy unlisted sub-accounts that have zero journal lines
@@ -189,7 +219,13 @@ class ChartOfAccountsSeeder extends Seeder
             $created[$acc->account_code] = $acc;
         }
 
-        foreach ($catalog as [$code, $name, $type, $parentCode]) {
+        foreach ($catalog as $row) {
+            $code = $row[0];
+            $name = $row[1];
+            $type = $row[2];
+            $parentCode = $row[3] ?? null;
+            $currency = $row[4] ?? $company->default_currency ?? 'LYD';
+
             $parentId = $parentCode !== null && isset($created[$parentCode])
                 ? $created[$parentCode]->id
                 : null;
@@ -202,7 +238,7 @@ class ChartOfAccountsSeeder extends Seeder
                 [
                     'name' => $name,
                     'type' => $type,
-                    'currency' => $company->default_currency ?? 'LYD',
+                    'currency' => $currency,
                     'parent_account_id' => $parentId,
                 ],
             );
@@ -211,7 +247,10 @@ class ChartOfAccountsSeeder extends Seeder
         }
 
         // Final pass: ensure all parent references are linked properly
-        foreach ($catalog as [$code, $name, $type, $parentCode]) {
+        foreach ($catalog as $row) {
+            $code = $row[0];
+            $parentCode = $row[3] ?? null;
+
             $expectedParentId = $parentCode !== null && isset($created[$parentCode])
                 ? $created[$parentCode]->id
                 : null;
