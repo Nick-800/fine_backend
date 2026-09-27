@@ -14,9 +14,15 @@ final class CashAccount extends Model
 {
     use BelongsToOperatingUnit, HasFactory, HasUuids;
 
+    public const KIND_CASH = 'cash';
+
+    public const KIND_BANK = 'bank';
+
     protected $fillable = [
         'operating_unit_id',
         'name',
+        'kind',
+        'account_id',
         'currency',
         'balance',
     ];
@@ -25,8 +31,20 @@ final class CashAccount extends Model
         'balance' => 'decimal:4',
     ];
 
+    protected $attributes = [
+        'kind' => self::KIND_CASH,
+    ];
+
     public function operatingUnit(): BelongsTo
     {
         return $this->belongsTo(OperatingUnit::class);
+    }
+
+    /**
+     * The ledger account money received into this treasury is debited to.
+     */
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(Account::class);
     }
 }

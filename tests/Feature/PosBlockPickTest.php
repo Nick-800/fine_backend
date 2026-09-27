@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Models\Account;
+use App\Models\CashAccount;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Entity;
@@ -62,8 +64,21 @@ beforeEach(function () {
         'name' => 'Foam Block Standard', 'code' => 'FB-STD', 'item_type' => 'foam_block', 'unit_of_measure' => 'each',
     ]);
 
+    $this->drawer = CashAccount::create([
+        'operating_unit_id' => $this->store->id, 'name' => 'Drawer', 'kind' => 'cash',
+        'account_id' => Account::where('account_code', '121102')->value('id'),
+    ]);
+
     $this->api = fn () => $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->store->id]);
+
+    // A POS cash sale of the given lines to the client.
+    $this->sell = fn (array $lines, array $overrides = []) => ($this->api)()->postJson('/api/v1/sales', array_merge([
+        'client_id' => $this->client->id,
+        'payment_method' => 'cash',
+        'cash_account_id' => $this->drawer->id,
+        'lines' => $lines,
+    ], $overrides));
 
     $this->makeBlock = function (string $lotNumber, float $unitCost = 100, array $overrides = []): StockLot {
         $batch = ProductionBatch::create([
@@ -99,20 +114,12 @@ beforeEach(function () {
 test('POS sells a specific foam block: line stores stock_lot_id and the lot is drawn', function () {
     $lot = ($this->makeBlock)('001-35-191', 100);
 
-    $payload = [
-        'order_number' => 'POS-'.fake()->unique()->numberBetween(1000, 9999),
-        'payment_method' => 'cash',
-        'items' => [[
-            'inventory_item_id' => $this->foamItem->id,
-            'stock_lot_id' => $lot->id,
-            'quantity' => 1,
-            'unit_price' => 250,
-        ]],
-    ];
-
-    $res = ($this->api)()->postJson('/api/v1/pos/sales', $payload)
-        ->assertStatus(201)
-        ->json();
+    $res = ($this->sell)([[
+        'inventory_item_id' => $this->foamItem->id,
+        'stock_lot_id' => $lot->id,
+        'quantity' => 1,
+        'unit_price' => 250,
+    ]])->assertCreated()->json();
 
     $line = SalesOrder::findOrFail($res['id'])->lines()->firstOrFail();
     expect($line->stock_lot_id)->toBe($lot->id);
@@ -134,15 +141,11 @@ test('POS without stock_lot_id falls back to FIFO for foam blocks', function () 
     $lotA = ($this->makeBlock)('001-35-191', 80);
     $lotB = ($this->makeBlock)('002-35-191', 90);
 
-    $res = ($this->api)()->postJson('/api/v1/pos/sales', [
-        'order_number' => 'POS-'.fake()->unique()->numberBetween(1000, 9999),
-        'payment_method' => 'cash',
-        'items' => [[
-            'inventory_item_id' => $this->foamItem->id,
-            'quantity' => 1,
-            'unit_price' => 200,
-        ]],
-    ])->assertStatus(201)->json();
+    $res = ($this->sell)([[
+        'inventory_item_id' => $this->foamItem->id,
+        'quantity' => 1,
+        'unit_price' => 200,
+    ]])->assertStatus(201)->json();
 
     $line = SalesOrder::findOrFail($res['id'])->lines()->firstOrFail();
     expect($line->stock_lot_id)->toBeNull();
@@ -168,16 +171,12 @@ test('POS rejects stock_lot_id from a different operating unit', function () {
         'status' => 'available',
     ]);
 
-    ($this->api)()->postJson('/api/v1/pos/sales', [
-        'order_number' => 'POS-'.fake()->unique()->numberBetween(1000, 9999),
-        'payment_method' => 'cash',
-        'items' => [[
-            'inventory_item_id' => $this->foamItem->id,
-            'stock_lot_id' => $foreignLot->id,
-            'quantity' => 1,
-            'unit_price' => 200,
-        ]],
-    ])->assertStatus(422)
+    ($this->sell)([[
+        'inventory_item_id' => $this->foamItem->id,
+        'stock_lot_id' => $foreignLot->id,
+        'quantity' => 1,
+        'unit_price' => 200,
+    ]])->assertStatus(422)
         ->assertJsonPath('message', fn ($msg) => str_contains((string) $msg, 'not in this operating unit'));
 });
 
@@ -195,16 +194,12 @@ test('POS rejects a stock_lot_id whose inventory_item_id does not match the line
         'status' => 'available',
     ]);
 
-    ($this->api)()->postJson('/api/v1/pos/sales', [
-        'order_number' => 'POS-'.fake()->unique()->numberBetween(1000, 9999),
-        'payment_method' => 'cash',
-        'items' => [[
-            'inventory_item_id' => $this->foamItem->id,
-            'stock_lot_id' => $wrongLot->id,
-            'quantity' => 1,
-            'unit_price' => 200,
-        ]],
-    ])->assertStatus(422)
+    ($this->sell)([[
+        'inventory_item_id' => $this->foamItem->id,
+        'stock_lot_id' => $wrongLot->id,
+        'quantity' => 1,
+        'unit_price' => 200,
+    ]])->assertStatus(422)
         ->assertJsonPath('message', fn ($msg) => str_contains((string) $msg, 'does not carry the inventory item'));
 });
 
@@ -212,16 +207,12 @@ test('POS rejects a stock_lot_id for an already-consumed block', function () {
     $lot = ($this->makeBlock)('004-35-191', 100);
     $lot->update(['status' => 'consumed', 'quantity' => 0]);
 
-    ($this->api)()->postJson('/api/v1/pos/sales', [
-        'order_number' => 'POS-'.fake()->unique()->numberBetween(1000, 9999),
-        'payment_method' => 'cash',
-        'items' => [[
-            'inventory_item_id' => $this->foamItem->id,
-            'stock_lot_id' => $lot->id,
-            'quantity' => 1,
-            'unit_price' => 200,
-        ]],
-    ])->assertStatus(422)
+    ($this->sell)([[
+        'inventory_item_id' => $this->foamItem->id,
+        'stock_lot_id' => $lot->id,
+        'quantity' => 1,
+        'unit_price' => 200,
+    ]])->assertStatus(422)
         ->assertJsonPath('message', fn ($msg) => str_contains((string) $msg, 'not available'));
 });
 
@@ -251,21 +242,17 @@ test('available-foam-blocks lists only status=available, uncut, foam-block lots,
     expect($volumes)->toBe($sorted);
 });
 
-test('POS show endpoint includes the picked lot_number on the line', function () {
+test('the sale detail includes the picked lot_number on the line', function () {
     $lot = ($this->makeBlock)('009-35-191', 100);
 
-    $res = ($this->api)()->postJson('/api/v1/pos/sales', [
-        'order_number' => 'POS-'.fake()->unique()->numberBetween(1000, 9999),
-        'payment_method' => 'cash',
-        'items' => [[
-            'inventory_item_id' => $this->foamItem->id,
-            'stock_lot_id' => $lot->id,
-            'quantity' => 1,
-            'unit_price' => 200,
-        ]],
-    ])->assertStatus(201)->json();
+    $res = ($this->sell)([[
+        'inventory_item_id' => $this->foamItem->id,
+        'stock_lot_id' => $lot->id,
+        'quantity' => 1,
+        'unit_price' => 200,
+    ]])->assertStatus(201)->json();
 
-    $show = ($this->api)()->getJson("/api/v1/pos/sales/{$res['id']}")
+    $show = ($this->api)()->getJson("/api/v1/sales/{$res['id']}")
         ->assertStatus(200)
         ->json();
 
@@ -274,23 +261,15 @@ test('POS show endpoint includes the picked lot_number on the line', function ()
     expect($line['stock_lot']['lot_number'])->toBe('009-35-191');
 });
 
-test('standard sales order can also pick a specific block', function () {
+test('a receivable sale can also pick a specific block and the invoice names the lot', function () {
     $lot = ($this->makeBlock)('010-35-191', 100);
 
-    $res = ($this->api)()->postJson('/api/v1/sales-orders', [
-        'order_number' => 'SO-'.fake()->unique()->numberBetween(1000, 9999),
-        'buyer_type' => 'client',
-        'client_id' => $this->client->id,
-        'lines' => [[
-            'inventory_item_id' => $this->foamItem->id,
-            'stock_lot_id' => $lot->id,
-            'quantity' => 1,
-            'unit_price' => 250,
-        ]],
-    ])->assertStatus(201)->json();
-
-    ($this->api)()->postJson("/api/v1/sales-orders/{$res['id']}/submit")->assertStatus(200);
-    ($this->api)()->postJson("/api/v1/sales-orders/{$res['id']}/fulfill")->assertStatus(200);
+    $res = ($this->sell)([[
+        'inventory_item_id' => $this->foamItem->id,
+        'stock_lot_id' => $lot->id,
+        'quantity' => 1,
+        'unit_price' => 250,
+    ]], ['payment_method' => 'receivable', 'cash_account_id' => null])->assertCreated()->json();
 
     $line = SalesOrder::findOrFail($res['id'])->lines()->firstOrFail();
     expect($line->stock_lot_id)->toBe($lot->id);
@@ -299,8 +278,8 @@ test('standard sales order can also pick a specific block', function () {
     $lot->refresh();
     expect($lot->status)->toBe('consumed');
 
-    $invoice = ($this->api)()->getJson("/api/v1/sales-orders/{$res['id']}/invoice")
-        ->assertStatus(200)
+    $invoice = ($this->api)()->getJson("/api/v1/sales/{$res['id']}/invoice")
+        ->assertSuccessful()
         ->json();
     $invLine = collect($invoice['lines'])->firstWhere('lot_number', '010-35-191');
     expect($invLine)->not->toBeNull();

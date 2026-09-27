@@ -42,8 +42,8 @@ final class BundleController extends Controller
                 'description' => $validated['description'] ?? null,
             ]);
 
-            foreach ($validated['items'] as $item) {
-                $bundle->items()->create($item);
+            foreach (array_values($validated['items']) as $position => $item) {
+                $bundle->items()->create([...$item, 'position' => $position]);
             }
 
             return $bundle;
@@ -71,8 +71,8 @@ final class BundleController extends Controller
             // Sync bundle_items by full replacement — same pattern as
             // PurchaseOrderController::update for purchase_order_items.
             $bundle->items()->delete();
-            foreach ($validated['items'] as $item) {
-                $bundle->items()->create($item);
+            foreach (array_values($validated['items']) as $position => $item) {
+                $bundle->items()->create([...$item, 'position' => $position]);
             }
         });
 
@@ -87,18 +87,28 @@ final class BundleController extends Controller
         return response()->json(['message' => 'Bundle deleted successfully.']);
     }
 
-    /** @return array{name?: string, description?: ?string, items: array<int, array{inventory_item_id: string, suggested_quantity: ?float}>} */
+    /** @return array{name?: string, description?: ?string, items: array<int, array{inventory_item_id: string, suggested_quantity: ?float, length_m?: ?float, width_m?: ?float, height_m?: ?float}>} */
     private function validateBundle(Request $request, bool $sometimes = false): array
     {
         $nameRule = $sometimes ? ['sometimes', 'string', 'max:255'] : ['required', 'string', 'max:255'];
 
-        return $request->validate([
+        $validated = $request->validate([
             'name' => $nameRule,
             'description' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
             'items.*.suggested_quantity' => ['nullable', 'numeric', 'gt:0'],
+            // Default size of this row — the same item may repeat in other sizes.
+            'items.*.length_m' => ['nullable', 'numeric', 'gt:0'],
+            'items.*.width_m' => ['nullable', 'numeric', 'gt:0'],
+            'items.*.height_m' => ['nullable', 'numeric', 'gt:0'],
         ]);
+
+        // Rows are stored in the order given; validate() may rebuild wildcard
+        // arrays out of key order.
+        ksort($validated['items']);
+
+        return $validated;
     }
 
     /**
@@ -117,6 +127,8 @@ final class BundleController extends Controller
             ->join('sales_orders', 'sales_orders.id', '=', 'sales_order_lines.sales_order_id')
             ->join('bundles', 'bundles.id', '=', 'sales_order_lines.bundle_id')
             ->whereNotNull('sales_order_lines.bundle_id')
+            // Only sales that happened — not ones waiting on, or refused, credit.
+            ->whereNotIn('sales_orders.status', ['pending_approval', 'rejected', 'draft'])
             ->selectRaw('sales_order_lines.bundle_id as bundle_id')
             ->selectRaw('bundles.name as bundle_name')
             ->selectRaw('COUNT(DISTINCT sales_order_lines.sales_order_id) as orders_count')
