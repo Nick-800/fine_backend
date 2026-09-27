@@ -105,27 +105,12 @@ final class ReferenceLookupSeeder extends Seeder
                 ['code' => 'DED-LATE', 'name' => 'خصم تأخير', 'fields' => ['calculation' => 'fixed', 'value' => '0']],
                 ['code' => 'DED-PEN', 'name' => 'جزاء إداري', 'fields' => ['calculation' => 'fixed', 'value' => '0'], 'is_active' => false],
             ],
-            'warehouses' => [
-                ['code' => 'WH-RAW-FOAM', 'name' => 'مخزن المواد الخام - الفوم', 'fields' => ['type' => 'raw_materials', 'location' => 'مصنع الفوم - طبرق'], 'notes' => 'كيماويات ومواد أولية لخط الإنتاج'],
-                ['code' => 'WH-FG-FOAM', 'name' => 'مخزن المنتج التام - قوالب الفوم', 'fields' => ['type' => 'finished_goods', 'location' => 'مصنع الفوم - طبرق']],
-                ['code' => 'WH-CUT', 'name' => 'مخزن قطع التقطيع', 'fields' => ['type' => 'finished_goods', 'location' => 'خط التقطيع - طبرق']],
-                ['code' => 'WH-FURN', 'name' => 'مخزن الأثاث تام الصنع', 'fields' => ['type' => 'finished_goods', 'location' => 'مصنع التجميع - طبرق']],
-                ['code' => 'WH-SPARE', 'name' => 'مخزن قطع الغيار والمستلزمات', 'fields' => ['type' => 'spare_parts', 'location' => 'المستودع المركزي - طبرق']],
-                ['code' => 'WH-SHOW', 'name' => 'مخزن المعرض', 'fields' => ['type' => 'general', 'location' => 'المعرض - طبرق']],
-                ['code' => 'WH-OLD', 'name' => 'المخزن القديم', 'fields' => ['type' => 'general', 'location' => '—'], 'is_active' => false, 'notes' => 'أُوقف بعد افتتاح المستودع المركزي'],
-            ],
+            // Warehouses and their sub-locations are real `warehouses` rows
+            // (self-referencing parent_id) now, not reference-lookup seed data.
             'location-types' => [
                 ['code' => 'SHELF', 'name' => 'رف'],
                 ['code' => 'FLOOR', 'name' => 'منطقة أرضية'],
                 ['code' => 'CONTAINER', 'name' => 'حاوية/برميل'],
-            ],
-            'storage-locations' => [
-                ['code' => 'WH-RAW-FOAM-A1', 'name' => 'الرف A1', 'fields' => ['warehouse' => 'WH-RAW-FOAM', 'zoneType' => 'SHELF']],
-                ['code' => 'WH-RAW-FOAM-A2', 'name' => 'الرف A2', 'fields' => ['warehouse' => 'WH-RAW-FOAM', 'zoneType' => 'SHELF']],
-                ['code' => 'WH-FG-FOAM-F1', 'name' => 'المنطقة الأرضية 1', 'fields' => ['warehouse' => 'WH-FG-FOAM', 'zoneType' => 'FLOOR']],
-                ['code' => 'WH-CUT-B1', 'name' => 'الرف B1', 'fields' => ['warehouse' => 'WH-CUT', 'zoneType' => 'SHELF']],
-                ['code' => 'WH-FURN-F1', 'name' => 'المنطقة الأرضية 1', 'fields' => ['warehouse' => 'WH-FURN', 'zoneType' => 'FLOOR']],
-                ['code' => 'WH-SPARE-C1', 'name' => 'حاوية C1', 'fields' => ['warehouse' => 'WH-SPARE', 'zoneType' => 'CONTAINER']],
             ],
         ];
 

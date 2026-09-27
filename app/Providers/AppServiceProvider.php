@@ -14,6 +14,7 @@ use App\Models\Role;
 use App\Models\StockLot;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Models\WarehouseTransfer;
 use App\Observers\AuditObserver;
 use App\Support\CurrentUnitContext;
 use Illuminate\Support\ServiceProvider;
@@ -65,6 +66,7 @@ class AppServiceProvider extends ServiceProvider
         ItemCategory::observe(AuditObserver::class);
         Bundle::observe(AuditObserver::class);
         StockLot::observe(AuditObserver::class);
+        WarehouseTransfer::observe(AuditObserver::class);
         ProductionBatch::observe(AuditObserver::class);
 
         // Phase 08: overhead and fixed assets carry money — every change is

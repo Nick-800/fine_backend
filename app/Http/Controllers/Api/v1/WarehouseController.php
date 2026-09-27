@@ -24,7 +24,9 @@ class WarehouseController extends Controller
      */
     public function index(): JsonResponse
     {
-        return response()->json(Warehouse::orderBy('name')->get());
+        return response()->json(
+            Warehouse::whereNull('parent_id')->with('children')->orderBy('name')->get()
+        );
     }
 
     /**
@@ -69,9 +71,27 @@ class WarehouseController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'operating_unit_id' => ['nullable', 'uuid', 'exists:operating_units,id'],
             'is_internal_unit' => ['nullable', 'boolean'],
+            'parent_id' => ['nullable', 'uuid', 'exists:warehouses,id'],
+            'location_type' => ['nullable', 'string', 'max:32'],
         ]);
 
-        $unitId = $validated['operating_unit_id'] ?? $this->unitContext->getUnitId();
+        $parent = null;
+        if (! empty($validated['parent_id'])) {
+            $parent = Warehouse::withoutGlobalScopes()->findOrFail($validated['parent_id']);
+
+            if ($parent->parent_id !== null) {
+                return response()->json([
+                    'message' => 'A sub-warehouse cannot itself have sub-warehouses.',
+                    'code' => 'NESTED_SUB_WAREHOUSE_NOT_ALLOWED',
+                ], 422);
+            }
+        }
+
+        // A sub-warehouse always inherits its parent's unit — it is never
+        // independently assigned one.
+        $unitId = $parent?->operating_unit_id
+            ?? $validated['operating_unit_id']
+            ?? $this->unitContext->getUnitId();
 
         if ($unitId === null) {
             return response()->json([
@@ -82,8 +102,10 @@ class WarehouseController extends Controller
 
         $warehouse = Warehouse::create([
             'operating_unit_id' => $unitId,
+            'parent_id' => $parent?->id,
             'name' => $validated['name'],
             'is_internal_unit' => $validated['is_internal_unit'] ?? false,
+            'location_type' => $validated['location_type'] ?? null,
         ]);
 
         return response()->json($warehouse, 201);
@@ -94,6 +116,56 @@ class WarehouseController extends Controller
         return response()->json(Warehouse::withoutGlobalScopes()->with('operatingUnit')->findOrFail($id));
     }
 
+    /**
+     * What's currently in this warehouse, grouped by item, with a weighted
+     * average unit cost across its available lots.
+     */
+    public function stockSummary(string $id): JsonResponse
+    {
+        $warehouse = Warehouse::findOrFail($id);
+
+        $rows = StockLot::query()
+            ->join('inventory_items', 'inventory_items.id', '=', 'stock_lots.inventory_item_id')
+            ->where('stock_lots.warehouse_id', $warehouse->id)
+            ->where('stock_lots.status', 'available')
+            ->groupBy(
+                'stock_lots.inventory_item_id',
+                'inventory_items.name',
+                'inventory_items.code',
+                'inventory_items.unit_of_measure',
+            )
+            ->selectRaw('stock_lots.inventory_item_id as inventory_item_id')
+            ->selectRaw('inventory_items.name as item_name')
+            ->selectRaw('inventory_items.code as item_code')
+            ->selectRaw('inventory_items.unit_of_measure as uom')
+            ->selectRaw('SUM(stock_lots.quantity) as total_quantity')
+            ->selectRaw('SUM(stock_lots.quantity * stock_lots.unit_cost) as total_value')
+            ->selectRaw('COUNT(*) as lots_count')
+            ->orderBy('inventory_items.name')
+            ->get()
+            ->map(function ($row): array {
+                $totalQuantity = (float) $row->total_quantity;
+                $totalValue = round((float) $row->total_value, 4);
+
+                return [
+                    'inventory_item_id' => $row->inventory_item_id,
+                    'item_name' => $row->item_name,
+                    'item_code' => $row->item_code,
+                    'uom' => $row->uom,
+                    'total_quantity' => $totalQuantity,
+                    'avg_unit_cost' => $totalQuantity > 0 ? round($totalValue / $totalQuantity, 4) : 0.0,
+                    'total_value' => $totalValue,
+                    'lots_count' => (int) $row->lots_count,
+                ];
+            });
+
+        return response()->json([
+            'warehouse' => ['id' => $warehouse->id, 'name' => $warehouse->name],
+            'rows' => $rows,
+            'total_value' => round((float) $rows->sum('total_value'), 4),
+        ]);
+    }
+
     public function update(Request $request, string $id): JsonResponse
     {
         $warehouse = Warehouse::withoutGlobalScopes()->findOrFail($id);
@@ -101,6 +173,7 @@ class WarehouseController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'is_internal_unit' => ['nullable', 'boolean'],
+            'location_type' => ['sometimes', 'nullable', 'string', 'max:32'],
         ]);
 
         $warehouse->update($validated);
@@ -112,6 +185,14 @@ class WarehouseController extends Controller
     {
         $warehouse = Warehouse::withoutGlobalScopes()->findOrFail($id);
 
+        // Sub-warehouses must be removed before their parent.
+        if ($warehouse->children()->exists()) {
+            return response()->json([
+                'message' => 'Delete this warehouse\'s sub-warehouses first.',
+                'code' => 'WAREHOUSE_HAS_CHILDREN',
+            ], 422);
+        }
+
         // Stock lots are located by warehouse; removing one out from under live
         // stock would orphan it.
         if (StockLot::where('warehouse_id', $warehouse->id)->exists()) {
@@ -121,16 +202,21 @@ class WarehouseController extends Controller
             ], 422);
         }
 
-        // An operating unit must retain at least one warehouse for operational workflows.
-        $totalWarehouses = Warehouse::withoutGlobalScopes()
-            ->where('operating_unit_id', $warehouse->operating_unit_id)
-            ->count();
+        // An operating unit must retain at least one top-level warehouse for
+        // operational workflows — sub-warehouses don't count toward this, and
+        // deleting one never trips this guard.
+        if ($warehouse->parent_id === null) {
+            $totalWarehouses = Warehouse::withoutGlobalScopes()
+                ->where('operating_unit_id', $warehouse->operating_unit_id)
+                ->whereNull('parent_id')
+                ->count();
 
-        if ($totalWarehouses <= 1) {
-            return response()->json([
-                'message' => 'Cannot delete the only warehouse of an operating unit.',
-                'code' => 'CANNOT_DELETE_LAST_WAREHOUSE',
-            ], 422);
+            if ($totalWarehouses <= 1) {
+                return response()->json([
+                    'message' => 'Cannot delete the only warehouse of an operating unit.',
+                    'code' => 'CANNOT_DELETE_LAST_WAREHOUSE',
+                ], 422);
+            }
         }
 
         $warehouse->delete();

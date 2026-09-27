@@ -128,7 +128,7 @@ class StockLotController extends Controller
         $stockLot = StockLot::findOrFail($id);
 
         $validated = $request->validate([
-            'warehouse_id' => ['sometimes', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
+            'warehouse_id' => ['prohibited'],
             'quantity' => ['prohibited'],
             'unit_cost' => ['prohibited'],
             'container_quantity' => ['nullable', 'numeric', 'min:0'],
@@ -143,6 +143,7 @@ class StockLotController extends Controller
             'attribute_values' => ['nullable', 'array'],
             'record_version' => ['required', 'integer'],
         ], [
+            'warehouse_id.prohibited' => 'Moving a lot to another warehouse must go through the transfer endpoint, so an inventory movement is recorded.',
             'quantity.prohibited' => 'Stock quantity cannot be modified directly via update; use inventory movements or stock adjustments.',
             'unit_cost.prohibited' => 'Stock unit cost cannot be modified directly via update.',
         ]);

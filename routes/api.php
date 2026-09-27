@@ -56,6 +56,7 @@ use App\Http\Controllers\Api\v1\TankStockController;
 use App\Http\Controllers\Api\v1\UnitBlueprintController;
 use App\Http\Controllers\Api\v1\UserController;
 use App\Http\Controllers\Api\v1\WarehouseController;
+use App\Http\Controllers\Api\v1\WarehouseTransferController;
 use App\Http\Controllers\Api\v1\WorkOrderController;
 use Illuminate\Support\Facades\Route;
 
@@ -331,7 +332,11 @@ Route::prefix('v1')->group(function () {
                 Route::post('/stock-adjustment-requests/{id}/reject', [StockAdjustmentRequestController::class, 'reject']);
                 Route::get('/inventory/valuation', [InventoryValuationController::class, 'index']);
                 Route::get('/inventory/valuation/rollup', [InventoryValuationController::class, 'rollup']);
+                Route::get('/warehouses/{id}/stock-summary', [WarehouseController::class, 'stockSummary']);
                 Route::apiResource('warehouses', WarehouseController::class);
+                Route::apiResource('warehouse-transfers', WarehouseTransferController::class)->except(['destroy']);
+                Route::post('/warehouse-transfers/{id}/complete', [WarehouseTransferController::class, 'complete']);
+                Route::post('/warehouse-transfers/{id}/cancel', [WarehouseTransferController::class, 'cancel']);
                 Route::apiResource('work-orders', WorkOrderController::class);
                 Route::post('/work-orders/{id}/complete', [WorkOrderController::class, 'complete']);
                 Route::get('/inventory-movements', [InventoryMovementController::class, 'index']);

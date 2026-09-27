@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 final class Warehouse extends Model
 {
@@ -17,8 +18,10 @@ final class Warehouse extends Model
 
     protected $fillable = [
         'operating_unit_id',
+        'parent_id',
         'name',
         'is_internal_unit',
+        'location_type',
     ];
 
     protected $casts = [
@@ -28,5 +31,15 @@ final class Warehouse extends Model
     public function operatingUnit(): BelongsTo
     {
         return $this->belongsTo(OperatingUnit::class);
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    public function children(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id');
     }
 }
