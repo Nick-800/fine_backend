@@ -8,12 +8,12 @@ use App\Enums\ClientStatus;
 use App\Enums\EmployeeStatus;
 use App\Enums\EntityRoleType;
 use App\Enums\EntityType;
-use App\Enums\ImportOrderStatus;
 use App\Enums\LandedCostType;
 use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
 use App\Enums\PayType;
 use App\Enums\ProductionBatchStatus;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\Account;
 use App\Models\BankHold;
 use App\Models\CashAccount;
@@ -23,7 +23,6 @@ use App\Models\EntityContact;
 use App\Models\EntityRole;
 use App\Models\FxRate;
 use App\Models\GoodsReceipt;
-use App\Models\ImportOrder;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
 use App\Models\JournalEntry;
@@ -32,6 +31,7 @@ use App\Models\OperatingUnit;
 use App\Models\PaymentRequest;
 use App\Models\Permission;
 use App\Models\ProductionBatch;
+use App\Models\PurchaseOrder;
 use App\Models\Role;
 use App\Models\StockLot;
 use App\Models\Supplier;
@@ -76,7 +76,7 @@ class SystemBootstrapSeeder extends Seeder
         $this->seedInventoryMasterData($units['foam']);
         $this->seedEntityBackedClient($units['procurement']);
         $this->seedEntityBackedEmployee($units['procurement']);
-        $this->seedSuppliersAndImportOrders($units['procurement']);
+        $this->seedSuppliersAndPurchaseOrders($units['procurement']);
         $this->seedStandardUsers($units);
         $this->seedOneFoamBatch($units['foam']);
     }
@@ -394,7 +394,7 @@ class SystemBootstrapSeeder extends Seeder
         }
     }
 
-    private function seedSuppliersAndImportOrders(OperatingUnit $unit): void
+    private function seedSuppliersAndPurchaseOrders(OperatingUnit $unit): void
     {
         $supplier = Supplier::firstOrCreate(
             ['name' => 'Global Chemical & Polymer Corp'],
@@ -419,21 +419,21 @@ class SystemBootstrapSeeder extends Seeder
         );
 
         // Order 1: in transit with bank hold
-        $order1 = ImportOrder::where('supplier_id', $supplier->id)
+        $order1 = PurchaseOrder::where('supplier_id', $supplier->id)
             ->where('negotiated_price', 125.00)
             ->where('quantity', 1000)
-            ->where('status', ImportOrderStatus::InTransit->value)
+            ->where('status', PurchaseOrderStatus::InTransit->value)
             ->first();
 
         if ($order1 === null) {
-            $order1 = ImportOrder::create([
+            $order1 = PurchaseOrder::create([
                 'id' => (string) Str::uuid(),
                 'operating_unit_id' => $unit->id,
                 'supplier_id' => $supplier->id,
                 'currency' => 'USD',
                 'negotiated_price' => 125.00,
                 'quantity' => 1000,
-                'status' => ImportOrderStatus::InTransit,
+                'status' => PurchaseOrderStatus::InTransit,
             ]);
         }
 
@@ -441,7 +441,7 @@ class SystemBootstrapSeeder extends Seeder
             $paymentReq = PaymentRequest::create([
                 'id' => (string) Str::uuid(),
                 'operating_unit_id' => $unit->id,
-                'import_order_id' => $order1->id,
+                'purchase_order_id' => $order1->id,
                 'route' => PaymentRoute::Bank,
                 'invoice_ref' => 'INV-CHEM-2026-001',
                 'amount_requested' => 125_000,
@@ -471,10 +471,10 @@ class SystemBootstrapSeeder extends Seeder
             }
         }
 
-        if (LandedCostLine::where('import_order_id', $order1->id)->doesntExist()) {
+        if (LandedCostLine::where('purchase_order_id', $order1->id)->doesntExist()) {
             LandedCostLine::create([
                 'id' => (string) Str::uuid(),
-                'import_order_id' => $order1->id,
+                'purchase_order_id' => $order1->id,
                 'type' => LandedCostType::Freight,
                 'amount' => 18_500,
                 'currency' => 'LYD',
@@ -482,7 +482,7 @@ class SystemBootstrapSeeder extends Seeder
             ]);
             LandedCostLine::create([
                 'id' => (string) Str::uuid(),
-                'import_order_id' => $order1->id,
+                'purchase_order_id' => $order1->id,
                 'type' => LandedCostType::Customs,
                 'amount' => 12_000,
                 'currency' => 'LYD',
@@ -491,14 +491,14 @@ class SystemBootstrapSeeder extends Seeder
         }
 
         // Order 2: received at warehouse
-        $order2 = ImportOrder::where('supplier_id', $supplier->id)
+        $order2 = PurchaseOrder::where('supplier_id', $supplier->id)
             ->where('negotiated_price', 85.00)
             ->where('quantity', 500)
-            ->where('status', ImportOrderStatus::Received->value)
+            ->where('status', PurchaseOrderStatus::Received->value)
             ->first();
 
         if ($order2 === null) {
-            $order2 = ImportOrder::create([
+            $order2 = PurchaseOrder::create([
                 'id' => (string) Str::uuid(),
                 'operating_unit_id' => $unit->id,
                 'supplier_id' => $supplier->id,
@@ -506,7 +506,7 @@ class SystemBootstrapSeeder extends Seeder
                 'negotiated_price' => 85.00,
                 'quantity' => 500,
                 'booked_fx_rate' => 5.05,
-                'status' => ImportOrderStatus::Received,
+                'status' => PurchaseOrderStatus::Received,
             ]);
         }
 
@@ -514,7 +514,7 @@ class SystemBootstrapSeeder extends Seeder
             $paymentReq2 = PaymentRequest::create([
                 'id' => (string) Str::uuid(),
                 'operating_unit_id' => $unit->id,
-                'import_order_id' => $order2->id,
+                'purchase_order_id' => $order2->id,
                 'route' => PaymentRoute::Market,
                 'invoice_ref' => 'INV-CHEM-2026-002',
                 'amount_requested' => 42_500,
@@ -542,10 +542,10 @@ class SystemBootstrapSeeder extends Seeder
             'is_internal_unit' => true,
         ]);
 
-        if (! GoodsReceipt::where('import_order_id', $order2->id)->exists()) {
+        if (! GoodsReceipt::where('purchase_order_id', $order2->id)->exists()) {
             GoodsReceipt::create([
                 'id' => (string) Str::uuid(),
-                'import_order_id' => $order2->id,
+                'purchase_order_id' => $order2->id,
                 'warehouse_id' => $warehouse->id,
                 'received_qty' => 500,
                 'condition_notes' => 'Received 500 chemical drums sealed in top grade quality.',

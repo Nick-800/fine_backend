@@ -7,9 +7,9 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\v1\MaterialRequestResource;
 use App\Models\CutterWorkOrder;
-use App\Models\ImportOrder;
 use App\Models\MaterialRequest;
 use App\Models\ProductionBatch;
+use App\Models\PurchaseOrder;
 use App\Services\MaterialResolutionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -65,7 +65,7 @@ final class MaterialRequestController extends Controller
         $modelClass = match ($validated['fulfilled_by_type']) {
             'cutter_work_order' => CutterWorkOrder::class,
             'production_batch' => ProductionBatch::class,
-            'procurement_request' => ImportOrder::class,
+            'procurement_request' => PurchaseOrder::class,
             default => throw new InvalidArgumentException('Unknown fulfilled_by_type'),
         };
 

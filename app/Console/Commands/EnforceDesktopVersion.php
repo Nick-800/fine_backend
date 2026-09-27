@@ -35,6 +35,7 @@ final class EnforceDesktopVersion extends Command
             Cache::forget('app:min_desktop_version');
             Cache::forget('app:latest_desktop_version');
             $this->info('Runtime enforced desktop version cleared. Defaulting to configuration.');
+
             return self::SUCCESS;
         }
 
@@ -50,6 +51,7 @@ final class EnforceDesktopVersion extends Command
                     ['Auto-enforce Latest Build', config('app.auto_enforce_latest_build') ? 'true' : 'false'],
                 ]
             );
+
             return self::SUCCESS;
         }
 

@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use App\Models\Company;
-use App\Models\ImportOrder;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
 use App\Models\JournalEntry;
 use App\Models\OperatingUnit;
+use App\Models\PurchaseOrder;
 use App\Models\Role;
 use App\Models\StockLot;
 use App\Models\Supplier;
@@ -98,22 +98,22 @@ test('an import receipt materialises lots without double-posting the ledger', fu
     $supplier = Supplier::create([
         'operating_unit_id' => $this->unit->id, 'name' => 'Chem Co', 'default_currency' => 'USD',
     ]);
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id, 'supplier_id' => $supplier->id,
         'currency' => 'USD', 'negotiated_price' => 100, 'quantity' => 50, 'status' => 'received',
     ]);
 
     $response = ($this->intake)([
         'source' => 'import_receipt',
-        'import_order_id' => $order->id,
+        'purchase_order_id' => $order->id,
     ])->assertStatus(201);
 
     // The movement carries the trail back to the order…
     $movement = InventoryMovement::where('stock_lot_id', $response->json('id'))->sole();
-    expect($movement->reference_document_type)->toBe('ImportOrder')
+    expect($movement->reference_document_type)->toBe('PurchaseOrder')
         ->and($movement->reference_id)->toBe($order->id);
 
-    // …but no journal: ImportOrder.Complete posts the landed value.
+    // …but no journal: PurchaseOrder.Complete posts the landed value.
     expect(JournalEntry::where('source_document_type', 'StockLot')->count())->toBe(0);
 });
 

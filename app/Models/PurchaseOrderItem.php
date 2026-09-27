@@ -10,14 +10,17 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-final class ImportOrderItem extends Model
+final class PurchaseOrderItem extends Model
 {
     use Auditable, HasFactory, HasUuids;
 
+    protected $table = 'purchase_order_items';
+
     protected $fillable = [
-        'import_order_id',
+        'purchase_order_id',
         'inventory_item_id',
         'quantity',
+        'received_quantity',
         'unit_price',
         'currency',
         'record_version',
@@ -25,13 +28,14 @@ final class ImportOrderItem extends Model
 
     protected $casts = [
         'quantity' => 'decimal:4',
+        'received_quantity' => 'decimal:4',
         'unit_price' => 'decimal:4',
         'record_version' => 'integer',
     ];
 
-    public function importOrder(): BelongsTo
+    public function purchaseOrder(): BelongsTo
     {
-        return $this->belongsTo(ImportOrder::class);
+        return $this->belongsTo(PurchaseOrder::class);
     }
 
     public function inventoryItem(): BelongsTo

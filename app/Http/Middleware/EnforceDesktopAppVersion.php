@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Models\AppVersion;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -24,7 +25,7 @@ final class EnforceDesktopAppVersion
         $minVersion = (string) (Cache::get('app:min_desktop_version') ?? config('app.min_desktop_version') ?? '');
 
         if ($minVersion === '' && config('app.auto_enforce_latest_build')) {
-            $latestDb = \App\Models\AppVersion::latest()->value('desktop_version');
+            $latestDb = AppVersion::latest()->value('desktop_version');
             if ($latestDb) {
                 $minVersion = (string) $latestDb;
                 Cache::forever('app:min_desktop_version', $minVersion);

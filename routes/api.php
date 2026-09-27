@@ -22,7 +22,6 @@ use App\Http\Controllers\Api\v1\FinancialReportController;
 use App\Http\Controllers\Api\v1\FixedAssetController;
 use App\Http\Controllers\Api\v1\FxRateController;
 use App\Http\Controllers\Api\v1\GoodsReceiptController;
-use App\Http\Controllers\Api\v1\ImportOrderController;
 use App\Http\Controllers\Api\v1\InternalRestockController;
 use App\Http\Controllers\Api\v1\InventoryAttributeController;
 use App\Http\Controllers\Api\v1\InventoryItemController;
@@ -45,6 +44,7 @@ use App\Http\Controllers\Api\v1\PosController;
 use App\Http\Controllers\Api\v1\ProductController;
 use App\Http\Controllers\Api\v1\ProductionBatchController;
 use App\Http\Controllers\Api\v1\ProductionOrderController;
+use App\Http\Controllers\Api\v1\PurchaseOrderController;
 use App\Http\Controllers\Api\v1\ReferenceLookupController;
 use App\Http\Controllers\Api\v1\RoleController;
 use App\Http\Controllers\Api\v1\SalesOrderController;
@@ -137,8 +137,8 @@ Route::prefix('v1')->group(function () {
             // Allocation & landed cost approvals are guarded at the domain level by AllocationPaymentService (asserts manager of unit)
             Route::post('/overhead-allocations/{id}/approve', [OverheadAllocationController::class, 'approve']);
             Route::post('/overhead-allocations/{id}/mark-paid', [OverheadAllocationController::class, 'markPaid']);
-            Route::post('/import-orders/{id}/landed-cost-lines/{lineId}/approve', [LandedCostLineController::class, 'approve']);
-            Route::post('/import-orders/{id}/landed-cost-lines/{lineId}/mark-paid', [LandedCostLineController::class, 'markPaid']);
+            Route::post('/purchase-orders/{id}/landed-cost-lines/{lineId}/approve', [LandedCostLineController::class, 'approve']);
+            Route::post('/purchase-orders/{id}/landed-cost-lines/{lineId}/mark-paid', [LandedCostLineController::class, 'markPaid']);
 
             // Manual journal posting is guarded inside JournalEntryController (returns MANUAL_JOURNAL_FORBIDDEN)
             Route::post('/journal-entries', [JournalEntryController::class, 'store']);
@@ -168,11 +168,11 @@ Route::prefix('v1')->group(function () {
             // Treasury & Payables
             Route::middleware('require.role:owner,treasury-officer,accounting-manager,procurement-manager,hr-manager,inventory-manager,foam-manager,cutter-manager,furniture-manager,store-manager,unit_manager,manager')->group(function () {
                 Route::get('/payment-requests', [PaymentRequestController::class, 'all']);
-                Route::get('/import-orders/{id}/payment-requests', [PaymentRequestController::class, 'index']);
-                Route::post('/import-orders/{id}/payment-requests/{requestId}/process', [PaymentRequestController::class, 'process']);
+                Route::get('/purchase-orders/{id}/payment-requests', [PaymentRequestController::class, 'index']);
+                Route::post('/purchase-orders/{id}/payment-requests/{requestId}/process', [PaymentRequestController::class, 'process']);
                 Route::post('/payment-requests/{id}/execute', [PaymentRequestController::class, 'execute']);
                 Route::get('/bank-holds', [BankHoldController::class, 'index']);
-                Route::get('/import-orders/{id}/bank-holds', [BankHoldController::class, 'forOrder']);
+                Route::get('/purchase-orders/{id}/bank-holds', [BankHoldController::class, 'forOrder']);
                 Route::get('/fx-rates', [FxRateController::class, 'index']);
                 Route::post('/fx-rates', [FxRateController::class, 'store']);
                 Route::get('/payable-settlements', [PayableSettlementController::class, 'index']);
@@ -184,11 +184,17 @@ Route::prefix('v1')->group(function () {
             // Procurement
             Route::middleware('require.role:owner,procurement-manager,treasury-officer,accounting-manager,hr-manager,inventory-manager,foam-manager,cutter-manager,furniture-manager,store-manager,unit_manager,manager')->group(function () {
                 Route::apiResource('suppliers', SupplierController::class);
-                Route::apiResource('import-orders', ImportOrderController::class)->only(['index', 'store', 'show', 'update']);
-                Route::post('/import-orders/{id}/transition', [ImportOrderController::class, 'transition']);
-                Route::get('/import-orders/{id}/landed-cost-lines', [LandedCostLineController::class, 'index']);
-                Route::post('/import-orders/{id}/landed-cost-lines', [LandedCostLineController::class, 'store']);
-                Route::get('/import-orders/{id}/goods-receipts', [GoodsReceiptController::class, 'index']);
+                Route::apiResource('purchase-orders', PurchaseOrderController::class)->only(['index', 'store', 'show', 'update']);
+                Route::post('/purchase-orders/{id}/transition', [PurchaseOrderController::class, 'transition']);
+                // Wave 5 (local flow): atomic per-line batch receive and
+                // local-payment endpoints. Available to procurement-manager
+                // because they own the local procurement lifecycle.
+                Route::post('/purchase-orders/{id}/approve', [PurchaseOrderController::class, 'approve']);
+                Route::post('/purchase-orders/{id}/receive', [PurchaseOrderController::class, 'receive']);
+                Route::post('/purchase-orders/{id}/pay-local', [PurchaseOrderController::class, 'payLocal']);
+                Route::get('/purchase-orders/{id}/landed-cost-lines', [LandedCostLineController::class, 'index']);
+                Route::post('/purchase-orders/{id}/landed-cost-lines', [LandedCostLineController::class, 'store']);
+                Route::get('/purchase-orders/{id}/goods-receipts', [GoodsReceiptController::class, 'index']);
             });
 
             // HR & Payroll & Employees

@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-use App\Enums\ImportOrderStatus;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\Company;
-use App\Models\ImportOrder;
-use App\Models\ImportOrderItem;
 use App\Models\InventoryItem;
 use App\Models\OperatingUnit;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\Role;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
-use App\Services\ImportOrderStateService;
+use App\Services\PurchaseOrderStateService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -91,7 +91,7 @@ it('lets an owner create an order with multiple line items', function () {
         ],
     ];
 
-    $response = $this->actingAs($this->owner)->postJson('/api/v1/import-orders', $payload);
+    $response = $this->actingAs($this->owner)->postJson('/api/v1/purchase-orders', $payload);
 
     $response->assertStatus(201);
 
@@ -100,12 +100,12 @@ it('lets an owner create an order with multiple line items', function () {
     expect((float) $body['data']['quantity'])->toBe(1050.0);
     expect((float) $body['data']['negotiated_price'])->toBe(1625.0);
 
-    $this->assertDatabaseCount('import_order_items', 2);
+    $this->assertDatabaseCount('purchase_order_items', 2);
 });
 
 it('returns items in index and show responses', function () {
     $this->actingAs($this->owner)
-        ->postJson('/api/v1/import-orders', [
+        ->postJson('/api/v1/purchase-orders', [
             'operating_unit_id' => $this->unit->id,
             'supplier_id' => $this->supplier->id,
             'currency' => 'USD',
@@ -115,13 +115,13 @@ it('returns items in index and show responses', function () {
         ])
         ->assertStatus(201);
 
-    $list = $this->actingAs($this->owner)->getJson('/api/v1/import-orders')->json();
+    $list = $this->actingAs($this->owner)->getJson('/api/v1/purchase-orders')->json();
     expect($list['data'][0]['items']['data'][0]['inventory_item']['name'])->toBe('Polyol Resin');
     expect((float) $list['data'][0]['items']['data'][0]['line_total'])->toBe(100.0);
 
-    $orderId = ImportOrder::first()->id;
+    $orderId = PurchaseOrder::first()->id;
 
-    $show = $this->actingAs($this->owner)->getJson("/api/v1/import-orders/{$orderId}")->json();
+    $show = $this->actingAs($this->owner)->getJson("/api/v1/purchase-orders/{$orderId}")->json();
     expect((float) $show['data']['items']['data'][0]['quantity'])->toBe(100.0);
     expect((float) $show['data']['items']['data'][0]['unit_price'])->toBe(1.0);
     expect($show['data']['items']['data'][0]['currency'])->toBe('USD');
@@ -129,7 +129,7 @@ it('returns items in index and show responses', function () {
 
 it('rejects a line that references a non-procurement item type', function () {
     $this->actingAs($this->owner)
-        ->postJson('/api/v1/import-orders', [
+        ->postJson('/api/v1/purchase-orders', [
             'operating_unit_id' => $this->unit->id,
             'supplier_id' => $this->supplier->id,
             'currency' => 'USD',
@@ -143,7 +143,7 @@ it('rejects a line that references a non-procurement item type', function () {
 
 it('rejects a line with an unknown inventory item', function () {
     $this->actingAs($this->owner)
-        ->postJson('/api/v1/import-orders', [
+        ->postJson('/api/v1/purchase-orders', [
             'operating_unit_id' => $this->unit->id,
             'supplier_id' => $this->supplier->id,
             'currency' => 'USD',
@@ -157,7 +157,7 @@ it('rejects a line with an unknown inventory item', function () {
 
 it('rejects a line with zero or negative quantity', function () {
     $this->actingAs($this->owner)
-        ->postJson('/api/v1/import-orders', [
+        ->postJson('/api/v1/purchase-orders', [
             'operating_unit_id' => $this->unit->id,
             'supplier_id' => $this->supplier->id,
             'currency' => 'USD',
@@ -175,7 +175,7 @@ it('still allows the legacy header-only order creation for backward compat', fun
     // `required_without:items` so the legacy fields stay mandatory when
     // no items are supplied.
     $response = $this->actingAs($this->owner)
-        ->postJson('/api/v1/import-orders', [
+        ->postJson('/api/v1/purchase-orders', [
             'operating_unit_id' => $this->unit->id,
             'supplier_id' => $this->supplier->id,
             'currency' => 'USD',
@@ -204,17 +204,17 @@ it('calculates total cost correctly for multi-item orders and payment requests',
         ],
     ];
 
-    $response = $this->actingAs($this->owner)->postJson('/api/v1/import-orders', $payload);
+    $response = $this->actingAs($this->owner)->postJson('/api/v1/purchase-orders', $payload);
     $response->assertStatus(201);
 
     $body = $response->json();
     expect((float) $body['data']['total_amount'])->toBe(1625.0);
 
-    $order = ImportOrder::first();
+    $order = PurchaseOrder::first();
     expect($order->totalCost())->toBe(1625.0);
 
     // Transition to pending payment should request exactly totalCost ($1,625), NOT $1,706,250
-    $stateService = app(ImportOrderStateService::class);
+    $stateService = app(PurchaseOrderStateService::class);
     $order = $stateService->transitionToPendingPayment($order);
 
     $paymentRequest = $order->paymentRequests()->first();
@@ -222,17 +222,17 @@ it('calculates total cost correctly for multi-item orders and payment requests',
 });
 
 it('lets an owner update line items of a draft import order', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1500.0,
         'quantity' => 1000.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
 
-    ImportOrderItem::create([
-        'import_order_id' => $order->id,
+    PurchaseOrderItem::create([
+        'purchase_order_id' => $order->id,
         'inventory_item_id' => $this->rawMaterial->id,
         'quantity' => 1000,
         'unit_price' => 1.5,
@@ -246,7 +246,7 @@ it('lets an owner update line items of a draft import order', function () {
         ],
     ];
 
-    $response = $this->actingAs($this->owner)->putJson("/api/v1/import-orders/{$order->id}", $updatePayload);
+    $response = $this->actingAs($this->owner)->putJson("/api/v1/purchase-orders/{$order->id}", $updatePayload);
 
     $response->assertStatus(200);
     $data = $response->json('data');
@@ -257,19 +257,19 @@ it('lets an owner update line items of a draft import order', function () {
     expect((float) $data['items']['items_total'])->toBe(1300.0);
     expect(count($data['items']['data']))->toBe(2);
 
-    $this->assertDatabaseCount('import_order_items', 2);
+    $this->assertDatabaseCount('purchase_order_items', 2);
     $order->refresh();
     expect($order->totalCost())->toBe(1300.0);
 });
 
 it('rejects editing items if the import order is not in draft status', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1500.0,
         'quantity' => 1000.0,
-        'status' => ImportOrderStatus::PendingPayment,
+        'status' => PurchaseOrderStatus::PendingPayment,
     ]);
 
     $updatePayload = [
@@ -278,20 +278,20 @@ it('rejects editing items if the import order is not in draft status', function 
         ],
     ];
 
-    $response = $this->actingAs($this->owner)->putJson("/api/v1/import-orders/{$order->id}", $updatePayload);
+    $response = $this->actingAs($this->owner)->putJson("/api/v1/purchase-orders/{$order->id}", $updatePayload);
 
     $response->assertStatus(422)
         ->assertJsonPath('code', 'ORDER_NOT_IN_DRAFT');
 });
 
 it('rejects updating items with a non-procurement item type', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1500.0,
         'quantity' => 1000.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
 
     $updatePayload = [
@@ -300,7 +300,7 @@ it('rejects updating items with a non-procurement item type', function () {
         ],
     ];
 
-    $response = $this->actingAs($this->owner)->putJson("/api/v1/import-orders/{$order->id}", $updatePayload);
+    $response = $this->actingAs($this->owner)->putJson("/api/v1/purchase-orders/{$order->id}", $updatePayload);
 
     $response->assertStatus(422)
         ->assertJsonPath('code', 'INVALID_ITEM_TYPE');

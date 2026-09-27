@@ -7,7 +7,7 @@ namespace App\Http\Resources\v1;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-final class ImportOrderResource extends JsonResource
+final class PurchaseOrderResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
@@ -17,6 +17,7 @@ final class ImportOrderResource extends JsonResource
             'supplier_id' => $this->supplier_id,
             'supplier' => new SupplierResource($this->whenLoaded('supplier')),
             'currency' => $this->currency,
+            'kind' => $this->kind->value ?? $this->kind,
             'negotiated_price' => (float) $this->negotiated_price,
             'quantity' => (float) $this->quantity,
             'total_amount' => $this->totalCost(),
@@ -34,7 +35,7 @@ final class ImportOrderResource extends JsonResource
                 $this->items->loadMissing('inventoryItem');
 
                 return [
-                    'data' => ImportOrderItemResource::collection($this->items),
+                    'data' => PurchaseOrderItemResource::collection($this->items),
                     'items_total' => (float) round(
                         $this->items->sum(fn ($item) => (float) $item->quantity * (float) $item->unit_price),
                         4,

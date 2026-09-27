@@ -14,7 +14,7 @@ final class GoodsReceipt extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
-        'import_order_id',
+        'purchase_order_id',
         'warehouse_id',
         'received_qty',
         'condition_notes',
@@ -24,9 +24,9 @@ final class GoodsReceipt extends Model
         'received_qty' => 'decimal:4',
     ];
 
-    public function importOrder(): BelongsTo
+    public function purchaseOrder(): BelongsTo
     {
-        return $this->belongsTo(ImportOrder::class);
+        return $this->belongsTo(PurchaseOrder::class);
     }
 
     public function warehouse(): BelongsTo

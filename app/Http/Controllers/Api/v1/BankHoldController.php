@@ -25,7 +25,7 @@ final class BankHoldController extends Controller
     public function forOrder(string $id): AnonymousResourceCollection
     {
         $holds = BankHold::with('paymentRequest')
-            ->whereHas('paymentRequest', fn ($q) => $q->where('import_order_id', $id))
+            ->whereHas('paymentRequest', fn ($q) => $q->where('purchase_order_id', $id))
             ->latest()
             ->get();
 

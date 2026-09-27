@@ -13,7 +13,7 @@ final class LandedCostLineResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'import_order_id' => $this->import_order_id,
+            'purchase_order_id' => $this->purchase_order_id,
             'type' => $this->type->value ?? $this->type,
             'amount' => (float) $this->amount,
             'currency' => $this->currency,

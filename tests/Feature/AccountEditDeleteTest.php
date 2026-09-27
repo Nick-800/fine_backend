@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-use App\Enums\ImportOrderStatus;
 use App\Enums\PaymentRoute;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\Account;
 use App\Models\Company;
-use App\Models\ImportOrder;
 use App\Models\OperatingUnit;
+use App\Models\PurchaseOrder;
 use App\Models\Role;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
-use App\Services\ImportOrderStateService;
+use App\Services\PurchaseOrderStateService;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -126,16 +126,16 @@ test('a main account cannot be deleted', function () {
 
 test('a sub-account with journal lines cannot be deleted', function () {
     // Drive an import order to completion so 1500 (a sub-account) has lines.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
-    $svc = app(ImportOrderStateService::class);
+    $svc = app(PurchaseOrderStateService::class);
     $svc->transitionToPendingPayment($order);
     $svc->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
     $pr = $order->paymentRequests()->sole();

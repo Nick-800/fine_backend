@@ -83,7 +83,7 @@ class StockLotController extends Controller
             'save_as_item_default' => ['nullable', 'boolean'],
             'unit_cost' => ['required', 'numeric', 'min:0'],
             'source' => ['required', 'string', 'in:opening_balance,purchase_cash,purchase_credit,import_receipt'],
-            'import_order_id' => ['nullable', 'uuid', 'exists:import_orders,id', 'required_if:source,import_receipt'],
+            'purchase_order_id' => ['nullable', 'uuid', 'exists:purchase_orders,id', 'required_if:source,import_receipt'],
             'attribute_values' => ['nullable', 'array'],
         ]);
 

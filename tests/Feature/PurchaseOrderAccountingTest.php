@@ -2,23 +2,23 @@
 
 declare(strict_types=1);
 
-use App\Enums\ImportOrderStatus;
 use App\Enums\PaymentRoute;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\BankHold;
 use App\Models\Company;
 use App\Models\FxRate;
 use App\Models\GoodsReceipt;
-use App\Models\ImportOrder;
 use App\Models\JournalEntry;
 use App\Models\OperatingUnit;
 use App\Models\PaymentRequest;
+use App\Models\PurchaseOrder;
 use App\Models\Role;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
-use App\Services\ImportOrderStateService;
+use App\Services\PurchaseOrderStateService;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -52,7 +52,7 @@ beforeEach(function () {
     $this->api = fn () => $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
 
-    $this->stateService = app(ImportOrderStateService::class);
+    $this->stateService = app(PurchaseOrderStateService::class);
 
     // Drives an order from Draft to Received: market-route payment executed at
     // the given realized rate, full quantity received.
@@ -62,15 +62,15 @@ beforeEach(function () {
         float $price = 100.0,
         float $qty = 10.0,
         string $currency = 'USD',
-    ): ImportOrder {
-        $order = ImportOrder::create([
+    ): PurchaseOrder {
+        $order = PurchaseOrder::create([
             'operating_unit_id' => $this->unit->id,
             'supplier_id' => $this->supplier->id,
             'currency' => $currency,
             'negotiated_price' => $price,
             'quantity' => $qty,
             'booked_fx_rate' => $bookedRate,
-            'status' => ImportOrderStatus::Draft,
+            'status' => PurchaseOrderStatus::Draft,
         ]);
 
         $this->stateService->transitionToPendingPayment($order);
@@ -85,8 +85,8 @@ beforeEach(function () {
         return $order->fresh();
     };
 
-    $this->journalFor = fn (ImportOrder $order) => ($this->api)()
-        ->getJson("/api/v1/journal-entries/for-document/ImportOrder/{$order->id}")
+    $this->journalFor = fn (PurchaseOrder $order) => ($this->api)()
+        ->getJson("/api/v1/journal-entries/for-document/PurchaseOrder/{$order->id}")
         ->assertStatus(200)
         ->json();
 });
@@ -177,8 +177,8 @@ test('a landed cost line in a third currency is refused rather than guessed', fu
         ->toThrow(InvalidArgumentException::class);
 
     // The payment-time advance exists; the refused completion wrote nothing.
-    expect(JournalEntry::where('source_document_type', 'ImportOrder')->count())->toBe(0)
-        ->and($order->fresh()->status)->toBe(ImportOrderStatus::Received);
+    expect(JournalEntry::where('source_document_type', 'PurchaseOrder')->count())->toBe(0)
+        ->and($order->fresh()->status)->toBe(PurchaseOrderStatus::Received);
 });
 
 test('a domestic-currency order posts one for one with no FX involvement', function () {
@@ -196,16 +196,16 @@ test('a domestic-currency order posts one for one with no FX involvement', funct
 test('completion is refused when no executed payment carries an FX rate', function () {
     // Bypasses the state machine to simulate a corrupted order: Received with
     // no payment trail. Valuing it would be a guess, so posting must refuse.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
-        'status' => ImportOrderStatus::Received,
+        'status' => PurchaseOrderStatus::Received,
     ]);
     GoodsReceipt::create([
-        'import_order_id' => $order->id,
+        'purchase_order_id' => $order->id,
         'warehouse_id' => $this->warehouse->id,
         'received_qty' => 10,
     ]);
@@ -214,7 +214,7 @@ test('completion is refused when no executed payment carries an FX rate', functi
         ->toThrow(InvalidArgumentException::class);
 
     expect(JournalEntry::count())->toBe(0)
-        ->and($order->fresh()->status)->toBe(ImportOrderStatus::Received);
+        ->and($order->fresh()->status)->toBe(PurchaseOrderStatus::Received);
 });
 
 test('the trial balance stays balanced after an import order completes', function () {
@@ -235,7 +235,7 @@ test('creating an order over the API snapshots the booked FX rate', function () 
         'rate' => 5.123456, 'captured_at' => now(),
     ]);
 
-    $response = ($this->api)()->postJson('/api/v1/import-orders', [
+    $response = ($this->api)()->postJson('/api/v1/purchase-orders', [
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
@@ -252,7 +252,7 @@ test('an explicitly provided booked FX rate wins over the snapshot lookup', func
         'rate' => 5.123456, 'captured_at' => now(),
     ]);
 
-    $response = ($this->api)()->postJson('/api/v1/import-orders', [
+    $response = ($this->api)()->postJson('/api/v1/purchase-orders', [
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
@@ -268,7 +268,7 @@ test('the payment requests endpoint returns only the addressed order\'s requests
     $orderA = ($this->orderReadyToComplete)();
     $orderB = ($this->orderReadyToComplete)();
 
-    $listed = ($this->api)()->getJson("/api/v1/import-orders/{$orderA->id}/payment-requests")
+    $listed = ($this->api)()->getJson("/api/v1/purchase-orders/{$orderA->id}/payment-requests")
         ->assertStatus(200)
         ->json('data');
 
@@ -281,7 +281,7 @@ test('a wrong-state transition over the API is a 422 with a code, not a 500', fu
     $order = ($this->orderReadyToComplete)();
 
     // Received cannot go back to shipment.
-    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/transition", [
+    ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/transition", [
         'action' => 'shipment',
     ])->assertStatus(422)->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
 });
@@ -290,20 +290,20 @@ test('an input-guard refusal over the API is a 422 with a code, not a 500', func
     $order = ($this->orderReadyToComplete)();
     $order->landedCostLines()->create(['type' => 'customs', 'amount' => 100, 'is_confirmed' => false]);
 
-    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/transition", [
+    ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/transition", [
         'action' => 'complete',
     ])->assertStatus(422)->assertJsonPath('code', 'INVALID_IMPORT_ORDER_OPERATION');
 });
 
 test('payments execute over both routes and refuse to execute twice', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $requestId = $order->paymentRequests()->sole()->id;
@@ -316,13 +316,13 @@ test('payments execute over both routes and refuse to execute twice', function (
     expect($order->fresh()->status->value)->toBe('paid');
 
     // Executing an already-paid request is a state refusal.
-    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/payment-requests/{$requestId}/process", [
+    ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/payment-requests/{$requestId}/process", [
         'fx_rate_used' => 5.0,
     ])->assertStatus(422)->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
 
     // And the nested route rejects a request id that belongs to another order.
     $other = ($this->orderReadyToComplete)();
-    ($this->api)()->postJson("/api/v1/import-orders/{$other->id}/payment-requests/{$requestId}/process", [
+    ($this->api)()->postJson("/api/v1/purchase-orders/{$other->id}/payment-requests/{$requestId}/process", [
         'fx_rate_used' => 5.0,
     ])->assertStatus(404);
 });
@@ -330,12 +330,12 @@ test('payments execute over both routes and refuse to execute twice', function (
 test('the completion transition is reachable over the API', function () {
     $order = ($this->orderReadyToComplete)(bookedRate: 5.0, realizedRate: 5.0);
 
-    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/transition", [
+    ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/transition", [
         'action' => 'complete',
     ])->assertStatus(200);
 
     // One advance journal at payment, one completion journal.
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::Complete)
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::Complete)
         ->and(JournalEntry::count())->toBe(2);
 });
 
@@ -361,14 +361,14 @@ test('executing a payment posts the advance against cash and completion clears i
 
 test('a bank hold settled above the computed rate books the spread as FX loss', function () {
     // 1000 USD, booked at 5.0. The bank actually consumed 5,150 LYD.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 6000.00, 'INV-1');
@@ -400,14 +400,14 @@ test('a bank hold settled above the computed rate books the spread as FX loss', 
 
 test('executing a market payment with non-zero extra allocation requires a note', function () {
     // Booked 5.0, settled 5.2 → 200 LYD extra allocation on a 1000 USD order.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
@@ -430,14 +430,14 @@ test('executing a market payment with non-zero extra allocation requires a note'
 
 test('executing a payment with zero extra allocation accepts an empty note', function () {
     // Booked 5.0, settled 5.0 → 0 LYD extra allocation; note is optional.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
@@ -453,24 +453,24 @@ test('executing a payment with zero extra allocation accepts an empty note', fun
 });
 
 test('creating an fx_spread landed cost line with a non-zero amount requires a note', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
 
-    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines", [
+    ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines", [
         'type' => 'fx_spread',
         'amount' => 150,
         'currency' => 'LYD',
     ])->assertStatus(422)
         ->assertJsonValidationErrors(['note']);
 
-    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines", [
+    ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines", [
         'type' => 'fx_spread',
         'amount' => 150,
         'currency' => 'LYD',
@@ -480,17 +480,17 @@ test('creating an fx_spread landed cost line with a non-zero amount requires a n
 });
 
 test('creating an fx_spread landed cost line with zero amount accepts an empty note', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
 
-    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines", [
+    ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines", [
         'type' => 'fx_spread',
         'amount' => 0,
         'currency' => 'LYD',
@@ -500,17 +500,17 @@ test('creating an fx_spread landed cost line with zero amount accepts an empty n
 });
 
 test('non-fx_spread landed cost lines accept an empty note regardless of amount', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
 
-    ($this->api)()->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines", [
+    ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines", [
         'type' => 'customs',
         'amount' => 500,
         'currency' => 'LYD',
@@ -520,26 +520,26 @@ test('non-fx_spread landed cost lines accept an empty note regardless of amount'
 });
 
 test('payment-requests index filters by route=market', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
 
-    $bankOrder = ImportOrder::create([
+    $bankOrder = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($bankOrder);
     $this->stateService->selectPaymentRoute($bankOrder->fresh(), PaymentRoute::Bank, 1000, 5500.00, 'BNK-1');
@@ -552,14 +552,14 @@ test('payment-requests index filters by route=market', function () {
 });
 
 test('a select_route call repeated on the same order does not create a duplicate BankHold', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->fresh()->paymentRequests()->sole();
@@ -567,11 +567,11 @@ test('a select_route call repeated on the same order does not create a duplicate
     // FX-01: even when the order is forced back to pending_payment (bypassing
     // the state guard for this defensive test), a repeated Bank call updates
     // the existing hold via updateOrCreate rather than inserting a duplicate.
-    DB::table('import_orders')->where('id', $order->id)->update(['status' => 'pending_payment']);
+    DB::table('purchase_orders')->where('id', $order->id)->update(['status' => 'pending_payment']);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00, 'BNK-1');
     expect(BankHold::where('payment_request_id', $pr->id)->count())->toBe(1);
 
-    DB::table('import_orders')->where('id', $order->id)->update(['status' => 'pending_payment']);
+    DB::table('purchase_orders')->where('id', $order->id)->update(['status' => 'pending_payment']);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5800.00, 'BNK-2');
 
     $holds = BankHold::where('payment_request_id', $pr->id)->get();
@@ -580,14 +580,14 @@ test('a select_route call repeated on the same order does not create a duplicate
 });
 
 test('a select_route call that switches from Bank to Market after a hold is refused at the service level', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00, 'BNK-1');
@@ -595,7 +595,7 @@ test('a select_route call that switches from Bank to Market after a hold is refu
     // FX-09 (defense in depth): the service-level route-mutation guard fires
     // before the bank branch could orphan the hold. Force the order back to
     // pending_payment to exercise this path.
-    DB::table('import_orders')->where('id', $order->id)->update(['status' => 'pending_payment']);
+    DB::table('purchase_orders')->where('id', $order->id)->update(['status' => 'pending_payment']);
 
     expect(fn () => $this->stateService->selectPaymentRoute(
         $order->fresh(),

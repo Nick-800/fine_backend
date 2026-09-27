@@ -88,11 +88,11 @@ final class DashboardController extends Controller
 
         $landedQuery = LandedCostLine::query()
             ->select('landed_cost_lines.*')
-            ->join('import_orders', 'import_orders.id', '=', 'landed_cost_lines.import_order_id')
+            ->join('purchase_orders', 'purchase_orders.id', '=', 'landed_cost_lines.purchase_order_id')
             ->whereIn('landed_cost_lines.status', ['pending', 'approved']);
 
         if (! $isFinancialApprover) {
-            $landedQuery->whereIn('import_orders.operating_unit_id', $managedUnitIds);
+            $landedQuery->whereIn('purchase_orders.operating_unit_id', $managedUnitIds);
         }
 
         $landed = $landedQuery
@@ -101,8 +101,8 @@ final class DashboardController extends Controller
             ->map(fn (LandedCostLine $l) => [
                 'id' => $l->id,
                 'kind' => 'landed_cost_line',
-                'import_order_id' => $l->import_order_id,
-                'operating_unit_id' => $l->importOrder?->operating_unit_id,
+                'purchase_order_id' => $l->purchase_order_id,
+                'operating_unit_id' => $l->purchaseOrder?->operating_unit_id,
                 'status' => $l->status->value,
                 'amount' => (float) $l->amount,
                 'currency' => $l->currency,

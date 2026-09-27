@@ -34,7 +34,7 @@ final class AuditSilentFxSpreads extends Command
         $unitId = $this->option('unit');
 
         $rows = DB::table('payment_requests as pr')
-            ->join('import_orders as io', 'io.id', '=', 'pr.import_order_id')
+            ->join('purchase_orders as io', 'io.id', '=', 'pr.purchase_order_id')
             ->leftJoin('bank_holds as bh', 'bh.payment_request_id', '=', 'pr.id')
             ->where('pr.status', PaymentRequestStatus::Paid->value)
             ->whereNotNull('io.booked_fx_rate')

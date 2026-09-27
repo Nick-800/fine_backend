@@ -12,7 +12,7 @@ return new class extends Migration
     {
         Schema::create('goods_receipts', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('import_order_id')->constrained('import_orders')->cascadeOnDelete();
+            $table->foreignUuid('purchase_order_id')->constrained('purchase_orders')->cascadeOnDelete();
             $table->foreignUuid('warehouse_id')->constrained('warehouses')->cascadeOnDelete();
             $table->decimal('received_qty', 15, 4);
             $table->text('condition_notes')->nullable();

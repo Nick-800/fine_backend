@@ -75,8 +75,8 @@ final class AllocationPaymentService
         }
 
         if ($allocation instanceof LandedCostLine) {
-            $order = $allocation->importOrder
-                ?? $allocation->importOrder()->firstOrFail();
+            $order = $allocation->purchaseOrder
+                ?? $allocation->purchaseOrder()->firstOrFail();
 
             return $order->operatingUnit
                 ?? OperatingUnit::findOrFail($order->operating_unit_id);

@@ -6,8 +6,8 @@ namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\v1\LandedCostLineResource;
-use App\Models\ImportOrder;
 use App\Models\LandedCostLine;
+use App\Models\PurchaseOrder;
 use App\Services\AllocationNoResponsibleUserException;
 use App\Services\AllocationNotResponsibleException;
 use App\Services\AllocationPaymentService;
@@ -25,7 +25,7 @@ final class LandedCostLineController extends Controller
 
     public function index(string $orderId): AnonymousResourceCollection
     {
-        $order = ImportOrder::findOrFail($orderId);
+        $order = PurchaseOrder::findOrFail($orderId);
 
         return LandedCostLineResource::collection(
             $order->landedCostLines()->with(['approver', 'payer'])->get()
@@ -34,7 +34,7 @@ final class LandedCostLineController extends Controller
 
     public function store(Request $request, string $orderId): JsonResponse
     {
-        $order = ImportOrder::findOrFail($orderId);
+        $order = PurchaseOrder::findOrFail($orderId);
 
         $data = $request->validate([
             'type' => 'required|string|in:supplier_price,fx_spread,customs,freight,local_transport,other',
@@ -82,7 +82,7 @@ final class LandedCostLineController extends Controller
             'note' => 'nullable|string|max:500',
         ]);
 
-        $line = LandedCostLine::where('import_order_id', $orderId)->findOrFail($lineId);
+        $line = LandedCostLine::where('purchase_order_id', $orderId)->findOrFail($lineId);
 
         try {
             $line = $action === 'approve'

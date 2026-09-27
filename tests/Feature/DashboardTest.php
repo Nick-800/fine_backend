@@ -7,11 +7,11 @@ use App\Models\Company;
 use App\Models\CreditApprovalRequest;
 use App\Models\Employee;
 use App\Models\Entity;
-use App\Models\ImportOrder;
 use App\Models\LeaveRequest;
 use App\Models\OperatingUnit;
 use App\Models\PayrollRun;
 use App\Models\ProductionBatch;
+use App\Models\PurchaseOrder;
 use App\Models\Role;
 use App\Models\SalesOrder;
 use App\Models\Supplier;
@@ -72,11 +72,11 @@ test('kpis aggregate the month from the ledger', function () {
     $supplier = Supplier::create([
         'operating_unit_id' => $this->unitA->id, 'name' => 'Chem Co', 'default_currency' => 'USD',
     ]);
-    ImportOrder::create([
+    PurchaseOrder::create([
         'operating_unit_id' => $this->unitA->id, 'supplier_id' => $supplier->id,
         'currency' => 'USD', 'negotiated_price' => 100, 'quantity' => 50, 'status' => 'in_transit',
     ]);
-    ImportOrder::create([
+    PurchaseOrder::create([
         'operating_unit_id' => $this->unitA->id, 'supplier_id' => $supplier->id,
         'currency' => 'USD', 'negotiated_price' => 10, 'quantity' => 10, 'status' => 'complete',
     ]);
@@ -122,7 +122,7 @@ test('the operational pipeline counts by status', function () {
     expect($pipeline['foam_batches']['total'])->toBe(2)
         ->and($pipeline['foam_batches']['statuses']['running'])->toBe(1)
         ->and($pipeline['foam_batches']['statuses']['closed'])->toBe(1)
-        ->and($pipeline['import_orders']['total'])->toBe(0);
+        ->and($pipeline['purchase_orders']['total'])->toBe(0);
 });
 
 test('the approvals inbox gathers every kind of pending decision', function () {

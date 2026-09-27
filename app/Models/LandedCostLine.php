@@ -16,7 +16,7 @@ final class LandedCostLine extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
-        'import_order_id',
+        'purchase_order_id',
         'type',
         'amount',
         'currency',
@@ -39,9 +39,9 @@ final class LandedCostLine extends Model
         'paid_at' => 'datetime',
     ];
 
-    public function importOrder(): BelongsTo
+    public function purchaseOrder(): BelongsTo
     {
-        return $this->belongsTo(ImportOrder::class);
+        return $this->belongsTo(PurchaseOrder::class);
     }
 
     public function approver(): BelongsTo
@@ -56,7 +56,7 @@ final class LandedCostLine extends Model
 
     /**
      * `is_confirmed` is now a derived view of payment status so the existing
-     * ImportOrderStateService completion guard keeps working without a schema
+     * PurchaseOrderStateService completion guard keeps working without a schema
      * change. Once status reaches Paid, the line is considered confirmed.
      */
     protected static function booted(): void

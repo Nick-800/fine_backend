@@ -7,7 +7,7 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\v1\PaymentRequestResource;
 use App\Models\PaymentRequest;
-use App\Services\ImportOrderStateService;
+use App\Services\PurchaseOrderStateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -17,7 +17,7 @@ use InvalidArgumentException;
 final class PaymentRequestController extends Controller
 {
     public function __construct(
-        private readonly ImportOrderStateService $stateService
+        private readonly PurchaseOrderStateService $stateService
     ) {}
 
     /**
@@ -26,7 +26,7 @@ final class PaymentRequestController extends Controller
      */
     public function all(Request $request): AnonymousResourceCollection
     {
-        $query = PaymentRequest::with(['importOrder.supplier', 'bankHold']);
+        $query = PaymentRequest::with(['purchaseOrder.supplier', 'bankHold']);
 
         if ($request->has('operating_unit_id')) {
             $query->where('operating_unit_id', $request->query('operating_unit_id'));
@@ -58,8 +58,8 @@ final class PaymentRequestController extends Controller
      */
     public function index(Request $request, string $id): AnonymousResourceCollection
     {
-        $query = PaymentRequest::with(['importOrder.supplier', 'bankHold'])
-            ->where('import_order_id', $id);
+        $query = PaymentRequest::with(['purchaseOrder.supplier', 'bankHold'])
+            ->where('purchase_order_id', $id);
 
         if ($request->has('status')) {
             $query->where('status', $request->query('status'));
@@ -74,7 +74,7 @@ final class PaymentRequestController extends Controller
      */
     public function execute(Request $request, string $id): JsonResponse
     {
-        $paymentRequest = PaymentRequest::with(['bankHold', 'importOrder.supplier'])->findOrFail($id);
+        $paymentRequest = PaymentRequest::with(['bankHold', 'purchaseOrder.supplier'])->findOrFail($id);
 
         return $this->runExecution($request, $paymentRequest);
     }
@@ -84,8 +84,8 @@ final class PaymentRequestController extends Controller
      */
     public function process(Request $request, string $orderId, string $requestId): JsonResponse
     {
-        $paymentRequest = PaymentRequest::with(['bankHold', 'importOrder.supplier'])
-            ->where('import_order_id', $orderId)
+        $paymentRequest = PaymentRequest::with(['bankHold', 'purchaseOrder.supplier'])
+            ->where('purchase_order_id', $orderId)
             ->findOrFail($requestId);
 
         return $this->runExecution($request, $paymentRequest);
@@ -134,13 +134,13 @@ final class PaymentRequestController extends Controller
         ['effective_settled' => $effectiveSettled] =
             $this->stateService->deriveEffectiveValues($paymentRequest, $fxRateUsed, $exactUsed);
 
-        $functionalCurrency = $paymentRequest->importOrder?->operatingUnit?->company?->default_currency ?? 'LYD';
+        $functionalCurrency = $paymentRequest->purchaseOrder?->operatingUnit?->company?->default_currency ?? 'LYD';
         $varianceLyd = $this->stateService->varianceVsBooked(
-            $paymentRequest->importOrder,
+            $paymentRequest->purchaseOrder,
             $effectiveSettled,
             $functionalCurrency,
         );
-        $tolerance = ImportOrderStateService::fxToleranceLyd();
+        $tolerance = PurchaseOrderStateService::fxToleranceLyd();
 
         if ($varianceLyd !== null && abs($varianceLyd) > $tolerance && blank($request->input('extra_allocation_note'))) {
             throw ValidationException::withMessages([

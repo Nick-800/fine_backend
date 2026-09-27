@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources\v1;
 
-use App\Services\ImportOrderStateService;
+use App\Services\PurchaseOrderStateService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -12,8 +12,8 @@ final class PaymentRequestResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $bookedRate = $this->importOrder?->booked_fx_rate !== null
-            ? (float) $this->importOrder->booked_fx_rate
+        $bookedRate = $this->purchaseOrder?->booked_fx_rate !== null
+            ? (float) $this->purchaseOrder->booked_fx_rate
             : null;
         $usedRate = $this->fx_rate_used !== null ? (float) $this->fx_rate_used : null;
         $exactUsed = (float) ($this->bankHold?->exact_amount_used ?? 0);
@@ -35,8 +35,8 @@ final class PaymentRequestResource extends JsonResource
             ? round($effectiveSettled - $bookedRate * $amount, 4)
             : null;
 
-        $tolerance = ImportOrderStateService::fxToleranceLyd();
-        $hardCapPercent = ImportOrderStateService::fxHardCapPercent();
+        $tolerance = PurchaseOrderStateService::fxToleranceLyd();
+        $hardCapPercent = PurchaseOrderStateService::fxHardCapPercent();
 
         $varianceWithinTolerance = $varianceLyd === null
             || abs($varianceLyd) <= $tolerance;
@@ -48,7 +48,7 @@ final class PaymentRequestResource extends JsonResource
         return [
             'id' => $this->id,
             'operating_unit_id' => $this->operating_unit_id,
-            'import_order_id' => $this->import_order_id,
+            'purchase_order_id' => $this->purchase_order_id,
             'route' => $this->route->value ?? $this->route,
             'invoice_ref' => $this->invoice_ref,
             'amount_requested' => $amount,
@@ -64,18 +64,18 @@ final class PaymentRequestResource extends JsonResource
             'extra_allocation_note' => $this->extra_allocation_note,
             'booked_fx_rate' => $bookedRate,
             'bank_hold' => new BankHoldResource($this->whenLoaded('bankHold')),
-            'import_order' => $this->whenLoaded('importOrder', function () {
+            'purchase_order' => $this->whenLoaded('purchaseOrder', function () {
                 return [
-                    'id' => $this->importOrder->id,
-                    'order_number' => $this->importOrder->order_number,
-                    'status' => $this->importOrder->status?->value ?? $this->importOrder->status,
-                    'supplier_id' => $this->importOrder->supplier_id,
-                    'supplier' => $this->importOrder->supplier ? [
-                        'id' => $this->importOrder->supplier->id,
-                        'name' => $this->importOrder->supplier->name,
-                        'code' => $this->importOrder->supplier->code ?? null,
-                        'contact_person' => $this->importOrder->supplier->contact_person ?? null,
-                        'phone' => $this->importOrder->supplier->phone ?? null,
+                    'id' => $this->purchaseOrder->id,
+                    'order_number' => $this->purchaseOrder->order_number,
+                    'status' => $this->purchaseOrder->status?->value ?? $this->purchaseOrder->status,
+                    'supplier_id' => $this->purchaseOrder->supplier_id,
+                    'supplier' => $this->purchaseOrder->supplier ? [
+                        'id' => $this->purchaseOrder->supplier->id,
+                        'name' => $this->purchaseOrder->supplier->name,
+                        'code' => $this->purchaseOrder->supplier->code ?? null,
+                        'contact_person' => $this->purchaseOrder->supplier->contact_person ?? null,
+                        'phone' => $this->purchaseOrder->supplier->phone ?? null,
                     ] : null,
                 ];
             }),

@@ -35,8 +35,8 @@ final class Supplier extends Model
         return $this->belongsTo(Account::class);
     }
 
-    public function importOrders(): HasMany
+    public function purchaseOrders(): HasMany
     {
-        return $this->hasMany(ImportOrder::class);
+        return $this->hasMany(PurchaseOrder::class);
     }
 }

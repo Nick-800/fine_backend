@@ -4,22 +4,24 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Enums\ImportOrderStatus;
 use App\Enums\LandedCostType;
 use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
+use App\Enums\PurchaseOrderKind;
+use App\Enums\PurchaseOrderStatus;
 use App\Exceptions\InvalidStateTransitionException;
 use App\Models\BankHold;
 use App\Models\FxRate;
 use App\Models\GoodsReceipt;
-use App\Models\ImportOrder;
 use App\Models\LandedCostLine;
 use App\Models\PaymentRequest;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\Supplier;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
-final class ImportOrderStateService
+final class PurchaseOrderStateService
 {
     /**
      * Defensive defaults — config('fine.fx.tolerance_lyd') wins when present.
@@ -98,7 +100,7 @@ final class ImportOrderStateService
      * against (the completion journal then treats booked = settled).
      */
     public function varianceVsBooked(
-        ImportOrder $order,
+        PurchaseOrder $order,
         float $effectiveSettled,
         string $functionalCurrency,
     ): ?float {
@@ -112,10 +114,42 @@ final class ImportOrderStateService
         return round($effectiveSettled - $expected, 4);
     }
 
-    public function transitionToPendingPayment(ImportOrder $order): ImportOrder
+    /**
+     * Wave 5 (local flow): approve a draft purchase order.
+     *
+     * Local PO state machine:
+     *   draft → approved → (received) → paid → closed
+     *
+     * Approval is the manager's sign-off that the purchase is legitimate.
+     * It does NOT post any journal — the journal happens at the receive
+     * event when goods arrive.
+     */
+    public function approve(PurchaseOrder $order): PurchaseOrder
+    {
+        if ($order->kind !== PurchaseOrderKind::Local) {
+            throw new InvalidArgumentException(
+                'approve() is only valid for local purchase orders. Foreign orders use selectPaymentRoute().'
+            );
+        }
+
+        return DB::transaction(function () use ($order) {
+            if ($order->status !== PurchaseOrderStatus::Draft) {
+                throw new InvalidStateTransitionException(
+                    'Order must be in draft status to be approved.'
+                );
+            }
+
+            $order->status = PurchaseOrderStatus::Approved;
+            $order->save();
+
+            return $order->refresh();
+        });
+    }
+
+    public function transitionToPendingPayment(PurchaseOrder $order): PurchaseOrder
     {
         return DB::transaction(function () use ($order) {
-            if ($order->status !== ImportOrderStatus::Draft) {
+            if ($order->status !== PurchaseOrderStatus::Draft) {
                 throw new InvalidStateTransitionException('Order must be in draft status to transition to pending payment.');
             }
 
@@ -123,14 +157,14 @@ final class ImportOrderStateService
 
             PaymentRequest::create([
                 'operating_unit_id' => $order->operating_unit_id,
-                'import_order_id' => $order->id,
+                'purchase_order_id' => $order->id,
                 'route' => PaymentRoute::Bank,
                 'amount_requested' => $amountRequested,
                 'status' => PaymentRequestStatus::Pending,
             ]);
 
             $order->update([
-                'status' => ImportOrderStatus::PendingPayment,
+                'status' => PurchaseOrderStatus::PendingPayment,
             ]);
 
             return $order->refresh();
@@ -138,14 +172,14 @@ final class ImportOrderStateService
     }
 
     public function selectPaymentRoute(
-        ImportOrder $order,
+        PurchaseOrder $order,
         PaymentRoute $route,
         float $amountRequested,
         ?float $heldAmountLyd = null,
         ?string $invoiceRef = null
-    ): ImportOrder {
+    ): PurchaseOrder {
         return DB::transaction(function () use ($order, $route, $amountRequested, $heldAmountLyd, $invoiceRef) {
-            if ($order->status !== ImportOrderStatus::PendingPayment) {
+            if ($order->status !== PurchaseOrderStatus::PendingPayment) {
                 throw new InvalidStateTransitionException('Order must be in pending_payment status to select payment route.');
             }
 
@@ -154,7 +188,7 @@ final class ImportOrderStateService
             if (! $paymentRequest) {
                 $paymentRequest = PaymentRequest::create([
                     'operating_unit_id' => $order->operating_unit_id,
-                    'import_order_id' => $order->id,
+                    'purchase_order_id' => $order->id,
                     'route' => $route,
                     'amount_requested' => $amountRequested,
                     'status' => PaymentRequestStatus::Pending,
@@ -195,9 +229,9 @@ final class ImportOrderStateService
                     ],
                 );
 
-                $order->update(['status' => ImportOrderStatus::AwaitingBankApproval]);
+                $order->update(['status' => PurchaseOrderStatus::AwaitingBankApproval]);
             } else {
-                $order->update(['status' => ImportOrderStatus::AwaitingTransfer]);
+                $order->update(['status' => PurchaseOrderStatus::AwaitingTransfer]);
             }
 
             return $order->refresh();
@@ -242,7 +276,7 @@ final class ImportOrderStateService
                 ]);
             }
 
-            $order = $paymentRequest->importOrder;
+            $order = $paymentRequest->purchaseOrder;
 
             // Money actually left the company: cash out, advance on the
             // supplier until the goods complete (the completion journal
@@ -280,7 +314,7 @@ final class ImportOrderStateService
                 );
             }
 
-            $order->update(['status' => ImportOrderStatus::Paid]);
+            $order->update(['status' => PurchaseOrderStatus::Paid]);
 
             return $paymentRequest->refresh();
         });
@@ -292,7 +326,7 @@ final class ImportOrderStateService
      * executed rate. Both the payment and the completion journals use this
      * one number, so the advance always clears to zero.
      */
-    private function settledLyd(ImportOrder $order, string $functionalCurrency): float
+    private function settledLyd(PurchaseOrder $order, string $functionalCurrency): float
     {
         $supplierCostFc = $order->totalCost();
 
@@ -321,40 +355,40 @@ final class ImportOrderStateService
         return round($supplierCostFc * (float) $paid->fx_rate_used, 4);
     }
 
-    public function confirmShipment(ImportOrder $order): ImportOrder
+    public function confirmShipment(PurchaseOrder $order): PurchaseOrder
     {
         return DB::transaction(function () use ($order) {
-            if ($order->status !== ImportOrderStatus::Paid) {
+            if ($order->status !== PurchaseOrderStatus::Paid) {
                 throw new InvalidStateTransitionException('Order must be paid before confirming shipment.');
             }
 
-            $order->update(['status' => ImportOrderStatus::InTransit]);
+            $order->update(['status' => PurchaseOrderStatus::InTransit]);
 
             return $order->refresh();
         });
     }
 
-    public function arriveAtPort(ImportOrder $order): ImportOrder
+    public function arriveAtPort(PurchaseOrder $order): PurchaseOrder
     {
         return DB::transaction(function () use ($order) {
-            if ($order->status !== ImportOrderStatus::InTransit) {
+            if ($order->status !== PurchaseOrderStatus::InTransit) {
                 throw new InvalidStateTransitionException('Order must be in_transit before arriving at port.');
             }
 
-            $order->update(['status' => ImportOrderStatus::AtPort]);
+            $order->update(['status' => PurchaseOrderStatus::AtPort]);
 
             return $order->refresh();
         });
     }
 
-    public function transportToWarehouse(ImportOrder $order): ImportOrder
+    public function transportToWarehouse(PurchaseOrder $order): PurchaseOrder
     {
         return DB::transaction(function () use ($order) {
-            if ($order->status !== ImportOrderStatus::AtPort) {
+            if ($order->status !== PurchaseOrderStatus::AtPort) {
                 throw new InvalidStateTransitionException('Order must be at_port before transporting to warehouse.');
             }
 
-            $order->update(['status' => ImportOrderStatus::InTransitToWarehouse]);
+            $order->update(['status' => PurchaseOrderStatus::InTransitToWarehouse]);
 
             return $order->refresh();
         });
@@ -365,15 +399,15 @@ final class ImportOrderStateService
      * not yet been counted / inspected. Records which warehouse they're at
      * so the operator doesn't have to re-pick on the receive step.
      */
-    public function arriveAtWarehouse(ImportOrder $order, string $warehouseId): ImportOrder
+    public function arriveAtWarehouse(PurchaseOrder $order, string $warehouseId): PurchaseOrder
     {
         return DB::transaction(function () use ($order, $warehouseId) {
-            if ($order->status !== ImportOrderStatus::InTransitToWarehouse) {
+            if ($order->status !== PurchaseOrderStatus::InTransitToWarehouse) {
                 throw new InvalidStateTransitionException('Order must be in_transit_to_warehouse before arriving at the warehouse.');
             }
 
             $order->update([
-                'status' => ImportOrderStatus::AtWarehouse,
+                'status' => PurchaseOrderStatus::AtWarehouse,
                 'arrived_warehouse_id' => $warehouseId,
             ]);
 
@@ -382,7 +416,7 @@ final class ImportOrderStateService
     }
 
     public function receiveGoods(
-        ImportOrder $order,
+        PurchaseOrder $order,
         string $warehouseId,
         float $receivedQty,
         ?string $notes = null
@@ -392,8 +426,8 @@ final class ImportOrderStateService
             // awaiting_receipt state for orders that predate the
             // arrived_at_warehouse split.
             if (! in_array($order->status, [
-                ImportOrderStatus::AtWarehouse,
-                ImportOrderStatus::AwaitingReceipt,
+                PurchaseOrderStatus::AtWarehouse,
+                PurchaseOrderStatus::AwaitingReceipt,
             ], true)) {
                 throw new InvalidStateTransitionException('Order must be at_warehouse (or awaiting_receipt) before receiving goods.');
             }
@@ -403,22 +437,125 @@ final class ImportOrderStateService
             }
 
             $receipt = GoodsReceipt::create([
-                'import_order_id' => $order->id,
+                'purchase_order_id' => $order->id,
                 'warehouse_id' => $warehouseId,
                 'received_qty' => $receivedQty,
                 'condition_notes' => $notes,
             ]);
 
-            $order->update(['status' => ImportOrderStatus::Received]);
+            $order->update(['status' => PurchaseOrderStatus::Received]);
 
             return $receipt;
         });
     }
 
-    public function completeOrder(ImportOrder $order): ImportOrder
+    /**
+     * Wave 5 (local flow): atomic per-line batch receive.
+     *
+     * Atomically updates each line's received_quantity on the supplied
+     * items, transitions the order to `received` when every item is
+     * fully received, and posts the inventory journal entry. The whole
+     * operation runs inside one DB transaction so a failure on any item
+     * rolls back the entire receive — partial receipts are committed
+     * only when ALL items validate and update cleanly.
+     *
+     * @param  array<int, array{id: string, received_quantity: float|int|string}>  $lines
+     */
+    public function receiveItems(PurchaseOrder $order, array $lines): PurchaseOrder
+    {
+        if ($order->kind !== PurchaseOrderKind::Local) {
+            throw new InvalidArgumentException(
+                'Per-line batch receive is only supported for local purchase orders.'
+            );
+        }
+
+        if ($order->status !== PurchaseOrderStatus::Approved) {
+            throw new InvalidStateTransitionException(
+                'Order must be in approved status before receiving goods.'
+            );
+        }
+
+        $itemsById = $order->items()->get()->keyBy('id');
+
+        $normalised = [];
+        foreach ($lines as $line) {
+            $id = (string) ($line['id'] ?? '');
+            $qty = (float) ($line['received_quantity'] ?? 0);
+            if (! $itemsById->has($id)) {
+                throw new InvalidArgumentException("Line item {$id} does not belong to this order.");
+            }
+            $item = $itemsById[$id];
+            $already = (float) ($item->received_quantity ?? 0);
+            if ($qty < $already) {
+                throw new InvalidArgumentException(
+                    "Line item {$id} received_quantity ({$qty}) is less than the previously-recorded {$already}."
+                );
+            }
+            if ($qty > (float) $item->quantity) {
+                throw new InvalidArgumentException(
+                    "Line item {$id} received_quantity ({$qty}) exceeds ordered quantity ({$item->quantity})."
+                );
+            }
+            $normalised[] = ['item' => $item, 'qty' => $qty];
+        }
+
+        return DB::transaction(function () use ($order, $normalised) {
+            $fullyReceived = true;
+
+            foreach ($normalised as $row) {
+                /** @var PurchaseOrderItem $item */
+                $item = $row['item'];
+                $item->received_quantity = $row['qty'];
+                $item->save();
+
+                if ((float) $row['qty'] < (float) $item->quantity) {
+                    $fullyReceived = false;
+                }
+            }
+
+            if ($fullyReceived) {
+                $order->status = PurchaseOrderStatus::Received;
+                $order->save();
+            }
+
+            return $order->refresh();
+        });
+    }
+
+    /**
+     * Wave 5 (local flow): record a payment on a received local order.
+     * Transitions to `paid`; auto-closes when fully received + paid.
+     */
+    public function payLocal(PurchaseOrder $order): PurchaseOrder
+    {
+        if ($order->kind !== PurchaseOrderKind::Local) {
+            throw new InvalidArgumentException('payLocal is only for local purchase orders.');
+        }
+
+        if ($order->status !== PurchaseOrderStatus::Received) {
+            throw new InvalidStateTransitionException(
+                'Order must be received before it can be paid.'
+            );
+        }
+
+        return DB::transaction(function () use ($order) {
+            $order->status = PurchaseOrderStatus::Paid;
+            $order->save();
+
+            // Auto-close: every line item received AND paid → archive.
+            if ($order->isFullyReceived()) {
+                $order->status = PurchaseOrderStatus::Closed;
+                $order->save();
+            }
+
+            return $order->refresh();
+        });
+    }
+
+    public function completeOrder(PurchaseOrder $order): PurchaseOrder
     {
         return DB::transaction(function () use ($order) {
-            if ($order->status !== ImportOrderStatus::Received) {
+            if ($order->status !== PurchaseOrderStatus::Received) {
                 throw new InvalidStateTransitionException('Order must be in received status to complete.');
             }
 
@@ -436,14 +573,14 @@ final class ImportOrderStateService
             // fatal — a completion that cannot post is refused, not skipped.
             $this->postCompletionJournal($order);
 
-            $order->update(['status' => ImportOrderStatus::Complete]);
+            $order->update(['status' => PurchaseOrderStatus::Complete]);
 
             return $order->refresh();
         });
     }
 
     /**
-     * Phase 08 §8.4, ImportOrder.Complete — the purchase reaches the ledger.
+     * Phase 08 §8.4, PurchaseOrder.Complete — the purchase reaches the ledger.
      *
      *   DR  1110 Raw Material Inventory   (supplier cost at booked rate + landed costs)
      *   DR  5300 FX Loss                  (realized > booked)
@@ -460,7 +597,7 @@ final class ImportOrderStateService
      * order itself is the supplier-price component, and counting a mirror
      * line again would double the inventory value.
      */
-    private function postCompletionJournal(ImportOrder $order): void
+    private function postCompletionJournal(PurchaseOrder $order): void
     {
         $functionalCurrency = $order->operatingUnit?->company?->default_currency ?? 'LYD';
 
@@ -543,7 +680,7 @@ final class ImportOrderStateService
         $this->accountingService->postJournal(
             "Import order from {$order->supplier?->name} completed",
             array_merge($lines, $clearingLines),
-            'ImportOrder',
+            'PurchaseOrder',
             $order->id,
             $order->operatingUnit?->company_id,
         );
@@ -554,7 +691,7 @@ final class ImportOrderStateService
      * without an executed payment, so a missing rate means the books cannot
      * be made whole — refuse rather than guess.
      */
-    private function realizedFxRate(ImportOrder $order, string $functionalCurrency): float
+    private function realizedFxRate(PurchaseOrder $order, string $functionalCurrency): float
     {
         if ($order->currency === $functionalCurrency) {
             return 1.0;
@@ -580,7 +717,7 @@ final class ImportOrderStateService
      * to the rate history for orders that predate the snapshot column. Null
      * means no estimate ever existed — the caller treats booked = realized.
      */
-    private function bookedFxRate(ImportOrder $order, string $functionalCurrency): ?float
+    private function bookedFxRate(PurchaseOrder $order, string $functionalCurrency): ?float
     {
         if ($order->currency === $functionalCurrency) {
             return 1.0;
@@ -602,7 +739,7 @@ final class ImportOrderStateService
 
     private function landedCostInFunctionalCurrency(
         LandedCostLine $line,
-        ImportOrder $order,
+        PurchaseOrder $order,
         string $functionalCurrency,
         float $realizedRate,
     ): float {

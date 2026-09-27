@@ -5,19 +5,19 @@ declare(strict_types=1);
 namespace Database\Seeders\Dummy;
 
 use App\Enums\AllocationPaymentStatus;
-use App\Enums\ImportOrderStatus;
 use App\Enums\LandedCostType;
 use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\BankHold;
 use App\Models\Company;
-use App\Models\ImportOrder;
-use App\Models\ImportOrderItem;
 use App\Models\InventoryItem;
 use App\Models\LandedCostLine;
 use App\Models\OperatingUnit;
 use App\Models\PayableSettlement;
 use App\Models\PaymentRequest;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -55,11 +55,11 @@ class ProcurementTreasurySeeder extends Seeder
 
         // Extra import orders in different states
         $statuses = [
-            ImportOrderStatus::Draft,
-            ImportOrderStatus::PendingPayment,
-            ImportOrderStatus::AwaitingBankApproval,
-            ImportOrderStatus::InTransit,
-            ImportOrderStatus::Received,
+            PurchaseOrderStatus::Draft,
+            PurchaseOrderStatus::PendingPayment,
+            PurchaseOrderStatus::AwaitingBankApproval,
+            PurchaseOrderStatus::InTransit,
+            PurchaseOrderStatus::Received,
         ];
 
         $chemicalItem = InventoryItem::where('code', 'CHEM-POLYOL-15')->first();
@@ -72,13 +72,13 @@ class ProcurementTreasurySeeder extends Seeder
             $quantity = fake()->numberBetween(100, 2000);
             $price = fake()->randomFloat(4, 60, 220);
 
-            $order = ImportOrder::where('supplier_id', $supplierId)
+            $order = PurchaseOrder::where('supplier_id', $supplierId)
                 ->where('negotiated_price', $price)
                 ->where('quantity', $quantity)
                 ->first();
 
             if ($order === null) {
-                $order = ImportOrder::create([
+                $order = PurchaseOrder::create([
                     'id' => (string) Str::uuid(),
                     'operating_unit_id' => $procurement->id,
                     'supplier_id' => $supplierId,
@@ -90,9 +90,9 @@ class ProcurementTreasurySeeder extends Seeder
             }
 
             if ($chemicalItem !== null && ! $order->items()->exists()) {
-                ImportOrderItem::create([
+                PurchaseOrderItem::create([
                     'id' => (string) Str::uuid(),
-                    'import_order_id' => $order->id,
+                    'purchase_order_id' => $order->id,
                     'inventory_item_id' => $chemicalItem->id,
                     'quantity' => $order->quantity,
                     'unit_price' => $order->negotiated_price,
@@ -101,37 +101,37 @@ class ProcurementTreasurySeeder extends Seeder
             }
 
             // Add landed cost lines for orders in transit / received
-            if (in_array($status, [ImportOrderStatus::InTransit, ImportOrderStatus::Received])
-                && ! LandedCostLine::where('import_order_id', $order->id)->exists()) {
+            if (in_array($status, [PurchaseOrderStatus::InTransit, PurchaseOrderStatus::Received])
+                && ! LandedCostLine::where('purchase_order_id', $order->id)->exists()) {
                 LandedCostLine::create([
                     'id' => (string) Str::uuid(),
-                    'import_order_id' => $order->id,
+                    'purchase_order_id' => $order->id,
                     'type' => LandedCostType::Freight,
                     'amount' => fake()->randomFloat(4, 2000, 25_000),
                     'currency' => 'LYD',
-                    'status' => $status === ImportOrderStatus::Received ? AllocationPaymentStatus::Paid : AllocationPaymentStatus::Pending,
-                    'is_confirmed' => $status === ImportOrderStatus::Received,
-                    'approved_by_user_id' => $status === ImportOrderStatus::Received ? $treasuryOfficer?->id : null,
-                    'approved_at' => $status === ImportOrderStatus::Received ? now() : null,
-                    'paid_by_user_id' => $status === ImportOrderStatus::Received ? $treasuryOfficer?->id : null,
-                    'paid_at' => $status === ImportOrderStatus::Received ? now() : null,
+                    'status' => $status === PurchaseOrderStatus::Received ? AllocationPaymentStatus::Paid : AllocationPaymentStatus::Pending,
+                    'is_confirmed' => $status === PurchaseOrderStatus::Received,
+                    'approved_by_user_id' => $status === PurchaseOrderStatus::Received ? $treasuryOfficer?->id : null,
+                    'approved_at' => $status === PurchaseOrderStatus::Received ? now() : null,
+                    'paid_by_user_id' => $status === PurchaseOrderStatus::Received ? $treasuryOfficer?->id : null,
+                    'paid_at' => $status === PurchaseOrderStatus::Received ? now() : null,
                 ]);
             }
 
             // Payment request + bank hold for orders past pending_payment
             if (in_array($status, [
-                ImportOrderStatus::AwaitingBankApproval,
-                ImportOrderStatus::InTransit,
-                ImportOrderStatus::Received,
-            ]) && ! PaymentRequest::where('import_order_id', $order->id)->exists()) {
-                $prStatus = $status === ImportOrderStatus::AwaitingBankApproval
+                PurchaseOrderStatus::AwaitingBankApproval,
+                PurchaseOrderStatus::InTransit,
+                PurchaseOrderStatus::Received,
+            ]) && ! PaymentRequest::where('purchase_order_id', $order->id)->exists()) {
+                $prStatus = $status === PurchaseOrderStatus::AwaitingBankApproval
                     ? PaymentRequestStatus::Pending
                     : PaymentRequestStatus::Paid;
 
                 $paymentRequest = PaymentRequest::create([
                     'id' => (string) Str::uuid(),
                     'operating_unit_id' => $procurement->id,
-                    'import_order_id' => $order->id,
+                    'purchase_order_id' => $order->id,
                     'route' => PaymentRoute::Bank,
                     'invoice_ref' => 'INV-DUMMY-'.str_pad((string) $i, 4, '0', STR_PAD_LEFT),
                     'amount_requested' => round((float) $order->negotiated_price * (float) $order->quantity, 4),
@@ -139,7 +139,7 @@ class ProcurementTreasurySeeder extends Seeder
                     'fx_rate_used' => 5.20,
                 ]);
 
-                if ($status !== ImportOrderStatus::AwaitingBankApproval) {
+                if ($status !== PurchaseOrderStatus::AwaitingBankApproval) {
                     BankHold::create([
                         'id' => (string) Str::uuid(),
                         'payment_request_id' => $paymentRequest->id,

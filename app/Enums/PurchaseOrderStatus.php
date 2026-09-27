@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
-enum ImportOrderStatus: string
+enum PurchaseOrderStatus: string
 {
     case Draft = 'draft';
+
+    // Foreign-flow statuses.
     case PendingPayment = 'pending_payment';
     case AwaitingBankApproval = 'awaiting_bank_approval';
     case AwaitingTransfer = 'awaiting_transfer';
@@ -18,4 +20,8 @@ enum ImportOrderStatus: string
     case AwaitingReceipt = 'awaiting_receipt';
     case Received = 'received';
     case Complete = 'complete';
+
+    // Local-flow statuses (used when `kind = 'local'`).
+    case Approved = 'approved';
+    case Closed = 'closed';
 }

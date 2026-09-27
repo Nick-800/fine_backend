@@ -13,7 +13,7 @@ final class GoodsReceiptResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'import_order_id' => $this->import_order_id,
+            'purchase_order_id' => $this->purchase_order_id,
             'warehouse_id' => $this->warehouse_id,
             'received_qty' => (float) $this->received_qty,
             'condition_notes' => $this->condition_notes,

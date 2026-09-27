@@ -2,23 +2,23 @@
 
 declare(strict_types=1);
 
-use App\Enums\ImportOrderStatus;
 use App\Enums\PaymentRoute;
+use App\Enums\PurchaseOrderStatus;
 use App\Http\Resources\v1\PaymentRequestResource;
 use App\Models\Company;
 use App\Models\FxRate;
-use App\Models\ImportOrder;
 use App\Models\JournalEntry;
 use App\Models\LandedCostLine;
 use App\Models\OperatingUnit;
 use App\Models\PaymentRequest;
+use App\Models\PurchaseOrder;
 use App\Models\Role;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
-use App\Services\ImportOrderStateService;
+use App\Services\PurchaseOrderStateService;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -66,7 +66,7 @@ beforeEach(function () {
         'operating_unit_id' => $this->unit->id,
     ]);
 
-    $this->stateService = app(ImportOrderStateService::class);
+    $this->stateService = app(PurchaseOrderStateService::class);
 });
 
 // -----------------------------------------------------------------------------
@@ -74,14 +74,14 @@ beforeEach(function () {
 // -----------------------------------------------------------------------------
 
 test('it derives the effective rate when only the LYD amount is provided', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->fresh()->paymentRequests()->sole();
@@ -93,14 +93,14 @@ test('it derives the effective rate when only the LYD amount is provided', funct
 });
 
 test('it derives the effective settled when only the rate is provided', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->fresh()->paymentRequests()->sole();
@@ -115,14 +115,14 @@ test('it derives the effective settled when only the rate is provided', function
 });
 
 test('it accepts exact_amount_used_lyd on the Market route', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
@@ -136,14 +136,14 @@ test('it accepts exact_amount_used_lyd on the Market route', function () {
 });
 
 test('it accepts both inputs and reconciles to the LYD truth', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->fresh()->paymentRequests()->sole();
@@ -155,14 +155,14 @@ test('it accepts both inputs and reconciles to the LYD truth', function () {
 });
 
 test('it rejects execution when neither field is provided', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->fresh()->paymentRequests()->sole();
@@ -172,14 +172,14 @@ test('it rejects execution when neither field is provided', function () {
 });
 
 test('it rounds effective_rate to 6 decimal places and effective_settled to 4', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 333,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->fresh()->paymentRequests()->sole();
@@ -198,14 +198,14 @@ test('FX-TEST-02: a bank hold where exact_used exceeds held books the spread as 
     // 1000 USD, booked at 5.0. Held 5000, bank actually debited 5150 LYD.
     // released_amount must be clamped at 0; the 150 LYD spread is the FX loss
     // booked at completion.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5000.00);
@@ -229,7 +229,7 @@ test('FX-TEST-02: a bank hold where exact_used exceeds held books the spread as 
     expect((float) $advance->lines()->with('account')->get()
         ->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(5150.0);
 
-    $completion = JournalEntry::where('source_document_type', 'ImportOrder')->sole();
+    $completion = JournalEntry::where('source_document_type', 'PurchaseOrder')->sole();
     $lines = $completion->lines()->with('account')->get();
     expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '53')->debit)->toBe(150.0)
         ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '15')->credit)->toBe(5150.0);
@@ -245,14 +245,14 @@ test('FX-TEST-03: a USD order with no booked_fx_rate falls back to the most rece
         'captured_at' => now()->subDay(),
     ]);
 
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         // No booked_fx_rate — exercises the historical fallback path.
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
@@ -268,7 +268,7 @@ test('FX-TEST-03: a USD order with no booked_fx_rate falls back to the most rece
     $this->stateService->receiveGoods($order->fresh(), $this->warehouse->id, 1);
     $this->stateService->completeOrder($order->fresh());
 
-    $completion = JournalEntry::where('source_document_type', 'ImportOrder')->sole();
+    $completion = JournalEntry::where('source_document_type', 'PurchaseOrder')->sole();
     $lines = $completion->lines()->with('account')->get();
     expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '53')->debit)->toBe(200.0);
 });
@@ -276,14 +276,14 @@ test('FX-TEST-03: a USD order with no booked_fx_rate falls back to the most rece
 test('FX-TEST-07: a landed cost line in the order currency converts at the realized rate', function () {
     // Order USD, booked 5.0, executed 5.2. Freight line in USD 100 → converts
     // at realized 5.2 = 520 LYD added to inventory.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
@@ -291,7 +291,7 @@ test('FX-TEST-07: a landed cost line in the order currency converts at the reali
     $this->stateService->executePayment($pr, fxRateUsed: 5.2);
 
     LandedCostLine::create([
-        'import_order_id' => $order->id,
+        'purchase_order_id' => $order->id,
         'type' => 'freight',
         'amount' => 100,
         'currency' => 'USD',
@@ -305,7 +305,7 @@ test('FX-TEST-07: a landed cost line in the order currency converts at the reali
     $this->stateService->receiveGoods($order->fresh(), $this->warehouse->id, 1);
     $this->stateService->completeOrder($order->fresh());
 
-    $completion = JournalEntry::where('source_document_type', 'ImportOrder')->sole();
+    $completion = JournalEntry::where('source_document_type', 'PurchaseOrder')->sole();
     $lines = $completion->lines()->with('account')->get();
     // Inventory: booked 5000 + freight 520 = 5520
     expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '111')->debit)->toBe(5520.0)
@@ -313,14 +313,14 @@ test('FX-TEST-07: a landed cost line in the order currency converts at the reali
 });
 
 test('FX-TEST-08: executePayment without exact_amount_used_lyd defaults to amount_requested * fx_rate_used for the bank branch', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
@@ -340,14 +340,14 @@ test('FX-TEST-08: executePayment without exact_amount_used_lyd defaults to amoun
 
 test('the API requires a note when settled LYD deviates from booked by more than tolerance', function () {
     // booked 5.0, settled 5.20 → 200 LYD variance; tolerance 0.01.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $requestId = $order->paymentRequests()->sole()->id;
@@ -363,14 +363,14 @@ test('the API requires a note when settled LYD deviates from booked by more than
 
 test('the API does not require a note when variance is within tolerance', function () {
     // booked 5.0, settled 5.000001 → 0.001 LYD variance, within 0.01 tolerance.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $requestId = $order->paymentRequests()->sole()->id;
@@ -387,14 +387,14 @@ test('the API requires a note when exact_amount_used_lyd deviates even at the bo
     // booked 5.0, fx_rate_used=5.0 (no rate move), exact_amount_used_lyd=5100.
     // The rate check passes (diff=0), but the LYD truth is 5100 → 100 LYD
     // variance, note required.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
@@ -421,14 +421,14 @@ test('the API requires a note when exact_amount_used_lyd deviates even at the bo
 });
 
 test('the API allows Market route execution with only LYD input', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
@@ -452,14 +452,14 @@ test('the API allows Market route execution with only LYD input', function () {
 // -----------------------------------------------------------------------------
 
 test('resource exposes effective_settled_lyd when exact_amount_used is set', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
@@ -478,14 +478,14 @@ test('resource exposes effective_settled_lyd when exact_amount_used is set', fun
 });
 
 test('resource derives effective_rate when only exact_amount_used is stored', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
@@ -500,14 +500,14 @@ test('resource derives effective_rate when only exact_amount_used is stored', fu
 
 test('resource variance_vs_booked_lyd matches the actual settled-to-booked LYD delta', function () {
     // booked 5.0, no exact_used, rate 5.10 → settled = 5100 → variance 100.
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->paymentRequests()->sole();
@@ -523,14 +523,14 @@ test('resource variance_vs_booked_lyd matches the actual settled-to-booked LYD d
 test('resource flags variance_exceeds_hard_cap for spreads above 5% of settled', function () {
     // booked 5.0, settled 5200 → variance 200 / 5200 = 3.85% (within cap).
     // To exceed 5%: settled 6000 → variance 1000 / 6000 = 16.7% (exceeds).
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->paymentRequests()->sole();

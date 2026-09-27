@@ -18,7 +18,7 @@ final class PaymentRequest extends Model
 
     protected $fillable = [
         'operating_unit_id',
-        'import_order_id',
+        'purchase_order_id',
         'route',
         'invoice_ref',
         'amount_requested',
@@ -39,9 +39,9 @@ final class PaymentRequest extends Model
         return $this->belongsTo(OperatingUnit::class);
     }
 
-    public function importOrder(): BelongsTo
+    public function purchaseOrder(): BelongsTo
     {
-        return $this->belongsTo(ImportOrder::class);
+        return $this->belongsTo(PurchaseOrder::class);
     }
 
     public function bankHold(): HasOne

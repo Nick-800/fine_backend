@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Models\ImportOrder;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
+use App\Models\PurchaseOrder;
 use App\Models\StockLot;
 use App\Models\Warehouse;
 use App\Support\InventoryAccounts;
@@ -33,11 +33,11 @@ class StockLotService
      *   opening_balance  DR inventory / CR 3100 Retained Earnings
      *   purchase_cash    DR inventory / CR 1200 Cash and Bank
      *   purchase_credit  DR inventory / CR 2100 Accounts Payable
-     *   import_receipt   no journal — ImportOrder.Complete already posts the
+     *   import_receipt   no journal — PurchaseOrder.Complete already posts the
      *                    landed value; this only materialises the physical lots
      *
      * @param array{inventory_item_id: string, warehouse_id: string, lot_number?: string|null,
-     *     quantity: float, unit_cost: float, source: string, import_order_id?: string|null,
+     *     quantity: float, unit_cost: float, source: string, purchase_order_id?: string|null,
      *     attribute_values?: array<string, mixed>|null} $data
      */
     public function intake(array $data): StockLot
@@ -53,7 +53,7 @@ class StockLotService
 
             $rawLot = trim((string) ($data['lot_number'] ?? ''));
             if ($rawLot === '') {
-                $lotNumber = $this->generateUniqueLotNumber($item, $data['source'], $data['import_order_id'] ?? null);
+                $lotNumber = $this->generateUniqueLotNumber($item, $data['source'], $data['purchase_order_id'] ?? null);
             } else {
                 [$lotNumber, $originalVendorLot] = $this->resolveUniqueLotNumber($rawLot, $item);
                 if ($originalVendorLot !== null && ! isset($attributeValues['vendor_lot_number'])) {
@@ -117,8 +117,8 @@ class StockLotService
                 'quantity_delta' => round((float) $data['quantity'], 4),
                 'unit_cost' => round((float) $data['unit_cost'], 4),
                 'reason' => $data['source'],
-                'reference_document_type' => $isImportReceipt && isset($data['import_order_id']) ? 'ImportOrder' : null,
-                'reference_id' => $isImportReceipt ? ($data['import_order_id'] ?? null) : null,
+                'reference_document_type' => $isImportReceipt && isset($data['purchase_order_id']) ? 'PurchaseOrder' : null,
+                'reference_id' => $isImportReceipt ? ($data['purchase_order_id'] ?? null) : null,
             ]);
 
             $value = round((float) $data['quantity'] * (float) $data['unit_cost'], 4);
@@ -502,14 +502,14 @@ class StockLotService
         });
     }
 
-    public function generateUniqueLotNumber(InventoryItem $item, string $source, ?string $importOrderId = null): string
+    public function generateUniqueLotNumber(InventoryItem $item, string $source, ?string $purchaseOrderId = null): string
     {
         $skuPart = preg_replace('/[^A-Za-z0-9_-]/', '', (string) $item->code) ?: 'ITEM';
         $datePart = now()->format('Ymd');
 
-        if ($source === 'import_receipt' && $importOrderId) {
-            $order = ImportOrder::find($importOrderId);
-            $orderRef = $order?->order_number ?? substr($importOrderId, 0, 8);
+        if ($source === 'import_receipt' && $purchaseOrderId) {
+            $order = PurchaseOrder::find($purchaseOrderId);
+            $orderRef = $order?->order_number ?? substr($purchaseOrderId, 0, 8);
             $base = "IMP-{$orderRef}-{$skuPart}";
         } else {
             $base = "LOT-{$skuPart}-{$datePart}";

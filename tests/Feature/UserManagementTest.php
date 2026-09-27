@@ -249,4 +249,3 @@ it('allows owner to fetch user details including roles, permissions, and deleted
     expect($res->json('data.permissions'))->toContain('sales.create')
         ->and($res->json('data.roles'))->toHaveCount(1);
 });
-

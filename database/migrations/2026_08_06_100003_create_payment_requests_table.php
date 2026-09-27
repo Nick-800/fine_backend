@@ -13,7 +13,7 @@ return new class extends Migration
         Schema::create('payment_requests', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('operating_unit_id')->constrained('operating_units')->cascadeOnDelete();
-            $table->foreignUuid('import_order_id')->constrained('import_orders')->cascadeOnDelete();
+            $table->foreignUuid('purchase_order_id')->constrained('purchase_orders')->cascadeOnDelete();
             $table->string('route');
             $table->string('invoice_ref')->nullable();
             $table->decimal('amount_requested', 15, 4);

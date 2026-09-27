@@ -4,13 +4,10 @@ declare(strict_types=1);
 
 use App\Models\AppVersion;
 use App\Models\OperatingUnit;
-use App\Models\Role;
 use App\Models\User;
-use App\Models\UserRole;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Database\Seeders\SystemBootstrapSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 

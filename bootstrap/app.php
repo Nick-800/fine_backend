@@ -8,7 +8,10 @@ use App\Exceptions\MissingAccountException;
 use App\Exceptions\OptimisticLockConflictException;
 use App\Exceptions\SerializedQuantityException;
 use App\Exceptions\UnbalancedJournalException;
+use App\Http\Middleware\EnforceDesktopAppVersion;
 use App\Http\Middleware\EnsurePasswordIsUpdated;
+use App\Http\Middleware\RequirePermission;
+use App\Http\Middleware\RequireRole;
 use App\Http\Middleware\ScopeOperatingUnit;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -24,15 +27,15 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->api(prepend: [
-            \App\Http\Middleware\EnforceDesktopAppVersion::class,
+            EnforceDesktopAppVersion::class,
         ]);
 
         $middleware->alias([
             'scope.unit' => ScopeOperatingUnit::class,
             'ensure.password.updated' => EnsurePasswordIsUpdated::class,
-            'require.role' => \App\Http\Middleware\RequireRole::class,
-            'require.permission' => \App\Http\Middleware\RequirePermission::class,
-            'enforce.desktop.version' => \App\Http\Middleware\EnforceDesktopAppVersion::class,
+            'require.role' => RequireRole::class,
+            'require.permission' => RequirePermission::class,
+            'enforce.desktop.version' => EnforceDesktopAppVersion::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

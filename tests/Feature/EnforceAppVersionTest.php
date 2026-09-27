@@ -169,4 +169,3 @@ it('recovers enforced version from database after cache is cleared', function ()
 
     expect(Cache::get('app:min_desktop_version'))->toBe('1.0.30');
 });
-

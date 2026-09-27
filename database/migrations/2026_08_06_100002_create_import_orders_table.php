@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('import_orders', function (Blueprint $table) {
+        Schema::create('purchase_orders', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('operating_unit_id')->constrained('operating_units')->cascadeOnDelete();
             $table->foreignUuid('supplier_id')->constrained('suppliers')->cascadeOnDelete();
@@ -26,6 +26,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('import_orders');
+        Schema::dropIfExists('purchase_orders');
     }
 };

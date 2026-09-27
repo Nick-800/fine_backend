@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Enums\ImportOrderStatus;
 use App\Enums\PaymentRoute;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\Company;
-use App\Models\ImportOrder;
 use App\Models\OperatingUnit;
+use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
-use App\Services\ImportOrderStateService;
+use App\Services\PurchaseOrderStateService;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -39,19 +39,19 @@ beforeEach(function () {
         'default_currency' => 'USD',
     ]);
 
-    $this->stateService = app(ImportOrderStateService::class);
+    $this->stateService = app(PurchaseOrderStateService::class);
 });
 
 test('fx:audit-silent-spreads lists paid requests where variance exceeded tolerance without a note', function () {
     $makeOrder = function (float $booked, float $settled, bool $withNote): string {
-        $order = ImportOrder::create([
+        $order = PurchaseOrder::create([
             'operating_unit_id' => $this->unit->id,
             'supplier_id' => $this->supplier->id,
             'currency' => 'USD',
             'negotiated_price' => 1000,
             'quantity' => 1,
             'booked_fx_rate' => $booked,
-            'status' => ImportOrderStatus::Draft,
+            'status' => PurchaseOrderStatus::Draft,
         ]);
         $this->stateService->transitionToPendingPayment($order);
         $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 6000.00);
@@ -92,14 +92,14 @@ test('fx:audit-silent-spreads lists paid requests where variance exceeded tolera
 });
 
 test('fx:audit-silent-spreads emits nothing when all variances are within tolerance', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->unit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 1000,
         'quantity' => 1,
         'booked_fx_rate' => 5.0,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);

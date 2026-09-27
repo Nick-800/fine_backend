@@ -250,4 +250,3 @@ class CutterWorkOrderController extends Controller
         return response()->json($updated);
     }
 }
-

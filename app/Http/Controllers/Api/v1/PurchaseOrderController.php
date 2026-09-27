@@ -4,21 +4,22 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\v1;
 
-use App\Enums\ImportOrderStatus;
 use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
+use App\Enums\PurchaseOrderStatus;
+use App\Exceptions\InvalidStateTransitionException;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\v1\StoreImportOrderRequest;
-use App\Http\Requests\v1\UpdateImportOrderRequest;
-use App\Http\Resources\v1\ImportOrderResource;
+use App\Http\Requests\v1\StorePurchaseOrderRequest;
+use App\Http\Requests\v1\UpdatePurchaseOrderRequest;
+use App\Http\Resources\v1\PurchaseOrderResource;
 use App\Models\FxRate;
-use App\Models\ImportOrder;
-use App\Models\ImportOrderItem;
 use App\Models\InventoryItem;
 use App\Models\OperatingUnit;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\Warehouse;
 use App\Rules\ExistsInCurrentUnit;
-use App\Services\ImportOrderStateService;
+use App\Services\PurchaseOrderStateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -26,7 +27,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
-final class ImportOrderController extends Controller
+final class PurchaseOrderController extends Controller
 {
     /**
      * Procurement-sensible item types — items used to source a purchase order.
@@ -41,12 +42,12 @@ final class ImportOrderController extends Controller
     ];
 
     public function __construct(
-        private readonly ImportOrderStateService $stateService
+        private readonly PurchaseOrderStateService $stateService
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = ImportOrder::with([
+        $query = PurchaseOrder::with([
             'supplier',
             'paymentRequests',
             'landedCostLines',
@@ -62,12 +63,31 @@ final class ImportOrderController extends Controller
             $query->where('status', $request->query('status'));
         }
 
-        return ImportOrderResource::collection($query->latest()->get());
+        // ACC-03 / Wave 5: tab split between foreign (FX, land-cost) and
+        // local (LYD, no FX). The `market` param filters by the new `kind`
+        // column on purchase_orders.
+        if ($request->filled('market')) {
+            $kind = $request->query('market') === 'local' ? 'local' : 'foreign';
+            $query->where('kind', $kind);
+        }
+
+        return PurchaseOrderResource::collection($query->latest()->get());
     }
 
-    public function store(StoreImportOrderRequest $request): JsonResponse
+    public function store(StorePurchaseOrderRequest $request): JsonResponse
     {
         $data = $request->validated();
+
+        // Wave 5: kind discriminator defaults to 'foreign' (legacy behaviour).
+        // Local orders are explicit — the FE passes `kind=local`.
+        $kind = ($data['kind'] ?? null) === 'local' ? 'local' : 'foreign';
+
+        // Wave 5: for local POs, currency is locked to LYD (the supplier-side
+        // currency for domestic procurement). For foreign, the existing
+        // snapshot logic still applies.
+        if ($kind === 'local') {
+            $data['currency'] = 'LYD';
+        }
 
         // PROC-06: the booked FX estimate is captured when the order is
         // booked, not reconstructed later. Completion posts FX gain/loss
@@ -79,7 +99,7 @@ final class ImportOrderController extends Controller
             );
         }
 
-        return DB::transaction(function () use ($request, $data) {
+        return DB::transaction(function () use ($request, $data, $kind) {
             $currency = $data['currency'] ?? 'USD';
 
             // When line items are supplied, derive the header aggregates from
@@ -98,10 +118,11 @@ final class ImportOrderController extends Controller
                 ));
             }
 
-            $order = ImportOrder::create([
+            $order = PurchaseOrder::create([
                 'operating_unit_id' => $data['operating_unit_id'],
                 'supplier_id' => $data['supplier_id'],
                 'currency' => $currency,
+                'kind' => $kind,
                 'negotiated_price' => $headerUnitPrice ?? 0,
                 'quantity' => $headerQuantity ?? 0,
                 'booked_fx_rate' => $data['booked_fx_rate'] ?? null,
@@ -109,22 +130,22 @@ final class ImportOrderController extends Controller
 
             if ($request->has('items')) {
                 foreach ($items as $line) {
-                    ImportOrderItem::create($line + ['import_order_id' => $order->id]);
+                    PurchaseOrderItem::create($line + ['purchase_order_id' => $order->id]);
                 }
             }
 
-            return (new ImportOrderResource($order->load([
+            return (new PurchaseOrderResource($order->load([
                 'supplier',
                 'items.inventoryItem',
             ])))->response()->setStatusCode(201);
         });
     }
 
-    public function update(UpdateImportOrderRequest $request, string $id): JsonResponse|ImportOrderResource
+    public function update(UpdatePurchaseOrderRequest $request, string $id): JsonResponse|PurchaseOrderResource
     {
-        $order = ImportOrder::findOrFail($id);
+        $order = PurchaseOrder::findOrFail($id);
 
-        if ($order->status !== ImportOrderStatus::Draft) {
+        if ($order->status !== PurchaseOrderStatus::Draft) {
             return response()->json([
                 'message' => 'Items can only be edited when the import order is in draft status.',
                 'code' => 'ORDER_NOT_IN_DRAFT',
@@ -137,7 +158,7 @@ final class ImportOrderController extends Controller
             $order->items()->delete();
 
             foreach ($items as $line) {
-                ImportOrderItem::create($line + ['import_order_id' => $order->id]);
+                PurchaseOrderItem::create($line + ['purchase_order_id' => $order->id]);
             }
 
             $headerQuantity = array_sum(array_column($items, 'quantity'));
@@ -157,7 +178,7 @@ final class ImportOrderController extends Controller
 
             $order->update($attributes);
 
-            return new ImportOrderResource($order->fresh([
+            return new PurchaseOrderResource($order->fresh([
                 'supplier',
                 'items.inventoryItem',
             ]));
@@ -202,6 +223,133 @@ final class ImportOrderController extends Controller
         return $prepared;
     }
 
+    /**
+     * Wave 5 (local flow): atomic per-line batch receive.
+     *
+     * Body:
+     *   {
+     *     "items": [
+     *       {"id": "<purchase_order_item_uuid>", "received_quantity": 80},
+     *       {"id": "<another_uuid>", "received_quantity": 120}
+     *     ]
+     *   }
+     *
+     * Behaviour:
+     *   - Atomic: every line validates or the whole batch is rolled back.
+     *   - `received_quantity` per line is clamped against its prior value
+     *     (no rolling back).
+     *   - When every line is fully received, the order transitions
+     *     approved -> received. Partial receipts stay in `approved`.
+     *   - Local purchase orders only. Foreign POs use the existing
+     *     transition -> receive_goods path.
+     */
+    public function receive(Request $request, string $id): JsonResponse
+    {
+        $order = PurchaseOrder::findOrFail($id);
+
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.id' => 'required|uuid',
+            'items.*.received_quantity' => 'required|numeric|min:0',
+        ]);
+
+        try {
+            $this->stateService->receiveItems($order, $validated['items']);
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_PURCHASE_ORDER_OPERATION',
+            ], 422);
+        } catch (InvalidStateTransitionException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_STATE_TRANSITION',
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Items received successfully.',
+            'data' => new PurchaseOrderResource($order->fresh([
+                'supplier',
+                'paymentRequests.bankHold',
+                'landedCostLines',
+                'goodsReceipt',
+                'items.inventoryItem',
+                'arrivedWarehouse',
+            ])),
+        ]);
+    }
+
+    /**
+     * Wave 5 (local flow): approve a draft local purchase order.
+     * Manager sign-off — no journal posting, just a state transition.
+     */
+    public function approve(Request $request, string $id): JsonResponse
+    {
+        $order = PurchaseOrder::findOrFail($id);
+
+        try {
+            $this->stateService->approve($order);
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_PURCHASE_ORDER_OPERATION',
+            ], 422);
+        } catch (InvalidStateTransitionException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_STATE_TRANSITION',
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Purchase order approved.',
+            'data' => new PurchaseOrderResource($order->fresh([
+                'supplier',
+                'paymentRequests.bankHold',
+                'landedCostLines',
+                'goodsReceipt',
+                'items.inventoryItem',
+                'arrivedWarehouse',
+            ])),
+        ]);
+    }
+
+    /**
+     * Wave 5 (local flow): record payment on a received local order.
+     * Marks the order paid; auto-closes when fully received + paid.
+     */
+    public function payLocal(Request $request, string $id): JsonResponse
+    {
+        $order = PurchaseOrder::findOrFail($id);
+
+        try {
+            $this->stateService->payLocal($order);
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_PURCHASE_ORDER_OPERATION',
+            ], 422);
+        } catch (InvalidStateTransitionException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVALID_STATE_TRANSITION',
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Local order marked as paid.',
+            'data' => new PurchaseOrderResource($order->fresh([
+                'supplier',
+                'paymentRequests.bankHold',
+                'landedCostLines',
+                'goodsReceipt',
+                'items.inventoryItem',
+                'arrivedWarehouse',
+            ])),
+        ]);
+    }
+
     private function snapshotBookedFxRate(string $currency, string $operatingUnitId): ?string
     {
         $functionalCurrency = OperatingUnit::query()
@@ -218,9 +366,9 @@ final class ImportOrderController extends Controller
             ->value('rate');
     }
 
-    public function show(string $id): ImportOrderResource
+    public function show(string $id): PurchaseOrderResource
     {
-        $order = ImportOrder::with([
+        $order = PurchaseOrder::with([
             'supplier',
             'paymentRequests.bankHold',
             'landedCostLines',
@@ -228,12 +376,12 @@ final class ImportOrderController extends Controller
             'items.inventoryItem',
         ])->findOrFail($id);
 
-        return new ImportOrderResource($order);
+        return new PurchaseOrderResource($order);
     }
 
     public function transition(Request $request, string $id): JsonResponse
     {
-        $order = ImportOrder::findOrFail($id);
+        $order = PurchaseOrder::findOrFail($id);
 
         // receive_goods: if no explicit warehouse is sent but we already
         // recorded one on arrival, default to it so the operator doesn't
@@ -325,7 +473,7 @@ final class ImportOrderController extends Controller
 
         return response()->json([
             'message' => 'Transition applied successfully.',
-            'data' => new ImportOrderResource($order->fresh([
+            'data' => new PurchaseOrderResource($order->fresh([
                 'supplier',
                 'paymentRequests.bankHold',
                 'landedCostLines',
@@ -336,7 +484,7 @@ final class ImportOrderController extends Controller
         ]);
     }
 
-    private function executePaymentForOrder(ImportOrder $order, Request $request): void
+    private function executePaymentForOrder(PurchaseOrder $order, Request $request): void
     {
         $paymentRequest = $order->paymentRequests()
             ->where('status', PaymentRequestStatus::Pending)
@@ -358,7 +506,7 @@ final class ImportOrderController extends Controller
 
         $functionalCurrency = $order->operatingUnit?->company?->default_currency ?? 'LYD';
         $varianceLyd = $this->stateService->varianceVsBooked($order, $effectiveSettled, $functionalCurrency);
-        $tolerance = ImportOrderStateService::fxToleranceLyd();
+        $tolerance = PurchaseOrderStateService::fxToleranceLyd();
 
         if ($varianceLyd !== null && abs($varianceLyd) > $tolerance && blank($request->input('extra_allocation_note'))) {
             throw ValidationException::withMessages([

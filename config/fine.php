@@ -18,7 +18,7 @@ return [
     | variance row that requires an explicit acknowledge chip in the UI
     | before submit. Defaults to 5%.
     |
-    | These are also exposed on `ImportOrderStateService::FX_TOLERANCE_LYD`
+    | These are also exposed on `PurchaseOrderStateService::FX_TOLERANCE_LYD`
     | and `::FX_HARD_CAP_PERCENT` as defensive defaults — the service
     | constants win if the config is missing.
     */

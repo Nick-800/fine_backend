@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\CutterWorkOrder;
-use App\Models\ImportOrder;
 use App\Models\MaterialRequest;
 use App\Models\ProductionBatch;
+use App\Models\PurchaseOrder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -85,7 +85,7 @@ class MaterialResolutionService
         return match ($model::class) {
             CutterWorkOrder::class => 'cutter_work_order',
             ProductionBatch::class => 'production_batch',
-            ImportOrder::class => 'procurement_request',
+            PurchaseOrder::class => 'procurement_request',
             default => strtolower(preg_replace('/(?<!^)([A-Z])/', '_$1', class_basename($model)) ?? ''),
         };
     }

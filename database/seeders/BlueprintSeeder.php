@@ -18,7 +18,7 @@ class BlueprintSeeder extends Seeder
             [
                 'name' => 'Procurement & Treasury Blueprint',
                 'workflow_set' => [
-                    'import_order' => ['draft', 'pending_payment', 'awaiting_bank_approval', 'awaiting_transfer', 'paid', 'in_transit', 'at_port', 'awaiting_receipt', 'received', 'complete'],
+                    'purchase_order' => ['draft', 'pending_payment', 'awaiting_bank_approval', 'awaiting_transfer', 'paid', 'in_transit', 'at_port', 'awaiting_receipt', 'received', 'complete'],
                 ],
                 'default_role_template' => [
                     'procurement-manager' => ['create-procurement', 'view-procurement', 'edit-procurement'],

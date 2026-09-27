@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Enums\ImportOrderStatus;
+use App\Enums\PurchaseOrderKind;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\Traits\BelongsToOperatingUnit;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,15 +14,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
-final class ImportOrder extends Model
+final class PurchaseOrder extends Model
 {
     use BelongsToOperatingUnit, HasFactory, HasUuids, SoftDeletes;
+
+    protected $table = 'purchase_orders';
 
     protected $fillable = [
         'operating_unit_id',
         'supplier_id',
         'currency',
+        'kind',
         'negotiated_price',
         'quantity',
         'booked_fx_rate',
@@ -31,11 +36,23 @@ final class ImportOrder extends Model
     ];
 
     protected $casts = [
-        'status' => ImportOrderStatus::class,
+        'status' => PurchaseOrderStatus::class,
+        'kind' => PurchaseOrderKind::class,
         'negotiated_price' => 'decimal:4',
         'quantity' => 'decimal:4',
         'booked_fx_rate' => 'decimal:6',
         'record_version' => 'integer',
+    ];
+
+    /**
+     * Default attributes applied to every new model instance when not
+     * explicitly provided on create. Mirrors the database column defaults
+     * so Eloquent populates `kind` and `status` even when callers omit
+     * them (most foreign-flow callers do).
+     */
+    protected $attributes = [
+        'kind' => 'foreign',
+        'status' => 'draft',
     ];
 
     public function operatingUnit(): BelongsTo
@@ -65,7 +82,7 @@ final class ImportOrder extends Model
 
     public function items(): HasMany
     {
-        return $this->hasMany(ImportOrderItem::class);
+        return $this->hasMany(PurchaseOrderItem::class);
     }
 
     public function arrivedWarehouse(): BelongsTo
@@ -84,7 +101,7 @@ final class ImportOrder extends Model
             }
         } elseif ($this->items()->exists()) {
             return (float) round(
-                (float) $this->items()->sum(\Illuminate\Support\Facades\DB::raw('quantity * unit_price')),
+                (float) $this->items()->sum(DB::raw('quantity * unit_price')),
                 4
             );
         }
@@ -95,5 +112,43 @@ final class ImportOrder extends Model
     public function getTotalAmountAttribute(): float
     {
         return $this->totalCost();
+    }
+
+    /**
+     * Whether every line item has been fully received.
+     * Returns true for orders with no items (vacuous truth).
+     */
+    public function isFullyReceived(): bool
+    {
+        if (! $this->relationLoaded('items')) {
+            $this->load('items');
+        }
+        if ($this->items->isEmpty()) {
+            return true;
+        }
+        foreach ($this->items as $item) {
+            if ((float) ($item->received_quantity ?? 0) < (float) $item->quantity) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * The ledger payable account used by the receive journal: the
+     * supplier-specific sub-account when one is set, otherwise the
+     * generic Accounts Payable (2100).
+     */
+    public function payableAccountCode(): string
+    {
+        if ($this->supplier && $this->supplier->account_id) {
+            $code = Account::where('id', $this->supplier->account_id)->value('account_code');
+            if ($code) {
+                return (string) $code;
+            }
+        }
+
+        return '21'; // 2100 Accounts Payable (post-Wave 4 rename)
     }
 }

@@ -4,20 +4,20 @@ declare(strict_types=1);
 
 use App\Enums\AllocationMethod;
 use App\Enums\AllocationPaymentStatus;
-use App\Enums\ImportOrderStatus;
 use App\Enums\PaymentRoute;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\Company;
-use App\Models\ImportOrder;
 use App\Models\OperatingUnit;
 use App\Models\OverheadAllocation;
+use App\Models\PurchaseOrder;
 use App\Models\Role;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
-use App\Services\ImportOrderStateService;
 use App\Services\OverheadService;
+use App\Services\PurchaseOrderStateService;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -78,7 +78,7 @@ beforeEach(function () {
     $this->asTreasury = fn () => $this->actingAs($this->treasury)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
 
-    $this->makeReceivedOrder = function (): ImportOrder {
+    $this->makeReceivedOrder = function (): PurchaseOrder {
         $supplier = Supplier::create([
             'operating_unit_id' => $this->unit->id,
             'name' => 'Test Supplier',
@@ -91,16 +91,16 @@ beforeEach(function () {
             'is_internal_unit' => true,
         ]);
 
-        $order = ImportOrder::create([
+        $order = PurchaseOrder::create([
             'operating_unit_id' => $this->unit->id,
             'supplier_id' => $supplier->id,
             'currency' => 'USD',
             'negotiated_price' => 50,
             'quantity' => 10,
-            'status' => ImportOrderStatus::Draft,
+            'status' => PurchaseOrderStatus::Draft,
         ]);
 
-        $state = app(ImportOrderStateService::class);
+        $state = app(PurchaseOrderStateService::class);
         $state->transitionToPendingPayment($order->fresh());
         $state->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 500);
         $paymentRequest = $order->paymentRequests()->first();
@@ -218,15 +218,15 @@ test('a landed cost line can only be approved by its import order unit manager',
     ]);
     expect($line->fresh()->status)->toBe(AllocationPaymentStatus::Pending);
 
-    ($this->asOutsider)()->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
+    ($this->asOutsider)()->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
         ->assertStatus(403)
         ->assertJsonPath('code', 'ALLOCATION_NOT_RESPONSIBLE');
 
-    ($this->asManager)()->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve", [
+    ($this->asManager)()->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/approve", [
         'note' => 'OK',
     ])->assertStatus(200)->assertJsonPath('data.status', 'approved');
 
-    ($this->asManager)()->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/mark-paid", [
+    ($this->asManager)()->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/mark-paid", [
         'note' => 'Bank settled',
     ])->assertStatus(200)->assertJsonPath('data.status', 'paid');
 
@@ -243,17 +243,17 @@ test('an unconfirmed landed cost line blocks import order completion even after 
         'type' => 'customs', 'amount' => 100.0, 'currency' => 'LYD',
     ]);
 
-    ($this->asManager)()->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
+    ($this->asManager)()->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
         ->assertStatus(200);
 
-    expect(fn () => app(ImportOrderStateService::class)->completeOrder($order->fresh()))
+    expect(fn () => app(PurchaseOrderStateService::class)->completeOrder($order->fresh()))
         ->toThrow(InvalidArgumentException::class, 'All landed cost lines must be confirmed');
 
-    ($this->asManager)()->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/mark-paid")
+    ($this->asManager)()->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/mark-paid")
         ->assertStatus(200);
 
-    app(ImportOrderStateService::class)->completeOrder($order->fresh());
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::Complete);
+    app(PurchaseOrderStateService::class)->completeOrder($order->fresh());
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::Complete);
 });
 
 test('my-allocation-approvals only lists items for units I manage', function () {
@@ -304,12 +304,12 @@ test('accounting-manager can approve and mark paid a landed cost line', function
     ]);
 
     ($this->asAccountant)()
-        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve", ['note' => 'cleared'])
+        ->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/approve", ['note' => 'cleared'])
         ->assertStatus(200)
         ->assertJsonPath('data.status', 'approved');
 
     ($this->asAccountant)()
-        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/mark-paid")
+        ->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/mark-paid")
         ->assertStatus(200)
         ->assertJsonPath('data.status', 'paid');
 
@@ -326,12 +326,12 @@ test('treasury-officer can approve and mark paid a landed cost line', function (
     ]);
 
     ($this->asTreasury)()
-        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
+        ->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
         ->assertStatus(200)
         ->assertJsonPath('data.status', 'approved');
 
     ($this->asTreasury)()
-        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/mark-paid", ['note' => 'bank transfer'])
+        ->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/mark-paid", ['note' => 'bank transfer'])
         ->assertStatus(200)
         ->assertJsonPath('data.status', 'paid');
 
@@ -348,7 +348,7 @@ test('outsider is still rejected when trying to approve a landed cost line', fun
     ]);
 
     ($this->asOutsider)()
-        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
+        ->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
         ->assertStatus(403)
         ->assertJsonPath('code', 'ALLOCATION_NOT_RESPONSIBLE');
 });
@@ -398,7 +398,7 @@ test('accounting-manager can approve landed cost even when unit has no manager a
     ]);
 
     ($this->asAccountant)()
-        ->postJson("/api/v1/import-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
+        ->postJson("/api/v1/purchase-orders/{$order->id}/landed-cost-lines/{$line->id}/approve")
         ->assertStatus(200)
         ->assertJsonPath('data.status', 'approved');
 });

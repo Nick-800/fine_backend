@@ -6,7 +6,7 @@ namespace App\Http\Requests\v1;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-final class StoreImportOrderRequest extends FormRequest
+final class StorePurchaseOrderRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -19,6 +19,7 @@ final class StoreImportOrderRequest extends FormRequest
             'operating_unit_id' => 'required|uuid|exists:operating_units,id',
             'supplier_id' => 'required|uuid|exists:suppliers,id',
             'currency' => 'sometimes|string|size:3',
+            'kind' => 'sometimes|string|in:foreign,local',
             'negotiated_price' => 'required_without:items|numeric|min:0.0001',
             'quantity' => 'required_without:items|numeric|min:0.0001',
             'booked_fx_rate' => 'sometimes|nullable|numeric|min:0.000001',

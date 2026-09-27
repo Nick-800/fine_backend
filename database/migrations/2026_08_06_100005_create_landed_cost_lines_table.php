@@ -12,7 +12,7 @@ return new class extends Migration
     {
         Schema::create('landed_cost_lines', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('import_order_id')->constrained('import_orders')->cascadeOnDelete();
+            $table->foreignUuid('purchase_order_id')->constrained('purchase_orders')->cascadeOnDelete();
             $table->string('type');
             $table->decimal('amount', 15, 4);
             $table->string('currency', 3)->default('LYD');

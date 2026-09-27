@@ -10,9 +10,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('import_order_items', function (Blueprint $table) {
+        Schema::create('purchase_order_items', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('import_order_id')->constrained('import_orders')->cascadeOnDelete();
+            $table->foreignUuid('purchase_order_id')->constrained('purchase_orders')->cascadeOnDelete();
             $table->foreignUuid('inventory_item_id')->constrained('inventory_items')->restrictOnDelete();
             $table->decimal('quantity', 15, 4);
             $table->decimal('unit_price', 15, 4);
@@ -20,12 +20,12 @@ return new class extends Migration
             $table->unsignedInteger('record_version')->default(1);
             $table->timestamps();
 
-            $table->index('import_order_id');
+            $table->index('purchase_order_id');
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('import_order_items');
+        Schema::dropIfExists('purchase_order_items');
     }
 };

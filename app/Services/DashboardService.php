@@ -6,7 +6,6 @@ namespace App\Services;
 
 use App\Models\CreditApprovalRequest;
 use App\Models\CutterWorkOrder;
-use App\Models\ImportOrder;
 use App\Models\InternalRestockRequest;
 use App\Models\JournalLine;
 use App\Models\LandedCostLine;
@@ -15,6 +14,7 @@ use App\Models\OperatingUnit;
 use App\Models\OverheadAllocation;
 use App\Models\PayrollRun;
 use App\Models\ProductionBatch;
+use App\Models\PurchaseOrder;
 use App\Models\SalesOrder;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -46,13 +46,13 @@ final class DashboardService
 
         // FX exposure: foreign-currency commitments still in flight, per
         // currency (§10.4 — status before complete).
-        $exposure = ImportOrder::withoutGlobalScopes()
+        $exposure = PurchaseOrder::withoutGlobalScopes()
             ->with('items')
             ->where('status', '!=', 'complete')
             ->get()
             ->groupBy('currency')
             ->map(fn ($orders) => round((float) $orders->sum(
-                fn (ImportOrder $o) => $o->totalCost()
+                fn (PurchaseOrder $o) => $o->totalCost()
             ), 4))
             ->toArray();
 
@@ -128,7 +128,7 @@ final class DashboardService
     public function operationalPipeline(): array
     {
         return [
-            'import_orders' => $this->statusBreakdown(ImportOrder::withoutGlobalScopes()),
+            'purchase_orders' => $this->statusBreakdown(PurchaseOrder::withoutGlobalScopes()),
             'foam_batches' => $this->statusBreakdown(ProductionBatch::withoutGlobalScopes()),
             'cutter_work_orders' => $this->statusBreakdown(CutterWorkOrder::withoutGlobalScopes()),
             'sales_orders' => $this->statusBreakdown(SalesOrder::withoutGlobalScopes()),
@@ -204,15 +204,15 @@ final class DashboardService
 
         $landedCostLines = LandedCostLine::query()
             ->select('landed_cost_lines.*')
-            ->join('import_orders', 'import_orders.id', '=', 'landed_cost_lines.import_order_id')
+            ->join('purchase_orders', 'purchase_orders.id', '=', 'landed_cost_lines.purchase_order_id')
             ->whereIn('landed_cost_lines.status', ['pending', 'approved'])
-            ->with('importOrder')
+            ->with('purchaseOrder')
             ->latest('landed_cost_lines.created_at')
             ->get()
             ->map(fn (LandedCostLine $l) => [
                 'id' => $l->id,
-                'import_order_id' => $l->import_order_id,
-                'operating_unit_id' => $l->importOrder?->operating_unit_id,
+                'purchase_order_id' => $l->purchase_order_id,
+                'operating_unit_id' => $l->purchaseOrder?->operating_unit_id,
                 'status' => $l->status->value,
                 'amount' => (float) $l->amount,
                 'currency' => $l->currency,
@@ -244,7 +244,7 @@ final class DashboardService
             'overhead_allocations' => OverheadAllocation::withoutGlobalScopes()
                 ->whereIn('status', ['pending', 'approved'])->count(),
             'landed_cost_lines' => LandedCostLine::query()
-                ->join('import_orders', 'import_orders.id', '=', 'landed_cost_lines.import_order_id')
+                ->join('purchase_orders', 'purchase_orders.id', '=', 'landed_cost_lines.purchase_order_id')
                 ->whereIn('landed_cost_lines.status', ['pending', 'approved'])->count(),
         ];
     }

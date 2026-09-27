@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-use App\Enums\ImportOrderStatus;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\CashAccount;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Employee;
 use App\Models\Entity;
-use App\Models\ImportOrder;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
 use App\Models\OperatingUnit;
 use App\Models\ProductionBatch;
+use App\Models\PurchaseOrder;
 use App\Models\Role;
 use App\Models\StockLot;
 use App\Models\Supplier;
@@ -130,13 +130,13 @@ beforeEach(function () {
         'default_currency' => 'USD',
     ]);
 
-    $this->importOrderB = ImportOrder::create([
+    $this->purchaseOrderB = PurchaseOrder::create([
         'operating_unit_id' => $this->unitB->id,
         'supplier_id' => $this->supplierB->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
 
     $this->cashAccountB = CashAccount::create([
@@ -456,7 +456,7 @@ test('a unit-scoped user cannot read or modify another unit supplier', function 
 });
 
 test('a unit-scoped user cannot read another unit import order', function () {
-    ($this->asA)()->getJson("/api/v1/import-orders/{$this->importOrderB->id}")->assertNotFound();
+    ($this->asA)()->getJson("/api/v1/purchase-orders/{$this->purchaseOrderB->id}")->assertNotFound();
 });
 
 test('a unit-scoped user cannot read another unit cash account', function () {

@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
-use App\Enums\ImportOrderStatus;
 use App\Enums\LandedCostType;
 use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
+use App\Enums\PurchaseOrderKind;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\BankHold;
 use App\Models\CashAccount;
 use App\Models\FxRate;
 use App\Models\GoodsReceipt;
-use App\Models\ImportOrder;
+use App\Models\InventoryItem;
+use App\Models\ItemCategory;
 use App\Models\LandedCostLine;
 use App\Models\OperatingUnit;
 use App\Models\PaymentRequest;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\Supplier;
 use App\Models\Warehouse;
 use App\Services\AccountingService;
@@ -88,20 +92,20 @@ final class ProcurementTreasurySeeder extends Seeder
         ]);
 
         // 4. Seed Import Order 1 (In Transit with Bank Hold)
-        $order1 = ImportOrder::create([
+        $order1 = PurchaseOrder::create([
             'id' => (string) Str::uuid(),
             'operating_unit_id' => $unit->id,
             'supplier_id' => $supplier->id,
             'currency' => 'USD',
             'negotiated_price' => 125.00,
             'quantity' => 1000,
-            'status' => ImportOrderStatus::InTransit,
+            'status' => PurchaseOrderStatus::InTransit,
         ]);
 
         $paymentReq = PaymentRequest::create([
             'id' => (string) Str::uuid(),
             'operating_unit_id' => $unit->id,
-            'import_order_id' => $order1->id,
+            'purchase_order_id' => $order1->id,
             'route' => PaymentRoute::Bank,
             'invoice_ref' => 'INV-CHEM-2026-001',
             'amount_requested' => 125000.00,
@@ -134,7 +138,7 @@ final class ProcurementTreasurySeeder extends Seeder
 
         LandedCostLine::create([
             'id' => (string) Str::uuid(),
-            'import_order_id' => $order1->id,
+            'purchase_order_id' => $order1->id,
             'type' => LandedCostType::Freight,
             'amount' => 18500.00,
             'currency' => 'LYD',
@@ -143,7 +147,7 @@ final class ProcurementTreasurySeeder extends Seeder
 
         LandedCostLine::create([
             'id' => (string) Str::uuid(),
-            'import_order_id' => $order1->id,
+            'purchase_order_id' => $order1->id,
             'type' => LandedCostType::Customs,
             'amount' => 12000.00,
             'currency' => 'LYD',
@@ -153,7 +157,7 @@ final class ProcurementTreasurySeeder extends Seeder
         // 5. Seed Import Order 2 (Received at Warehouse)
         // Booked at 5.05, settled at 5.15 — completing this order in a demo
         // shows the landed cost allocation and a realized FX loss.
-        $order2 = ImportOrder::create([
+        $order2 = PurchaseOrder::create([
             'id' => (string) Str::uuid(),
             'operating_unit_id' => $unit->id,
             'supplier_id' => $supplier->id,
@@ -161,7 +165,7 @@ final class ProcurementTreasurySeeder extends Seeder
             'negotiated_price' => 85.00,
             'quantity' => 500,
             'booked_fx_rate' => 5.050000,
-            'status' => ImportOrderStatus::Received,
+            'status' => PurchaseOrderStatus::Received,
         ]);
 
         // An order cannot reach Received without an executed payment, and
@@ -169,7 +173,7 @@ final class ProcurementTreasurySeeder extends Seeder
         $paymentReq2 = PaymentRequest::create([
             'id' => (string) Str::uuid(),
             'operating_unit_id' => $unit->id,
-            'import_order_id' => $order2->id,
+            'purchase_order_id' => $order2->id,
             'route' => PaymentRoute::Market,
             'invoice_ref' => 'INV-CHEM-2026-002',
             'amount_requested' => 42500.00,
@@ -199,10 +203,80 @@ final class ProcurementTreasurySeeder extends Seeder
 
         GoodsReceipt::create([
             'id' => (string) Str::uuid(),
-            'import_order_id' => $order2->id,
+            'purchase_order_id' => $order2->id,
             'warehouse_id' => $warehouse->id,
             'received_qty' => 500,
             'condition_notes' => 'Received 500 chemical drums sealed in top grade quality.',
         ]);
+
+        // 6. Seed a LOCAL purchase order sample (Wave 5 — local flow).
+        // A domestic vendor, LYD-only, approved with partial receipts so
+        // the UI's receive-tab has realistic content. Set kind = 'local'
+        // so the foreign flow ignores it; the local flow auto-closes
+        // once paid + fully received.
+        $localSupplier = Supplier::firstOrCreate(
+            ['name' => 'ليبيا للتوريدات المحلية', 'operating_unit_id' => $unit->id],
+            [
+                'id' => (string) Str::uuid(),
+                'contact' => 'sales@libya-local-supply.ly',
+                'default_currency' => 'LYD',
+                'address' => 'Tripoli Industrial Zone, Libya',
+            ]
+        );
+
+        $localOrder = PurchaseOrder::create([
+            'id' => (string) Str::uuid(),
+            'operating_unit_id' => $unit->id,
+            'supplier_id' => $localSupplier->id,
+            'currency' => 'LYD',
+            'kind' => PurchaseOrderKind::Local,
+            'negotiated_price' => 3500.00,
+            'quantity' => 5,
+            'status' => PurchaseOrderStatus::Approved,
+        ]);
+
+        PurchaseOrderItem::create([
+            'id' => (string) Str::uuid(),
+            'purchase_order_id' => $localOrder->id,
+            'inventory_item_id' => $this->getLocalInventoryItem($unit),
+            'quantity' => 3,
+            'unit_price' => 700.00,
+            'currency' => 'LYD',
+        ]);
+        PurchaseOrderItem::create([
+            'id' => (string) Str::uuid(),
+            'purchase_order_id' => $localOrder->id,
+            'inventory_item_id' => $this->getLocalInventoryItem($unit),
+            'quantity' => 2,
+            'unit_price' => 700.00,
+            'currency' => 'LYD',
+        ]);
+    }
+
+    /**
+     * Local flow procurement needs at least one local-currency inventory
+     * item to source from. Creates a "Local Material" sample if absent.
+     */
+    private function getLocalInventoryItem($unit): string
+    {
+        $category = ItemCategory::firstOrCreate(
+            ['name' => 'Local Supplies', 'item_type' => 'raw_material'],
+            ['id' => (string) Str::uuid(), 'code' => 'LOC'],
+        );
+        // inventory_items no longer carries operating_unit_id directly;
+        // the per-unit stock lives on inventory_unit_stocks. The seeder
+        // creates a global item keyed by (code) — production seed.
+        $item = InventoryItem::firstOrCreate(
+            ['code' => 'LOC-MTL-001'],
+            [
+                'id' => (string) Str::uuid(),
+                'name' => 'Local Supply Material',
+                'item_type' => 'raw_material',
+                'unit_of_measure' => 'piece',
+                'category_id' => $category->id,
+            ]
+        );
+
+        return $item->id;
     }
 }

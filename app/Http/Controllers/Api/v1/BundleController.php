@@ -69,7 +69,7 @@ final class BundleController extends Controller
             ]);
 
             // Sync bundle_items by full replacement — same pattern as
-            // ImportOrderController::update for import_order_items.
+            // PurchaseOrderController::update for purchase_order_items.
             $bundle->items()->delete();
             foreach ($validated['items'] as $item) {
                 $bundle->items()->create($item);

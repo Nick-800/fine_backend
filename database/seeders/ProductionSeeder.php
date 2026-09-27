@@ -12,7 +12,6 @@ use App\Models\User;
 use App\Models\UserRole;
 use App\Services\OperatingUnitService;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**

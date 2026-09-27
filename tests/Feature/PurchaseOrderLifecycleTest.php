@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-use App\Enums\ImportOrderStatus;
 use App\Enums\PaymentRoute;
+use App\Enums\PurchaseOrderStatus;
 use App\Models\Company;
-use App\Models\ImportOrder;
 use App\Models\OperatingUnit;
+use App\Models\PurchaseOrder;
 use App\Models\Role;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
-use App\Services\ImportOrderStateService;
+use App\Services\PurchaseOrderStateService;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -64,25 +64,25 @@ beforeEach(function () {
         'must_change_password' => false,
     ]);
 
-    $this->stateService = app(ImportOrderStateService::class);
+    $this->stateService = app(PurchaseOrderStateService::class);
 });
 
 test('full import order state machine lifecycle transition', function () {
     // 1. Create Draft Order
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->operatingUnit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 120.50,
         'quantity' => 100,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
 
-    expect($order->status)->toBe(ImportOrderStatus::Draft);
+    expect($order->status)->toBe(PurchaseOrderStatus::Draft);
 
     // 2. Transition to Pending Payment
     $this->stateService->transitionToPendingPayment($order);
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::PendingPayment);
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::PendingPayment);
     expect($order->paymentRequests()->count())->toBe(1);
 
     // 3. Select Payment Route (Bank Route with 65,000 LYD hold)
@@ -93,35 +93,35 @@ test('full import order state machine lifecycle transition', function () {
         65000.00,
         'INV-2026-901'
     );
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::AwaitingBankApproval);
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::AwaitingBankApproval);
     $paymentRequest = $order->paymentRequests()->first();
     expect($paymentRequest->bankHold)->not()->toBeNull();
     expect((float) $paymentRequest->bankHold->held_amount_lyd)->toBe(65000.00);
 
     // 4. Execute Payment (Realized FX Rate 5.20 LYD/USD)
     $this->stateService->executePayment($paymentRequest, 5.20, 62660.00, 'BNK-REF-7711');
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::Paid);
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::Paid);
     expect((float) $paymentRequest->fresh()->bankHold->released_amount)->toBe(2340.00);
 
     // 5. Confirm Shipment
     $this->stateService->confirmShipment($order->fresh());
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::InTransit);
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::InTransit);
 
     // 6. Arrive at Port
     $this->stateService->arriveAtPort($order->fresh());
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::AtPort);
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::AtPort);
 
     // 7. Transport to Warehouse
     $this->stateService->transportToWarehouse($order->fresh());
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::InTransitToWarehouse);
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::InTransitToWarehouse);
 
     // 7b. Arrive at Warehouse
     $this->stateService->arriveAtWarehouse($order->fresh(), $this->warehouse->id);
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::AtWarehouse);
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::AtWarehouse);
 
     // 8. Receive Goods
     $receipt = $this->stateService->receiveGoods($order->fresh(), $this->warehouse->id, 100, 'All 100 units in excellent condition');
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::Received);
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::Received);
     expect((float) $receipt->received_qty)->toBe(100.00);
 
     // Add confirmed landed cost line
@@ -134,17 +134,17 @@ test('full import order state machine lifecycle transition', function () {
 
     // 9. Complete Order
     $this->stateService->completeOrder($order->fresh());
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::Complete);
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::Complete);
 });
 
 test('cannot complete import order if unconfirmed landed cost lines exist', function () {
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->operatingUnit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 50,
         'quantity' => 10,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
 
     $this->stateService->transitionToPendingPayment($order->fresh());
@@ -177,18 +177,18 @@ test('non-manager user cannot select payment route in step 2', function () {
         'operating_unit_id' => $this->operatingUnit->id,
     ]);
 
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->operatingUnit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
-        'status' => ImportOrderStatus::PendingPayment,
+        'status' => PurchaseOrderStatus::PendingPayment,
     ]);
 
     $this->actingAs($operatorUser)
         ->withHeaders(['X-Operating-Unit-ID' => $this->operatingUnit->id])
-        ->postJson("/api/v1/import-orders/{$order->id}/transition", [
+        ->postJson("/api/v1/purchase-orders/{$order->id}/transition", [
             'action' => 'select_route',
             'route' => 'market',
             'amount_requested' => 1000,
@@ -205,18 +205,18 @@ test('finance user can select payment route in step 2', function () {
         'operating_unit_id' => $this->operatingUnit->id,
     ]);
 
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->operatingUnit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
-        'status' => ImportOrderStatus::PendingPayment,
+        'status' => PurchaseOrderStatus::PendingPayment,
     ]);
 
     $this->actingAs($accountant)
         ->withHeaders(['X-Operating-Unit-ID' => $this->operatingUnit->id])
-        ->postJson("/api/v1/import-orders/{$order->id}/transition", [
+        ->postJson("/api/v1/purchase-orders/{$order->id}/transition", [
             'action' => 'select_route',
             'route' => 'market',
             'amount_requested' => 1000,
@@ -234,13 +234,13 @@ test('non-manager user cannot execute payment in step 3', function () {
         'operating_unit_id' => $this->operatingUnit->id,
     ]);
 
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->operatingUnit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
@@ -269,13 +269,13 @@ test('managers can execute payment in step 3 directly via payment request or tra
         ->getJson('/api/v1/suppliers')
         ->assertStatus(200);
 
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->operatingUnit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
@@ -286,7 +286,7 @@ test('managers can execute payment in step 3 directly via payment request or tra
         ->withHeaders(['X-Operating-Unit-ID' => $this->operatingUnit->id])
         ->getJson('/api/v1/payment-requests')
         ->assertStatus(200)
-        ->assertJsonPath('data.0.import_order.supplier.name', 'Mediterranean Steel Corp');
+        ->assertJsonPath('data.0.purchase_order.supplier.name', 'Mediterranean Steel Corp');
 
     // Manager can execute payment
     $this->actingAs($managerUser)
@@ -298,7 +298,7 @@ test('managers can execute payment in step 3 directly via payment request or tra
         ])
         ->assertStatus(200);
 
-    expect($order->fresh()->status)->toBe(ImportOrderStatus::Paid);
+    expect($order->fresh()->status)->toBe(PurchaseOrderStatus::Paid);
 });
 
 test('finance user can execute payment in step 3 directly via payment request or transition', function () {
@@ -310,20 +310,20 @@ test('finance user can execute payment in step 3 directly via payment request or
         'operating_unit_id' => $this->operatingUnit->id,
     ]);
 
-    $order = ImportOrder::create([
+    $order = PurchaseOrder::create([
         'operating_unit_id' => $this->operatingUnit->id,
         'supplier_id' => $this->supplier->id,
         'currency' => 'USD',
         'negotiated_price' => 100,
         'quantity' => 10,
-        'status' => ImportOrderStatus::Draft,
+        'status' => PurchaseOrderStatus::Draft,
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
 
     $this->actingAs($treasury)
         ->withHeaders(['X-Operating-Unit-ID' => $this->operatingUnit->id])
-        ->postJson("/api/v1/import-orders/{$order->id}/transition", [
+        ->postJson("/api/v1/purchase-orders/{$order->id}/transition", [
             'action' => 'execute_payment',
             'fx_rate_used' => 5.20,
             'bank_reference' => 'TXN-9988',
@@ -332,4 +332,3 @@ test('finance user can execute payment in step 3 directly via payment request or
         ->assertStatus(200)
         ->assertJsonPath('data.status', 'paid');
 });
-
