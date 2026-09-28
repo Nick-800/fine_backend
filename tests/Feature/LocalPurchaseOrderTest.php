@@ -85,6 +85,7 @@ function makeLocalOrder(): PurchaseOrder
         'status' => 'draft',
         'negotiated_price' => 1000,
         'quantity' => 10,
+        'destination_warehouse_id' => $test->warehouse->id,
     ]);
 }
 
