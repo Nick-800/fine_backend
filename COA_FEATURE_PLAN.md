@@ -1,103 +1,145 @@
-# COA × Inventory Items — Feature Plan
+# COA × Inventory Items — Feature Plan (v2)
 
 Branch: `feature/coa-inventory-items` (off `COA`)
 Repos: `fine_backend` + `fine-desktop` (paired)
 
+> **v2 revision (from screenshot of the legacy item card).** The legacy system
+> allows ~12 distinct per-event account overrides per item. v1 of this plan
+> only added one `account_id`. This v2 replaces that with a related table and
+> makes posting services require the override — no canonical fallback.
+
 ## Goal
 
-1. Link `inventory_items` to a sub-account in the chart of accounts so each item
-   can carry its own GL bucket. Mirrors the existing pattern used for clients,
-   suppliers, fixed assets, and purchase-order payment source.
-2. Add a tree-filter search box to the Chart of Accounts page so operators can
-   find an account by code or name in a chart with many sub-accounts.
+1. Let an operator pin each inventory item to a specific chart-of-accounts
+   sub-account for each accounting event (purchases, sales, returns, COGS,
+   waste, discounts, transport-in, sales commission, …).
+2. Require that override before any posting touches the item — the system
+   refuses to buy, sell, return, write-off, or adjust an item without the
+   matching event account.
+3. Add a tree-filter search box to the Chart of Accounts page.
 
 ## Why
 
-- The chart has dozens of asset sub-accounts (`111`, `1121`, `1131`, …). With
-  per-item linkage, an operator can pin a chemical, foam block, or finished
-  good to its own COA sub-account for granular reporting.
-- Reuses `CoaLinkService::resolveOrProvisionAccount()` and the
-  `CoaAccountSelector` component — no new mechanism, just extends the pattern.
-- The default parent code for `create_new` sub-accounts is determined by the
-  item's `item_type`, mirroring `app/Support/InventoryAccounts.php` so it stays
-  in lockstep with intake / sale / adjustment postings.
+- The legacy screen (`الحسابات` tab on the item card) maps each item to ~12
+  events, with per-warehouse variants. Operators expect that level of control.
+- Posting flows already accept per-entity overrides for suppliers, clients,
+  fixed assets, and payment sources. This brings inventory items up to the
+  same standard.
+- A related table (not JSON) keeps referential integrity on `account_id`.
 
-## Type → default COA parent
+## The 12 events
 
-| `item_type`                         | `account_code` | Arabic name                          |
-| ----------------------------------- | -------------- | ------------------------------------ |
-| `raw_material`                      | `111`          | مخزون المواد الخام والكيماويات        |
-| `packaging`                         | `111`          | مخزون المواد الخام والكيماويات        |
-| `barrel`                            | `111`          | مخزون المواد الخام والكيماويات        |
-| `pallet`                            | `111`          | مخزون المواد الخام والكيماويات        |
-| `foam_block`                        | `1131`         | إنتاج تام — قوالب الإسفنج            |
-| `cut_template_piece`                | `1132`         | إنتاج تام — القطع المقصوصة           |
-| `slice`                             | `1132`         | إنتاج تام — القطع المقصوصة           |
-| `byproduct_fill`                    | `1133`         | إنتاج تام — حشوات وبقايا الإنتاج    |
-| `furniture_finished_good`           | `1134`         | إنتاج تام — الأثاث والمفروشات        |
+| `event_type`        | Arabic label                | When this is required                          |
+| ------------------- | --------------------------- | ---------------------------------------------- |
+| `opening`           | بضاعة أول المدة             | Opening-balance seeding                        |
+| `ending`            | بضاعة آخر المدة             | Period-end inventory valuation                 |
+| `purchases`         | حساب المشتريات              | Intake (`StockLotService::createLot`)          |
+| `sales`             | حساب المبيعات               | Sale (`SalesOrderService` revenue leg)         |
+| `purchase_returns`  | حساب مردود المشتريات        | Purchase return                                |
+| `sales_returns`     | حساب مردودة مبيعات          | Sale return                                    |
+| `cogs`              | تكلفة البضاعة المباعة       | Sale (`SalesOrderService` COGS leg)            |
+| `waste`             | حساب إهلاك / هالك           | Stock adjustment write-off                     |
+| `earned_discount`   | حساب خصم مكتسب              | Supplier-side discount earned                  |
+| `granted_discount`  | حساب خصم ممنوح              | Customer-side discount given                   |
+| `transport_in`      | حساب غبور المشتريات         | Transportation-in leg                          |
+| `sales_commission`  | حساب عمولة المبيعات         | Sales commission leg                           |
 
-When the operator picks `coa_action = create_new`, the suggested parent follows
-this table. The FE mapping is a small mirror of `InventoryAccounts::forItemType()`.
+## Storage
 
-## Backend changes
+### `inventory_item_accounts` (new table)
 
-### `fine_backend`
+| Column              | Type         | Notes                                  |
+| ------------------- | ------------ | -------------------------------------- |
+| `id`                | UUID PK      |                                        |
+| `inventory_item_id` | UUID FK      | → `inventory_items`, `cascadeOnDelete`  |
+| `event_type`        | string       | enum-cast on the model                 |
+| `account_id`        | UUID FK      | → `accounts`, `restrictOnDelete`       |
+| `created_at`        | timestamp    |                                        |
+| `updated_at`        | timestamp    |                                        |
 
-- **Migration** `2026_09_28_xxxxxx_add_account_id_to_inventory_items_table.php`
-  - nullable `foreignUuid('account_id')->after('category_id')->constrained('accounts')->nullOnDelete();`
-- **`app/Models/InventoryItem.php`**
-  - add `'account_id'` to `$fillable`
-  - add `account(): BelongsTo` relation
-- **`app/Http/Controllers/Api/v1/InventoryItemController.php`**
-  - inject `CoaLinkService`
-  - `store()` and `update()`: extend inline validation with the COA triplet
-    (`account_id` / `coa_action` / `new_account.*` — mirror `StoreSupplierRequest`)
-  - resolve via `CoaLinkService::resolveOrProvisionAccount()`
-  - `index()` / `show()` eager-load `account`
-- **Tests** `tests/Feature/InventoryItemCoaLinkTest.php`
-  - `coa_action=none` → `account_id = null`
-  - `coa_action=link_existing` → linked
-  - `coa_action=create_new` → new sub-account provisioned and linked
-  - validation rejections (missing `account_id` when `link_existing`, missing
-    `new_account.*` when `create_new`, duplicate account_code)
+`UNIQUE(inventory_item_id, event_type)` — one row per (item, event), item-global
+only (no warehouse dimension per agreed scope).
 
-### Frontend changes
+## Behavior
 
-### `fine-desktop`
+- **Resolver:** `InventoryItem::accountFor(InventoryEventType $event): ?Account`
+  returns the override row's account, or `null` if none.
+- **Posting guard:** every posting service that consumes an event calls
+  `$item->accountFor($event)`. If `null`, it returns
+  `422 INVENTORY_ACCOUNT_NOT_LINKED` with a message naming the event and the
+  item. **No canonical fallback** — operators must map every relevant event.
+- **Existing items:** migration is purely additive; no data seeded. Existing
+  items with stock or active history will refuse new postings until an
+  operator maps the relevant events. This is a hard deploy-time requirement;
+  it is documented in the PR description and `HANDOFF.md` note.
 
-- **`src/api/endpoints/inventory.ts`**
-  - add `account?: { id; account_code; name; type; currency } | null` to `InventoryItem`
-  - add `account_id` / `coa_action` / `new_account` to `InventoryItemPayload`
-- **`src/pages/inventory/InventoryItemFormPage.tsx`**
-  - state: `coaAction`, `selectedAccountId`, `newAccount`
-  - hydrate from `editingItem.account_id` on edit
-  - render `CoaAccountSelector` as the last question in the `GuidedForm`
-    - `entityTypeLabel="الصنف"`
-    - `defaultEntityName={name}`
-    - `preferredParentCode` driven by the type → code map above
-    - `useEntityNameDirectly={false}` so per-item sub-accounts get a clear name
-- **`src/pages/inventory/InventoryItemsPage.tsx`**
-  - add a column showing the linked account chip when present
-- **`src/pages/inventory/WarehouseItemDetailPage.tsx`**
-  - show the linked-account chip in the metadata block
-- **`src/pages/accounting/ChartOfAccountsPage.tsx`**
-  - new sticky `Search` input at the top of the left tree card
-  - `filterTree(tree, term)`: keeps nodes whose `account_code` or `name`
-    matches; auto-includes ancestors; auto-expands them while the search is
-    active; restores previous `expandedIds` on clear
-  - yellow highlight on matched substrings
-  - empty state when nothing matches
-  - the right-panel ledger `sideSearch` is untouched
+## Backend changes (`fine_backend`)
+
+### Files
+
+- **NEW** `app/Enums/InventoryEventType.php` — string-backed enum, 12 cases,
+  each with Arabic label
+- **NEW** `database/migrations/2026_09_28_xxxxxx_create_inventory_item_accounts_table.php`
+- **NEW** `app/Models/InventoryItemAccount.php`
+- **EDIT** `app/Models/InventoryItem.php` — add `accounts(): HasMany`,
+  `accountFor(InventoryEventType): ?Account`
+- **EDIT** `app/Http/Controllers/Api/v1/InventoryItemController.php` — add
+  `accounts`, `upsertAccount`, `deleteAccount`; eager-load `accounts` on
+  `index()`/`show()`
+- **EDIT** `app/Services/StockLotService.php` — guard `createLot` with
+  `Purchases` event
+- **EDIT** `app/Services/SalesOrderService.php` — guard sale legs with
+  `Sales` and `Cogs` events
+- **EDIT** `app/Services/StockAdjustmentService.php` — guard write-off with
+  `Waste`
+- **EDIT** other services where the other events post (purchase return,
+  sales return, discount legs, commission, transport-in, opening seeding)
+- **NEW** `tests/Feature/InventoryItemAccountsTest.php` — cover happy paths,
+  422 guards, upsert/delete endpoints, `restrictOnDelete`, `cascadeOnDelete`
+
+### Endpoints
+
+| Method | Path                                       | Body                                                |
+| ------ | ------------------------------------------ | --------------------------------------------------- |
+| GET    | `/api/v1/inventory-items/{id}/accounts`     | — (returns array of `{id, event_type, account}`)    |
+| POST   | `/api/v1/inventory-items/{id}/accounts`    | `{event_type, account_id}` (upsert by composite)    |
+| DELETE | `/api/v1/inventory-items/{id}/accounts/{rowId}` | —                                               |
+
+## Frontend changes (`fine-desktop`)
+
+### Files
+
+- **NEW** `src/api/endpoints/inventoryItemAccounts.ts` — types + api object
+- **EDIT** `src/api/endpoints/inventory.ts` — add `accounts` to `InventoryItem`
+- **NEW** `src/components/inventory/InventoryItemAccountsEditor.tsx` — grid of
+  12 rows with `SearchableSelect<Account>` and per-row save/delete
+- **EDIT** `src/pages/inventory/InventoryItemFormPage.tsx` — add a
+  "الحسابات" section embedding the editor
+- **EDIT** `src/pages/inventory/InventoryItemsPage.tsx` — add a "linked
+  events" indicator column (green check when all 12 mapped, warning + count
+  otherwise)
+- **EDIT** `src/pages/inventory/WarehouseItemDetailPage.tsx` — render the
+  full account map in the metadata block
+- **EDIT** `src/pages/accounting/ChartOfAccountsPage.tsx` — add tree-search
+  filter with yellow highlight
+
+### UI behavior
+
+- Editor rows mark "required for posting" events with a small dot/tag
+- Save button is disabled until every required event for the item's
+  `item_type` is mapped
+- Server `422 INVENTORY_ACCOUNT_NOT_LINKED` messages are surfaced via the
+  existing `apiErrorPayload()` → `toastStore` pipeline
 
 ## Out of scope
 
-- No backend change to `StockLotService` — automatic GL postings continue to
-  use the canonical `InventoryAccounts::forItemType()` code. Per-item
-  `account_id` is purely an opt-in reporter view at this stage.
-- No new FormRequest classes for inventory items (matches the controller's
-  current inline-validation style).
-- No change to `useAccounts` server-side filtering — the chart tree filter is
-  client-side per the agreed scope.
+- No warehouse dimension on overrides (per agreed scope)
+- No canonical fallback in posting services
+- No migration backfill — operators fill them
+- No new FormRequest classes for inventory items (matches existing
+  inline-validation style)
+- No change to `useAccounts` server-side filtering — chart tree filter is
+  client-side
 
 ## Verification
 
@@ -108,14 +150,16 @@ this table. The FE mapping is a small mirror of `InventoryAccounts::forItemType(
 
 ## Commit sequence
 
-### Backend
+### `fine_backend`
 
-1. `chore(coa): scaffold coa-inventory-items planning doc`
-2. `feat(coa): link inventory_items to chart of accounts`
-3. `test(coa): cover inventory_items ↔ account linkage`
+1. `chore(coa): revise plan to v2 — per-event account map`
+2. `feat(coa): link inventory_items to chart of accounts via per-event map`
+3. `feat(coa): require per-item account overrides in inventory postings`
+4. `test(coa): cover per-event account overrides`
 
-### Frontend
+### `fine-desktop`
 
-1. `chore(coa): scaffold coa-inventory-items planning doc`
-2. `feat(coa): link inventory items to chart of accounts in form + list + detail`
-3. `fix(coa): add tree search filter to chart of accounts page`
+1. `chore(coa): revise plan to v2 — per-event account map`
+2. `feat(coa): add per-event account editor to inventory items`
+3. `feat(coa): show linked accounts in inventory list + detail`
+4. `fix(coa): add tree search filter to chart of accounts page`
