@@ -32,6 +32,7 @@ final class PurchaseOrder extends Model
         'quantity',
         'booked_fx_rate',
         'arrived_warehouse_id',
+        'destination_warehouse_id',
         'status',
         'record_version',
     ];
@@ -94,6 +95,22 @@ final class PurchaseOrder extends Model
     public function arrivedWarehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class, 'arrived_warehouse_id');
+    }
+
+    public function destinationWarehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class, 'destination_warehouse_id');
+    }
+
+    /**
+     * The warehouse where the purchased goods end up as StockLots once the
+     * order reaches its final accounting step. `arrived_warehouse_id`
+     * (set during the foreign flow's `arriveAtWarehouse` logistics step)
+     * wins over `destination_warehouse_id` (set on create) when both exist.
+     */
+    public function resolveDestinationWarehouseId(): ?string
+    {
+        return $this->arrived_warehouse_id ?? $this->destination_warehouse_id;
     }
 
     public function totalCost(): float
