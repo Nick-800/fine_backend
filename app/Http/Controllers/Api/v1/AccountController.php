@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\v1\ReparentAccountRequest;
 use App\Models\Account;
 use App\Models\ChartOfAccounts;
 use App\Models\Company;
@@ -192,6 +193,56 @@ final class AccountController extends Controller
                 'balance' => 0.0,
             ],
         ], 201);
+    }
+
+    /**
+     * Move an account to a new parent. Allowed even when the account has
+     * journal lines — the `account_id` doesn't change, only the tree
+     * position. Existing children of the account come along automatically
+     * (they reference the account by id, which doesn't change).
+     *
+     * Cross-checks (main-account, self-parent, type match, chart match,
+     * cycle) live in `ReparentAccountRequest::withValidator`.
+     */
+    public function reparent(ReparentAccountRequest $request, string $id): JsonResponse
+    {
+        $account = Account::findOrFail($id);
+
+        $account->parent_account_id = $request->input('parent_account_id');
+        $account->save();
+
+        $fresh = $account->fresh('parent');
+        $linesQuery = $fresh->journalLines();
+        $debit = round((float) $linesQuery->sum('debit'), 4);
+        $credit = round((float) $linesQuery->sum('credit'), 4);
+        $balance = in_array($fresh->type, ['asset', 'expense'], true)
+            ? round($debit - $credit, 4)
+            : round($credit - $debit, 4);
+
+        return response()->json([
+            'message' => 'تم تغيير الحساب الأب بنجاح',
+            'data' => [
+                'id' => $fresh->id,
+                'account_code' => $fresh->account_code,
+                'name' => $fresh->name,
+                'type' => $fresh->type,
+                'section' => $fresh->section,
+                'currency' => $fresh->currency,
+                'parent_account_id' => $fresh->parent_account_id,
+                'is_main' => $fresh->parent_account_id === null,
+                'parent' => $fresh->parent
+                    ? [
+                        'id' => $fresh->parent->id,
+                        'account_code' => $fresh->parent->account_code,
+                        'name' => $fresh->parent->name,
+                        'type' => $fresh->parent->type,
+                    ]
+                    : null,
+                'total_debit' => $debit,
+                'total_credit' => $credit,
+                'balance' => $balance,
+            ],
+        ]);
     }
 
     public function update(Request $request, string $id): JsonResponse
