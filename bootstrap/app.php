@@ -4,6 +4,7 @@ use App\Exceptions\InsufficientComponentStockException;
 use App\Exceptions\InsufficientTankStockException;
 use App\Exceptions\InvalidOperatingUnitException;
 use App\Exceptions\InvalidStateTransitionException;
+use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Exceptions\MissingAccountException;
 use App\Exceptions\OptimisticLockConflictException;
 use App\Exceptions\SerializedQuantityException;
@@ -68,6 +69,16 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'message' => $e->getMessage(),
                 'code' => 'MISSING_ACCOUNT',
+            ], 422);
+        });
+
+        $exceptions->render(function (InventoryAccountNotLinkedException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'INVENTORY_ACCOUNT_NOT_LINKED',
+                'event' => $e->event->value,
+                'event_label' => $e->event->arabicLabel(),
+                'inventory_item_id' => $e->item->id,
             ], 422);
         });
 

@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Enums\InventoryEventType;
 use App\Models\Account;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Entity;
 use App\Models\InventoryItem;
+use App\Models\InventoryItemAccount;
 use App\Models\JournalLine;
 use App\Models\OperatingUnit;
 use App\Models\Role;
@@ -125,6 +127,19 @@ test('sales fulfillment and payment directly routes to client linked account', f
         'item_type' => 'furniture_finished_good',
         'unit_of_measure' => 'piece',
     ]);
+
+    // Link per-event overrides the new posting guards now require.
+    foreach ([
+        [InventoryEventType::Purchases, Account::where('account_code', '1134')->sole()->id],
+        [InventoryEventType::Sales, Account::where('account_code', '41')->sole()->id],
+        [InventoryEventType::Cogs, Account::where('account_code', '51')->sole()->id],
+    ] as [$event, $accountId]) {
+        InventoryItemAccount::create([
+            'inventory_item_id' => $item->id,
+            'event_type' => $event->value,
+            'account_id' => $accountId,
+        ]);
+    }
 
     StockLot::create([
         'warehouse_id' => $this->warehouse->id,

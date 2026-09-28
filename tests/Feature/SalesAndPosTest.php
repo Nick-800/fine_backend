@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Enums\InventoryEventType;
+use App\Models\Account;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\CreditApprovalRequest;
 use App\Models\Entity;
 use App\Models\InventoryItem;
+use App\Models\InventoryItemAccount;
 use App\Models\OperatingUnit;
 use App\Models\Role;
 use App\Models\SalesOrder;
@@ -59,6 +62,20 @@ beforeEach(function () {
     $this->sofa = InventoryItem::create([
         'name' => 'Sofa', 'code' => 'SOFA-1', 'item_type' => 'furniture_finished_good', 'unit_of_measure' => 'each',
     ]);
+
+    // Link the per-event account overrides the posting guards now require.
+    $sofaOverrides = [
+        [InventoryEventType::Purchases, Account::where('account_code', '1134')->sole()->id],
+        [InventoryEventType::Sales, Account::where('account_code', '41')->sole()->id],
+        [InventoryEventType::Cogs, Account::where('account_code', '51')->sole()->id],
+    ];
+    foreach ($sofaOverrides as [$event, $accountId]) {
+        InventoryItemAccount::create([
+            'inventory_item_id' => $this->sofa->id,
+            'event_type' => $event->value,
+            'account_id' => $accountId,
+        ]);
+    }
 
     // Store holds 5 sofas at 150 cost each.
     StockLot::create([
@@ -251,6 +268,19 @@ test('a finished_good item leaves stock from the same account intake put it into
     $good = InventoryItem::create([
         'name' => 'Mattress', 'code' => 'MATT-1', 'item_type' => 'finished_good', 'unit_of_measure' => 'each',
     ]);
+
+    $goodOverrides = [
+        [InventoryEventType::Purchases, Account::where('account_code', '1134')->sole()->id],
+        [InventoryEventType::Sales, Account::where('account_code', '41')->sole()->id],
+        [InventoryEventType::Cogs, Account::where('account_code', '51')->sole()->id],
+    ];
+    foreach ($goodOverrides as [$event, $accountId]) {
+        InventoryItemAccount::create([
+            'inventory_item_id' => $good->id,
+            'event_type' => $event->value,
+            'account_id' => $accountId,
+        ]);
+    }
 
     ($this->api)()->postJson('/api/v1/stock-lots/intake', [
         'inventory_item_id' => $good->id,

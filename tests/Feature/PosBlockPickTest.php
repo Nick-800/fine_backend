@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Enums\InventoryEventType;
+use App\Models\Account;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Entity;
 use App\Models\InventoryItem;
+use App\Models\InventoryItemAccount;
 use App\Models\InventoryMovement;
 use App\Models\OperatingUnit;
 use App\Models\ProductionBatch;
@@ -61,6 +64,21 @@ beforeEach(function () {
     $this->foamItem = InventoryItem::create([
         'name' => 'Foam Block Standard', 'code' => 'FB-STD', 'item_type' => 'foam_block', 'unit_of_measure' => 'each',
     ]);
+
+    // Link the per-event account overrides the posting guards now require
+    // for any item that flows through POS / sales-order fulfillment.
+    $foamOverrides = [
+        [InventoryEventType::Purchases, Account::where('account_code', '1131')->sole()->id],
+        [InventoryEventType::Sales, Account::where('account_code', '41')->sole()->id],
+        [InventoryEventType::Cogs, Account::where('account_code', '51')->sole()->id],
+    ];
+    foreach ($foamOverrides as [$event, $accountId]) {
+        InventoryItemAccount::create([
+            'inventory_item_id' => $this->foamItem->id,
+            'event_type' => $event->value,
+            'account_id' => $accountId,
+        ]);
+    }
 
     $this->api = fn () => $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->store->id]);

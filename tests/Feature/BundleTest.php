@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Enums\InventoryEventType;
+use App\Models\Account;
 use App\Models\Bundle;
 use App\Models\Company;
 use App\Models\InventoryItem;
+use App\Models\InventoryItemAccount;
 use App\Models\OperatingUnit;
 use App\Models\Role;
 use App\Models\SalesOrder;
@@ -61,6 +64,22 @@ beforeEach(function () {
     $this->base = InventoryItem::create([
         'name' => 'Bed Base Queen', 'code' => 'BASE-Q', 'item_type' => 'furniture_finished_good', 'unit_of_measure' => 'each',
     ]);
+
+    // Link per-event overrides the new posting guards now require.
+    foreach ([$this->mattress, $this->base] as $item) {
+        $overrides = [
+            [InventoryEventType::Purchases, Account::where('account_code', '1134')->sole()->id],
+            [InventoryEventType::Sales, Account::where('account_code', '41')->sole()->id],
+            [InventoryEventType::Cogs, Account::where('account_code', '51')->sole()->id],
+        ];
+        foreach ($overrides as [$event, $accountId]) {
+            InventoryItemAccount::create([
+                'inventory_item_id' => $item->id,
+                'event_type' => $event->value,
+                'account_id' => $accountId,
+            ]);
+        }
+    }
 });
 
 test('creating a bundle with a unit header auto-assigns operating_unit_id', function () {

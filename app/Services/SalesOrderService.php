@@ -4,19 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\InventoryEventType;
 use App\Enums\SalesOrderStatus;
 use App\Exceptions\InsufficientComponentStockException;
 use App\Exceptions\InvalidStateTransitionException;
+use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Models\Client;
 use App\Models\CreditApprovalRequest;
 use App\Models\InternalRestockRequest;
+use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
 use App\Models\OperatingUnit;
 use App\Models\SalesOrder;
 use App\Models\StockLot;
 use App\Models\User;
 use App\Models\Warehouse;
-use App\Support\InventoryAccounts;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -25,12 +27,52 @@ class SalesOrderService
     public function __construct(private readonly AccountingService $accountingService) {}
 
     /**
-     * Which finished-goods account a sold item's value leaves from —
-     * necessarily the same account intake put it into.
+     * Which chart-of-accounts sub-account carries the sold item's value
+     * when it leaves stock. Pulled from the operator-set per-item override
+     * (Purchases event); hard-fails with `INVENTORY_ACCOUNT_NOT_LINKED`
+     * when none is set.
      */
-    private function inventoryAccountFor(?string $itemType): string
+    private function inventoryAccountFor(InventoryItem $item): string
     {
-        return InventoryAccounts::forItemType($itemType);
+        $account = $item->accountFor(InventoryEventType::Purchases);
+
+        if ($account === null) {
+            throw new InventoryAccountNotLinkedException($item, InventoryEventType::Purchases);
+        }
+
+        return $account->account_code;
+    }
+
+    /**
+     * Which chart-of-accounts sub-account carries the revenue credit on a
+     * sale. Pulled from the operator-set per-item override (Sales event);
+     * hard-fails with `INVENTORY_ACCOUNT_NOT_LINKED` when none is set.
+     */
+    private function salesAccountFor(InventoryItem $item): string
+    {
+        $account = $item->accountFor(InventoryEventType::Sales);
+
+        if ($account === null) {
+            throw new InventoryAccountNotLinkedException($item, InventoryEventType::Sales);
+        }
+
+        return $account->account_code;
+    }
+
+    /**
+     * Which chart-of-accounts sub-account carries the COGS debit on a sale.
+     * Pulled from the operator-set per-item override (Cogs event); hard-fails
+     * with `INVENTORY_ACCOUNT_NOT_LINKED` when none is set.
+     */
+    private function cogsAccountFor(InventoryItem $item): string
+    {
+        $account = $item->accountFor(InventoryEventType::Cogs);
+
+        if ($account === null) {
+            throw new InventoryAccountNotLinkedException($item, InventoryEventType::Cogs);
+        }
+
+        return $account->account_code;
     }
 
     /**
@@ -124,16 +166,17 @@ class SalesOrderService
                 );
             }
 
-            [$totalCost, $costByAccount] = $this->issueGoods($locked);
+            $issued = $this->issueGoods($locked);
+            $totalCost = $issued['total_cost'];
 
             $locked->total_cost = $totalCost;
             $locked->status = SalesOrderStatus::Fulfilled;
             $locked->save();
 
             if ($locked->isInternal()) {
-                $this->postInternalTransfer($locked, $costByAccount);
+                $this->postInternalTransfer($locked, $issued['inventory_credits']);
             } else {
-                $this->postExternalFulfillment($locked, $totalCost, $costByAccount);
+                $this->postExternalFulfillment($locked, $issued);
             }
 
             return $locked->fresh(['lines']);
@@ -258,7 +301,8 @@ class SalesOrderService
             }
 
             $total = round((float) $order->lines()->get()->sum(fn ($l) => $l->lineTotal()), 4);
-            [$totalCost, $costByAccount] = $this->issueGoods($order);
+            $issued = $this->issueGoods($order);
+            $totalCost = $issued['total_cost'];
 
             $order->total_amount = $total;
             $order->total_cost = $totalCost;
@@ -267,14 +311,22 @@ class SalesOrderService
             $order->save();
 
             // Cash against revenue, cost out of stock — one balanced entry.
+            // Revenue credits split per-item via the Sales override; COGS
+            // debits per-item via the Cogs override; inventory credits
+            // per-item via the Purchases override.
             $lines = [
                 ['account_code' => '12', 'debit' => $total, 'operating_unit_id' => $operatingUnitId],
-                ['account_code' => '41', 'credit' => $total, 'operating_unit_id' => $operatingUnitId],
             ];
 
+            foreach ($issued['revenue_credits'] as $account => $amount) {
+                $lines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $operatingUnitId];
+            }
+
             if ($totalCost > 0) {
-                $lines[] = ['account_code' => '51', 'debit' => $totalCost, 'operating_unit_id' => $operatingUnitId];
-                foreach ($costByAccount as $account => $amount) {
+                foreach ($issued['cogs_debits'] as $account => $amount) {
+                    $lines[] = ['account_code' => (string) $account, 'debit' => $amount, 'operating_unit_id' => $operatingUnitId];
+                }
+                foreach ($issued['inventory_credits'] as $account => $amount) {
                     $lines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $operatingUnitId];
                 }
             }
@@ -328,7 +380,7 @@ class SalesOrderService
                 );
 
                 $totalCost += $cost;
-                $account = $this->inventoryAccountFor($line->inventoryItem?->item_type);
+                $account = $this->inventoryAccountFor($line->inventoryItem ?? throw new InvalidArgumentException('Restock line is missing its inventory item.'));
                 $costByAccount[$account] = round(($costByAccount[$account] ?? 0) + $cost, 4);
 
                 // Arrives in the store at the cost it left with.
@@ -383,12 +435,24 @@ class SalesOrderService
     /**
      * Issue every line of an order from the selling unit's stock.
      *
-     * @return array{0: float, 1: array<string, float>}
+     * Each line's revenue, COGS, and inventory credit go to the per-item
+     * account overrides (Sales, Cogs, Purchases events). Returns three
+     * `account_code → amount` maps so `postExternalFulfillment` can build
+     * the balanced journal without re-querying.
+     *
+     * @return array{
+     *   total_cost: float,
+     *   inventory_credits: array<string, float>,
+     *   revenue_credits: array<string, float>,
+     *   cogs_debits: array<string, float>
+     * }
      */
     private function issueGoods(SalesOrder $order): array
     {
         $totalCost = 0.0;
-        $costByAccount = [];
+        $inventoryCredits = [];
+        $revenueCredits = [];
+        $cogsDebits = [];
 
         foreach ($order->lines()->with('inventoryItem')->get() as $line) {
             if ($line->stock_lot_id !== null) {
@@ -416,8 +480,16 @@ class SalesOrderService
             $line->unit_cost_actual = $line->quantity > 0 ? round($cost / (float) $line->quantity, 4) : 0;
             $line->save();
 
-            $account = $this->inventoryAccountFor($line->inventoryItem?->item_type);
-            $costByAccount[$account] = round(($costByAccount[$account] ?? 0) + $cost, 4);
+            $item = $line->inventoryItem ?? throw new InvalidArgumentException('Sales line is missing its inventory item.');
+            $lineTotal = round((float) $line->lineTotal(), 4);
+
+            $inventoryAccount = $this->inventoryAccountFor($item);
+            $salesAccount = $this->salesAccountFor($item);
+            $cogsAccount = $this->cogsAccountFor($item);
+
+            $inventoryCredits[$inventoryAccount] = round(($inventoryCredits[$inventoryAccount] ?? 0) + $cost, 4);
+            $revenueCredits[$salesAccount] = round(($revenueCredits[$salesAccount] ?? 0) + $lineTotal, 4);
+            $cogsDebits[$cogsAccount] = round(($cogsDebits[$cogsAccount] ?? 0) + $cost, 4);
 
             // An internal sale also lands the goods in the buyer unit.
             if ($order->isInternal() && $order->buyer_unit_id !== null) {
@@ -453,7 +525,12 @@ class SalesOrderService
             }
         }
 
-        return [round($totalCost, 4), $costByAccount];
+        return [
+            'total_cost' => round($totalCost, 4),
+            'inventory_credits' => $inventoryCredits,
+            'revenue_credits' => $revenueCredits,
+            'cogs_debits' => $cogsDebits,
+        ];
     }
 
     /**
@@ -603,9 +680,18 @@ class SalesOrderService
         return [round($cost, 4), $drawn];
     }
 
-    private function postExternalFulfillment(SalesOrder $order, float $totalCost, array $costByAccount): void
+    /**
+     * @param array{
+     *   total_cost: float,
+     *   inventory_credits: array<string, float>,
+     *   revenue_credits: array<string, float>,
+     *   cogs_debits: array<string, float>
+     * } $issued
+     */
+    private function postExternalFulfillment(SalesOrder $order, array $issued): void
     {
         $price = (float) $order->total_amount;
+        $totalCost = (float) $issued['total_cost'];
 
         $clientAccountCode = '13';
         if ($order->client_id !== null) {
@@ -616,15 +702,22 @@ class SalesOrderService
         }
 
         // Revenue is owed by the buyer; cost leaves stock. Both sides in one
-        // balanced entry (SALE-07).
+        // balanced entry (SALE-07). Revenue credits are split per-item via
+        // the per-item Sales override; COGS debits per-item via the Cogs
+        // override; inventory credits per-item via the Purchases override.
         $lines = [
             ['account_code' => $clientAccountCode, 'debit' => $price, 'operating_unit_id' => $order->operating_unit_id],
-            ['account_code' => '41', 'credit' => $price, 'operating_unit_id' => $order->operating_unit_id],
         ];
 
+        foreach ($issued['revenue_credits'] as $account => $amount) {
+            $lines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $order->operating_unit_id];
+        }
+
         if ($totalCost > 0) {
-            $lines[] = ['account_code' => '51', 'debit' => $totalCost, 'operating_unit_id' => $order->operating_unit_id];
-            foreach ($costByAccount as $account => $amount) {
+            foreach ($issued['cogs_debits'] as $account => $amount) {
+                $lines[] = ['account_code' => (string) $account, 'debit' => $amount, 'operating_unit_id' => $order->operating_unit_id];
+            }
+            foreach ($issued['inventory_credits'] as $account => $amount) {
                 $lines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $order->operating_unit_id];
             }
         }

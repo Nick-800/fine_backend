@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\InventoryEventType;
 use App\Exceptions\InsufficientComponentStockException;
+use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
 use App\Models\PurchaseOrder;
 use App\Models\StockLot;
 use App\Models\Warehouse;
-use App\Support\InventoryAccounts;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -162,11 +163,20 @@ class StockLotService
     }
 
     /**
-     * Which inventory account carries this item's value, by item type.
+     * Which chart-of-accounts sub-account carries this item's value on the
+     * inventory DR leg during intake. Pulled from the operator-set per-item
+     * override (Purchases event); hard-fails with
+     * `INVENTORY_ACCOUNT_NOT_LINKED` when none is set.
      */
     private function inventoryAccountFor(InventoryItem $item): string
     {
-        return InventoryAccounts::forItemType($item->item_type);
+        $account = $item->accountFor(InventoryEventType::Purchases);
+
+        if ($account === null) {
+            throw new InventoryAccountNotLinkedException($item, InventoryEventType::Purchases);
+        }
+
+        return $account->account_code;
     }
 
     /**

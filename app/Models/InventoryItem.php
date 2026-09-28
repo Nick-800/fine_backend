@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\InventoryEventType;
 use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 final class InventoryItem extends Model
@@ -70,5 +72,28 @@ final class InventoryItem extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(ItemCategory::class, 'category_id');
+    }
+
+    /**
+     * Per-event account overrides. The COA chart is mapped onto each item
+     * by event (purchases, sales, returns, COGS, waste, discounts, transport,
+     * sales commission, opening/ending).
+     */
+    public function accounts(): HasMany
+    {
+        return $this->hasMany(InventoryItemAccount::class);
+    }
+
+    /**
+     * Resolve the chart-of-accounts account to use when posting the given
+     * event for this item. Returns the linked `Account` or `null` if no
+     * override is set — the caller is responsible for turning `null` into a
+     * hard `INVENTORY_ACCOUNT_NOT_LINKED` 422 (no canonical fallback).
+     */
+    public function accountFor(InventoryEventType $event): ?Account
+    {
+        $row = $this->accounts()->where('event_type', $event->value)->first();
+
+        return $row?->account;
     }
 }

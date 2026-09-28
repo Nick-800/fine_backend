@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Enums\InventoryEventType;
+use App\Models\Account;
 use App\Models\Company;
 use App\Models\InventoryItem;
+use App\Models\InventoryItemAccount;
 use App\Models\InventoryMovement;
 use App\Models\JournalEntry;
 use App\Models\OperatingUnit;
@@ -36,6 +39,14 @@ beforeEach(function () {
     ]);
     $this->fabric = InventoryItem::create([
         'name' => 'Fabric', 'code' => 'FAB-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'meter',
+    ]);
+
+    // Link the Purchases override so intake can post. Without it, the new
+    // INVENTORY_ACCOUNT_NOT_LINKED guard hard-fails every intake.
+    InventoryItemAccount::create([
+        'inventory_item_id' => $this->fabric->id,
+        'event_type' => InventoryEventType::Purchases->value,
+        'account_id' => Account::where('account_code', '111')->sole()->id,
     ]);
 
     $this->user = User::factory()->create(['must_change_password' => false]);
@@ -125,6 +136,13 @@ test('an import receipt without its order is refused, as is an unknown source', 
 test('finished-good item types land on their own inventory accounts', function () {
     $block = InventoryItem::create([
         'name' => 'Foam Block', 'code' => 'BLK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
+    ]);
+
+    // The new per-event override guard requires an explicit Purchases link.
+    InventoryItemAccount::create([
+        'inventory_item_id' => $block->id,
+        'event_type' => InventoryEventType::Purchases->value,
+        'account_id' => Account::where('account_code', '1131')->sole()->id,
     ]);
 
     // Serialized items keep their rules on this path too: two blocks in one
