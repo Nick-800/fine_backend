@@ -336,6 +336,9 @@ Route::prefix('v1')->group(function () {
                 Route::put('/attribute-definitions/{id}', [InventoryAttributeController::class, 'update']);
                 Route::delete('/attribute-definitions/{id}', [InventoryAttributeController::class, 'destroy']);
                 Route::apiResource('inventory-items', InventoryItemController::class);
+                Route::get('/inventory-items/{id}/accounts', [InventoryItemController::class, 'accounts']);
+                Route::post('/inventory-items/{id}/accounts', [InventoryItemController::class, 'upsertAccount']);
+                Route::delete('/inventory-items/{id}/accounts/{rowId}', [InventoryItemController::class, 'deleteAccount']);
                 Route::get('/stock-lots/available-for-cutting', [StockLotController::class, 'availableForCutting']);
                 Route::get('/stock-lots/available-foam-blocks', [StockLotController::class, 'availableFoamBlocks']);
                 Route::post('/stock-lots/intake', [StockLotController::class, 'intake']);

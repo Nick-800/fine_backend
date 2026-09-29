@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\InventoryEventType;
 use App\Exceptions\InvalidStateTransitionException;
 use App\Models\InternalRestockRequest;
+use App\Models\InventoryItem;
 use App\Models\OperatingUnit;
 use App\Support\InventoryAccounts;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +22,22 @@ class SalesOrderService
         private readonly AccountingService $accountingService,
         private readonly StockIssueService $stockIssueService,
     ) {}
+
+    /**
+     * Which chart-of-accounts sub-account carries the restocked item's value
+     * when it leaves the source unit. Honours the operator-set per-item
+     * `purchases` override when present; falls back to the canonical
+     * `InventoryAccounts::forItemType()` mapping for legacy items that
+     * predate the per-item override table.
+     */
+    private function inventoryAccountFor(InventoryItem $item): string
+    {
+        $account = $item->accountFor(InventoryEventType::Purchases);
+
+        return $account !== null
+            ? $account->account_code
+            : InventoryAccounts::forItemType($item->item_type);
+    }
 
     /**
      * Fulfill an approved restock request. Fulfillment is the physical
@@ -65,7 +83,9 @@ class SalesOrderService
                 );
 
                 $totalCost += $cost;
-                $account = InventoryAccounts::forItemType($line->inventoryItem?->item_type);
+                $account = $this->inventoryAccountFor(
+                    $line->inventoryItem ?? throw new InvalidStateTransitionException('Restock line is missing its inventory item.')
+                );
                 $costByAccount[$account] = round(($costByAccount[$account] ?? 0) + $cost, 4);
             }
 
