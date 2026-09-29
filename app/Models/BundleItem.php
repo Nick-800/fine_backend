@@ -18,10 +18,17 @@ final class BundleItem extends Model
         'bundle_id',
         'inventory_item_id',
         'suggested_quantity',
+        'length_m',
+        'width_m',
+        'height_m',
+        'position',
     ];
 
     protected $casts = [
         'suggested_quantity' => 'decimal:4',
+        'length_m' => 'decimal:3',
+        'width_m' => 'decimal:3',
+        'height_m' => 'decimal:3',
     ];
 
     public function bundle(): BelongsTo

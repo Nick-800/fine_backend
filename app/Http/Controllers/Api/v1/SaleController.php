@@ -1,0 +1,207 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api\v1;
+
+use App\Http\Controllers\Controller;
+use App\Http\Resources\v1\CashAccountResource;
+use App\Models\CashAccount;
+use App\Models\SalesOrder;
+use App\Services\SaleCheckoutService;
+use App\Support\CurrentUnitContext;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\Rule;
+
+/**
+ * The POS: the one place every sale happens — to a registered client or to
+ * another operating unit, of inventory items and bundles.
+ */
+final class SaleController extends Controller
+{
+    public function __construct(
+        private readonly SaleCheckoutService $checkoutService,
+        private readonly CurrentUnitContext $unitContext,
+    ) {}
+
+    public function index(Request $request): JsonResponse
+    {
+        $query = SalesOrder::with(['client.entity', 'buyerUnit', 'cashAccount'])
+            ->withCount('lines')
+            ->latest();
+
+        foreach (['status', 'fulfillment_status', 'client_id', 'payment_method', 'buyer_type'] as $filter) {
+            if (filled($request->query($filter))) {
+                $query->where($filter, $request->query($filter));
+            }
+        }
+
+        if (filled($request->query('search'))) {
+            $search = (string) $request->query('search');
+            $query->where(function ($q) use ($search): void {
+                $q->where('order_number', 'like', "%{$search}%")
+                    ->orWhereHas('client.entity', fn ($e) => $e->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        if (filled($request->query('from'))) {
+            $query->whereDate('created_at', '>=', $request->query('from'));
+        }
+
+        if (filled($request->query('to'))) {
+            $query->whereDate('created_at', '<=', $request->query('to'));
+        }
+
+        return response()->json($query->paginate(min($request->integer('per_page', 20), 100)));
+    }
+
+    /**
+     * Checkout. The server numbers the sale; a repeated client_request_id
+     * returns the sale already made instead of selling twice.
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_request_id' => ['nullable', 'uuid'],
+            'client_id' => ['nullable', 'uuid'],
+            'buyer_unit_id' => ['nullable', 'uuid', 'exists:operating_units,id'],
+            'buyer_warehouse_id' => ['nullable', 'uuid', 'exists:warehouses,id'],
+            'payment_method' => ['nullable', Rule::in(['cash', 'bank', 'receivable'])],
+            'cash_account_id' => ['nullable', 'uuid'],
+            'notes' => ['nullable', 'string'],
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.line_type' => ['nullable', Rule::in(['item', 'bundle'])],
+            'lines.*.inventory_item_id' => ['nullable', 'uuid', 'exists:inventory_items,id'],
+            'lines.*.stock_lot_id' => ['nullable', 'uuid', 'exists:stock_lots,id'],
+            'lines.*.bundle_id' => ['nullable', 'uuid', 'exists:bundles,id'],
+            'lines.*.description' => ['nullable', 'string', 'max:255'],
+            'lines.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'lines.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            'lines.*.length_m' => ['nullable', 'numeric', 'gt:0'],
+            'lines.*.width_m' => ['nullable', 'numeric', 'gt:0'],
+            'lines.*.height_m' => ['nullable', 'numeric', 'gt:0'],
+        ]);
+
+        $unit = $this->unitContext->unit();
+
+        if ($unit === null) {
+            return response()->json([
+                'message' => 'Select an operating unit before selling.',
+                'code' => 'OPERATING_UNIT_REQUIRED',
+            ], 422);
+        }
+
+        $sale = $this->checkoutService->checkout($unit, $validated, $request->user());
+
+        return response()->json($sale, 201);
+    }
+
+    public function show(string $id): JsonResponse
+    {
+        return response()->json(
+            SalesOrder::with([
+                'lines.inventoryItem',
+                'lines.stockLot',
+                'lines.bundle.items.inventoryItem',
+                'lines.components.inventoryItem',
+                'lines.components.allocations.stockLot',
+                'client.entity.primaryContact',
+                'buyerUnit',
+                'cashAccount',
+                'payments.cashAccount',
+                'payments.receivedBy:id,name',
+                'soldBy:id,name',
+                'creditApprovalRequest.decidedBy:id,name',
+            ])->findOrFail($id)
+        );
+    }
+
+    /**
+     * Collect money against a receivable sale into a chosen treasury.
+     */
+    public function collectPayment(Request $request, string $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'method' => ['required', Rule::in(['cash', 'bank'])],
+            'cash_account_id' => ['required', 'uuid'],
+        ]);
+
+        $sale = SalesOrder::findOrFail($id);
+
+        return response()->json($this->checkoutService->collectPayment(
+            $sale,
+            (float) $validated['amount'],
+            $validated['method'],
+            $validated['cash_account_id'],
+            $request->user(),
+        ));
+    }
+
+    /**
+     * The treasuries and bank accounts this unit's POS can receive money into.
+     * Unlinked ones are listed too, flagged, so the counter can explain why
+     * they cannot be picked.
+     */
+    public function paymentAccounts(Request $request): AnonymousResourceCollection
+    {
+        $query = CashAccount::with('account')->orderBy('name');
+
+        if (filled($request->query('kind'))) {
+            $query->where('kind', $request->query('kind'));
+        }
+
+        return CashAccountResource::collection($query->get());
+    }
+
+    /**
+     * Structured invoice data (SALE-10). Printing is a desktop concern; the
+     * figures here are the invoice. A bundle prints as one line with its name.
+     */
+    public function invoice(string $id): JsonResponse
+    {
+        $sale = SalesOrder::with([
+            'lines.inventoryItem', 'lines.stockLot', 'client.entity.primaryContact',
+            'buyerUnit', 'operatingUnit', 'cashAccount', 'soldBy:id,name',
+        ])->findOrFail($id);
+
+        if (! $sale->status->isSold()) {
+            return response()->json([
+                'message' => 'An invoice exists only for a completed checkout.',
+                'code' => 'NOT_SOLD',
+            ], 422);
+        }
+
+        return response()->json([
+            'invoice_number' => 'INV-'.$sale->order_number,
+            'sale_number' => $sale->order_number,
+            'date' => $sale->created_at?->toIso8601String(),
+            'seller' => $sale->operatingUnit?->name,
+            'sold_by' => $sale->soldBy?->name,
+            'buyer' => $sale->client?->entity?->name ?? $sale->buyerUnit?->name,
+            'buyer_phone' => $sale->client?->entity?->primaryContact?->phone,
+            'buyer_type' => $sale->buyer_type,
+            'payment_method' => $sale->payment_method,
+            'cash_account' => $sale->cashAccount?->name,
+            'lines' => $sale->lines->map(fn ($line) => [
+                'line_type' => $line->line_type,
+                'description' => $line->description ?? $line->inventoryItem?->name,
+                'sku' => $line->isBundle() ? null : $line->inventoryItem?->code,
+                'quantity' => (float) $line->quantity,
+                'length_m' => $line->length_m !== null ? (float) $line->length_m : null,
+                'width_m' => $line->width_m !== null ? (float) $line->width_m : null,
+                'height_m' => $line->height_m !== null ? (float) $line->height_m : null,
+                'unit_price' => (float) $line->unit_price,
+                'line_total' => $line->lineTotal(),
+                'lot_number' => $line->stockLot?->lot_number,
+            ])->values(),
+            'total_amount' => (float) $sale->total_amount,
+            'amount_paid' => (float) $sale->amount_paid,
+            'outstanding' => $sale->outstanding(),
+            'status' => $sale->status->value,
+            'fulfillment_status' => $sale->fulfillment_status?->value,
+        ]);
+    }
+}

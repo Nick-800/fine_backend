@@ -23,17 +23,20 @@ final class StoreClientRequest extends FormRequest
             'name' => ['nullable', 'string', 'max:255'],
             'entity_type' => ['nullable', Rule::enum(EntityType::class)],
             'tax_number' => ['nullable', 'string', 'max:50'],
-            'operating_unit_id' => ['required', 'uuid', 'exists:operating_units,id'],
+            // Optional: a POS quick-add omits it and the client joins the
+            // caller's current unit.
+            'operating_unit_id' => ['nullable', 'uuid', 'exists:operating_units,id'],
             'credit_limit' => ['nullable', 'numeric', 'min:0'],
             'payment_terms_days' => ['nullable', 'integer', 'min:0'],
             'account_id' => ['nullable', 'uuid', 'exists:accounts,id'],
-            'coa_action' => ['nullable', 'string', 'in:create_new,link_existing,none'],
+            'coa_action' => ['nullable', 'string', 'in:auto,create_new,link_existing,none'],
             'new_account' => ['nullable', 'array'],
             'new_account.parent_account_id' => ['required_if:coa_action,create_new', 'nullable', 'uuid', 'exists:accounts,id'],
             'new_account.account_code' => ['required_if:coa_action,create_new', 'nullable', 'string', 'max:50', 'unique:accounts,account_code'],
             'new_account.name' => ['required_if:coa_action,create_new', 'nullable', 'string', 'max:255'],
             'new_account.currency' => ['nullable', 'string', 'size:3'],
             'status' => ['nullable', Rule::enum(ClientStatus::class)],
+            'phone' => ['nullable', 'string', 'max:50'],
             'city' => ['nullable', 'string', 'max:100'],
             'address' => ['nullable', 'string', 'max:500'],
         ];

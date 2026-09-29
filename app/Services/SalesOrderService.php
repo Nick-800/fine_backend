@@ -4,667 +4,93 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Enums\SalesOrderStatus;
-use App\Exceptions\InsufficientComponentStockException;
 use App\Exceptions\InvalidStateTransitionException;
-use App\Models\Client;
-use App\Models\CreditApprovalRequest;
 use App\Models\InternalRestockRequest;
-use App\Models\InventoryMovement;
 use App\Models\OperatingUnit;
-use App\Models\SalesOrder;
-use App\Models\StockLot;
-use App\Models\User;
-use App\Models\Warehouse;
 use App\Support\InventoryAccounts;
 use Illuminate\Support\Facades\DB;
-use InvalidArgumentException;
 
+/**
+ * Internal restock between units. Selling itself lives in SaleCheckoutService
+ * (the POS); this service keeps the store-asks-a-plant restock flow.
+ */
 class SalesOrderService
 {
-    public function __construct(private readonly AccountingService $accountingService) {}
+    public function __construct(
+        private readonly AccountingService $accountingService,
+        private readonly StockIssueService $stockIssueService,
+    ) {}
 
     /**
-     * Which finished-goods account a sold item's value leaves from —
-     * necessarily the same account intake put it into.
-     */
-    private function inventoryAccountFor(?string $itemType): string
-    {
-        return InventoryAccounts::forItemType($itemType);
-    }
-
-    /**
-     * Submit a draft. The outcome is decided here, never by the caller:
-     * the credit check (SALE-01) routes an external order to confirmed or
-     * pending_approval; internal and walk-in orders skip the gate (SALE-03).
-     */
-    public function submit(SalesOrder $order): SalesOrder
-    {
-        return DB::transaction(function () use ($order): SalesOrder {
-            $locked = SalesOrder::whereKey($order->getKey())->lockForUpdate()->firstOrFail();
-
-            if ($locked->status !== SalesOrderStatus::Draft) {
-                throw new InvalidStateTransitionException(
-                    "Order {$locked->order_number} is {$locked->status->value}; only a draft can be submitted."
-                );
-            }
-
-            $total = round((float) $locked->lines()->get()->sum(fn ($l) => $l->lineTotal()), 4);
-
-            if ($total <= 0) {
-                throw new InvalidArgumentException("Order {$locked->order_number} has no lines to sell.");
-            }
-
-            $locked->total_amount = $total;
-
-            if ($locked->isCreditGated()) {
-                // Lock the client so two simultaneous orders cannot both pass on
-                // the same remaining headroom.
-                $client = Client::whereKey($locked->client_id)->lockForUpdate()->firstOrFail();
-
-                $proposed = round((float) $client->current_balance + $total, 4);
-                $limit = (float) $client->credit_limit;
-
-                if ($proposed > $limit) {
-                    $locked->status = SalesOrderStatus::PendingApproval;
-                    $locked->save();
-
-                    // SALE-02: the order stays blocked until someone with the
-                    // authority decides.
-                    CreditApprovalRequest::create([
-                        'sales_order_id' => $locked->id,
-                        'amount_over_limit' => round($proposed - $limit, 4),
-                    ]);
-
-                    return $locked->fresh(['creditApprovalRequest']);
-                }
-            }
-
-            $locked->status = SalesOrderStatus::Confirmed;
-            $locked->save();
-
-            return $locked->fresh();
-        });
-    }
-
-    public function decideCreditApproval(CreditApprovalRequest $request, bool $approved, User $decidedBy, ?string $notes = null): CreditApprovalRequest
-    {
-        return DB::transaction(function () use ($request, $approved, $decidedBy, $notes): CreditApprovalRequest {
-            if ($request->status !== 'pending') {
-                throw new InvalidStateTransitionException('This credit request has already been decided.');
-            }
-
-            $request->update([
-                'status' => $approved ? 'approved' : 'rejected',
-                'decided_by_user_id' => $decidedBy->id,
-                'decided_at' => now(),
-                'notes' => $notes,
-            ]);
-
-            $order = $request->salesOrder;
-            $order->status = $approved ? SalesOrderStatus::Confirmed : SalesOrderStatus::Rejected;
-            $order->save();
-
-            return $request->fresh(['salesOrder']);
-        });
-    }
-
-    /**
-     * Issue the goods. Stock is drawn FIFO from the selling unit at fulfillment
-     * time, so COGS is the cost of the lots actually taken (SALE-07/08).
-     */
-    public function fulfill(SalesOrder $order): SalesOrder
-    {
-        return DB::transaction(function () use ($order): SalesOrder {
-            $locked = SalesOrder::whereKey($order->getKey())->lockForUpdate()->firstOrFail();
-
-            if ($locked->status !== SalesOrderStatus::Confirmed) {
-                throw new InvalidStateTransitionException(
-                    "Order {$locked->order_number} is {$locked->status->value}; only a confirmed order can be fulfilled."
-                );
-            }
-
-            [$totalCost, $costByAccount] = $this->issueGoods($locked);
-
-            $locked->total_cost = $totalCost;
-            $locked->status = SalesOrderStatus::Fulfilled;
-            $locked->save();
-
-            if ($locked->isInternal()) {
-                $this->postInternalTransfer($locked, $costByAccount);
-            } else {
-                $this->postExternalFulfillment($locked, $totalCost, $costByAccount);
-            }
-
-            return $locked->fresh(['lines']);
-        });
-    }
-
-    /**
-     * SALE-06: payment moves the client balance and the books together.
-     */
-    public function recordPayment(SalesOrder $order, float $amount, ?string $method = null): SalesOrder
-    {
-        if ($amount <= 0) {
-            throw new InvalidArgumentException('A payment must be greater than zero.');
-        }
-
-        return DB::transaction(function () use ($order, $amount, $method): SalesOrder {
-            $locked = SalesOrder::whereKey($order->getKey())->lockForUpdate()->firstOrFail();
-
-            if (! $locked->status->acceptsPayment()) {
-                throw new InvalidStateTransitionException(
-                    "Order {$locked->order_number} is {$locked->status->value} and cannot take a payment."
-                );
-            }
-
-            if ($locked->isInternal()) {
-                throw new InvalidArgumentException('Internal transfers settle at cost; there is nothing to pay.');
-            }
-
-            $outstanding = $locked->outstanding();
-
-            if ($amount > $outstanding) {
-                throw new InvalidArgumentException(
-                    "Payment of {$amount} exceeds the outstanding {$outstanding}."
-                );
-            }
-
-            $locked->amount_paid = round((float) $locked->amount_paid + $amount, 4);
-            $locked->payment_method = $method ?? $locked->payment_method;
-            $locked->status = $locked->outstanding() <= 0.0001
-                ? SalesOrderStatus::Paid
-                : SalesOrderStatus::PartiallyPaid;
-            $locked->save();
-
-            $clientAccountCode = '13';
-            if ($locked->client_id !== null) {
-                $client = Client::with('account')->whereKey($locked->client_id)->lockForUpdate()->first();
-                if ($client !== null) {
-                    $client->current_balance = round((float) $client->current_balance - $amount, 4);
-                    $client->save();
-                    if ($client->account?->account_code) {
-                        $clientAccountCode = $client->account->account_code;
-                    }
-                }
-            }
-
-            $this->accountingService->postJournal(
-                "Payment on sales order {$locked->order_number}",
-                [
-                    ['account_code' => '12', 'debit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
-                    ['account_code' => $clientAccountCode, 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
-                ],
-                'SalesOrder',
-                $locked->id,
-                $locked->operatingUnit?->company_id,
-            );
-
-            return $locked->fresh();
-        });
-    }
-
-    /**
-     * An internal transfer is settled the moment the goods arrive; there is no
-     * payment leg to wait for.
-     */
-    public function completeInternal(SalesOrder $order): SalesOrder
-    {
-        if (! $order->isInternal() || $order->status !== SalesOrderStatus::Fulfilled) {
-            throw new InvalidStateTransitionException('Only a fulfilled internal transfer can be completed.');
-        }
-
-        $order->status = SalesOrderStatus::Completed;
-        $order->save();
-
-        return $order->fresh();
-    }
-
-    /**
-     * SALE-09: the POS sale is one atomic step — goods out, cash in, done.
-     * Nothing intermediate exists for the counter queue to wait on.
-     *
-     * @param  array<int, array{inventory_item_id: string, quantity: float|int, unit_price: float|int, stock_lot_id?: string|null}>  $items
-     */
-    public function posCheckout(
-        string $operatingUnitId,
-        array $items,
-        string $paymentMethod,
-        string $orderNumber,
-        ?string $clientId = null,
-    ): SalesOrder {
-        if (! in_array($paymentMethod, ['cash', 'card'], true)) {
-            throw new InvalidArgumentException('POS accepts cash or card; credit sales go through a standard order.');
-        }
-
-        return DB::transaction(function () use ($operatingUnitId, $items, $paymentMethod, $orderNumber, $clientId): SalesOrder {
-            $order = SalesOrder::create([
-                'operating_unit_id' => $operatingUnitId,
-                'order_number' => $orderNumber,
-                'buyer_type' => $clientId !== null ? 'client' : 'walk_in',
-                'client_id' => $clientId,
-                'channel' => 'pos',
-                'payment_method' => $paymentMethod,
-            ]);
-
-            foreach ($items as $item) {
-                $order->lines()->create([
-                    'inventory_item_id' => $item['inventory_item_id'],
-                    'stock_lot_id' => $item['stock_lot_id'] ?? null,
-                    'bundle_id' => $item['bundle_id'] ?? null,
-                    'quantity' => $item['quantity'],
-                    'unit_price' => $item['unit_price'],
-                ]);
-            }
-
-            $total = round((float) $order->lines()->get()->sum(fn ($l) => $l->lineTotal()), 4);
-            [$totalCost, $costByAccount] = $this->issueGoods($order);
-
-            $order->total_amount = $total;
-            $order->total_cost = $totalCost;
-            $order->amount_paid = $total;
-            $order->status = SalesOrderStatus::Paid;
-            $order->save();
-
-            // Cash against revenue, cost out of stock — one balanced entry.
-            $lines = [
-                ['account_code' => '12', 'debit' => $total, 'operating_unit_id' => $operatingUnitId],
-                ['account_code' => '41', 'credit' => $total, 'operating_unit_id' => $operatingUnitId],
-            ];
-
-            if ($totalCost > 0) {
-                $lines[] = ['account_code' => '51', 'debit' => $totalCost, 'operating_unit_id' => $operatingUnitId];
-                foreach ($costByAccount as $account => $amount) {
-                    $lines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $operatingUnitId];
-                }
-            }
-
-            $this->accountingService->postJournal(
-                "POS sale {$order->order_number}",
-                $lines,
-                'SalesOrder',
-                $order->id,
-                $order->operatingUnit?->company_id,
-            );
-
-            return $order->fresh(['lines.inventoryItem']);
-        });
-    }
-
-    /**
-     * Approve, reject, or fulfill a store's restock request. Fulfillment is the
-     * physical transfer: stock leaves the source unit and lands in the
-     * requesting unit at cost, with the journal moving value between the two
-     * unit subledgers (SALE-08).
+     * Fulfill an approved restock request. Fulfillment is the physical
+     * transfer: stock leaves the source unit and lands in the requesting unit
+     * at cost — each lot keeping its own size — with the journal moving value
+     * between the two unit subledgers (SALE-08).
      */
     public function fulfillRestock(InternalRestockRequest $request): InternalRestockRequest
     {
         return DB::transaction(function () use ($request): InternalRestockRequest {
-            if ($request->status !== 'approved') {
+            $locked = InternalRestockRequest::whereKey($request->getKey())->lockForUpdate()->firstOrFail();
+
+            if ($locked->status !== 'approved') {
                 throw new InvalidStateTransitionException(
-                    "Restock request {$request->request_number} is {$request->status}; only an approved request can be fulfilled."
+                    "Restock request {$locked->request_number} is {$locked->status}; only an approved request can be fulfilled."
                 );
             }
 
-            $targetWarehouse = Warehouse::withoutGlobalScopes()
-                ->where('operating_unit_id', $request->requesting_unit_id)
-                ->first();
-
-            if ($targetWarehouse === null) {
-                throw new InvalidArgumentException('The requesting unit has no warehouse to receive stock.');
-            }
+            // Fails early (before any draw) when the store has nowhere to put it.
+            $this->stockIssueService->receivingWarehouse($locked->requesting_unit_id);
 
             $costByAccount = [];
             $totalCost = 0.0;
 
-            foreach ($request->lines()->with('inventoryItem')->get() as $line) {
-                [$cost, $drawn] = $this->drawFromUnit(
+            foreach ($locked->lines()->with('inventoryItem')->orderBy('created_at')->get()->values() as $position => $line) {
+                [$cost, $portions] = $this->stockIssueService->drawFromUnit(
                     $line->inventory_item_id,
                     (float) $line->quantity,
-                    $request->source_unit_id,
+                    $locked->source_unit_id,
                     'InternalRestockRequest',
-                    $request->id,
+                    $locked->id,
                     'restock_transfer_out',
                 );
 
+                $this->stockIssueService->land(
+                    $portions,
+                    $locked->requesting_unit_id,
+                    null,
+                    'RST-'.$locked->request_number.'-L'.($position + 1),
+                    'InternalRestockRequest',
+                    $locked->id,
+                    'restock_transfer_in',
+                );
+
                 $totalCost += $cost;
-                $account = $this->inventoryAccountFor($line->inventoryItem?->item_type);
+                $account = InventoryAccounts::forItemType($line->inventoryItem?->item_type);
                 $costByAccount[$account] = round(($costByAccount[$account] ?? 0) + $cost, 4);
-
-                // Arrives in the store at the cost it left with.
-                $received = StockLot::create([
-                    'inventory_item_id' => $line->inventory_item_id,
-                    'warehouse_id' => $targetWarehouse->id,
-                    'lot_number' => 'RST-'.$request->request_number.'-'.substr($line->id, 0, 8),
-                    'quantity' => $line->quantity,
-                    'unit_cost' => $line->quantity > 0 ? round($cost / (float) $line->quantity, 4) : 0,
-                    'status' => 'available',
-                ]);
-
-                InventoryMovement::create([
-                    'operating_unit_id' => $request->requesting_unit_id,
-                    'stock_lot_id' => $received->id,
-                    'to_warehouse_id' => $targetWarehouse->id,
-                    'sku' => $line->inventoryItem?->code ?? 'ITEM',
-                    'movement_type' => 'transfer',
-                    'quantity_delta' => (float) $line->quantity,
-                    'unit_cost' => (float) $received->unit_cost,
-                    'reason' => 'restock_transfer_in',
-                    'reference_document_type' => 'InternalRestockRequest',
-                    'reference_id' => $request->id,
-                ]);
             }
 
-            $request->status = 'fulfilled';
-            $request->save();
+            $locked->status = 'fulfilled';
+            $locked->save();
 
             if ($totalCost > 0) {
                 $journalLines = [];
                 foreach ($costByAccount as $account => $amount) {
                     // Same account, two units: value moves between subledgers
                     // while the company total stays put — at-cost transfer.
-                    $journalLines[] = ['account_code' => (string) $account, 'debit' => $amount, 'operating_unit_id' => $request->requesting_unit_id];
-                    $journalLines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $request->source_unit_id];
+                    $journalLines[] = ['account_code' => (string) $account, 'debit' => $amount, 'operating_unit_id' => $locked->requesting_unit_id];
+                    $journalLines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $locked->source_unit_id];
                 }
 
                 $this->accountingService->postJournal(
-                    "Restock transfer {$request->request_number}",
+                    "Restock transfer {$locked->request_number}",
                     $journalLines,
                     'InternalRestockRequest',
-                    $request->id,
-                    OperatingUnit::find($request->source_unit_id)?->company_id,
+                    $locked->id,
+                    OperatingUnit::find($locked->source_unit_id)?->company_id,
                 );
             }
 
-            return $request->fresh(['lines']);
+            return $locked->fresh(['lines']);
         });
-    }
-
-    /**
-     * Issue every line of an order from the selling unit's stock.
-     *
-     * @return array{0: float, 1: array<string, float>}
-     */
-    private function issueGoods(SalesOrder $order): array
-    {
-        $totalCost = 0.0;
-        $costByAccount = [];
-
-        foreach ($order->lines()->with('inventoryItem')->get() as $line) {
-            if ($line->stock_lot_id !== null) {
-                [$cost] = $this->drawSpecificLot(
-                    $line->stock_lot_id,
-                    $line->inventory_item_id,
-                    (float) $line->quantity,
-                    $order->operating_unit_id,
-                    'SalesOrder',
-                    $order->id,
-                    'sale_issue_specific_lot',
-                );
-            } else {
-                [$cost] = $this->drawFromUnit(
-                    $line->inventory_item_id,
-                    (float) $line->quantity,
-                    $order->operating_unit_id,
-                    'SalesOrder',
-                    $order->id,
-                    'sale_issue',
-                );
-            }
-
-            $totalCost += $cost;
-            $line->unit_cost_actual = $line->quantity > 0 ? round($cost / (float) $line->quantity, 4) : 0;
-            $line->save();
-
-            $account = $this->inventoryAccountFor($line->inventoryItem?->item_type);
-            $costByAccount[$account] = round(($costByAccount[$account] ?? 0) + $cost, 4);
-
-            // An internal sale also lands the goods in the buyer unit.
-            if ($order->isInternal() && $order->buyer_unit_id !== null) {
-                $buyerWarehouse = Warehouse::withoutGlobalScopes()
-                    ->where('operating_unit_id', $order->buyer_unit_id)
-                    ->first();
-
-                if ($buyerWarehouse === null) {
-                    throw new InvalidArgumentException('The buying unit has no warehouse to receive stock.');
-                }
-
-                $received = StockLot::create([
-                    'inventory_item_id' => $line->inventory_item_id,
-                    'warehouse_id' => $buyerWarehouse->id,
-                    'lot_number' => 'TRF-'.$order->order_number.'-'.substr($line->id, 0, 8),
-                    'quantity' => $line->quantity,
-                    'unit_cost' => $line->unit_cost_actual,
-                    'status' => 'available',
-                ]);
-
-                InventoryMovement::create([
-                    'operating_unit_id' => $order->buyer_unit_id,
-                    'stock_lot_id' => $received->id,
-                    'to_warehouse_id' => $buyerWarehouse->id,
-                    'sku' => $line->inventoryItem?->code ?? 'ITEM',
-                    'movement_type' => 'transfer',
-                    'quantity_delta' => (float) $line->quantity,
-                    'unit_cost' => (float) $line->unit_cost_actual,
-                    'reason' => 'internal_transfer_in',
-                    'reference_document_type' => 'SalesOrder',
-                    'reference_id' => $order->id,
-                ]);
-            }
-        }
-
-        return [round($totalCost, 4), $costByAccount];
-    }
-
-    /**
-     * Draw a specific lot for a sale. Mirrors the cut-block validation
-     * (CutterWorkOrderService::selectBlock) — caller must point at a real,
-     * available lot in the selling unit that actually carries the line's
-     * inventory item.
-     *
-     * @return array{0: float, 1: StockLot}
-     */
-    private function drawSpecificLot(
-        string $lotId,
-        string $itemId,
-        float $quantity,
-        string $unitId,
-        string $referenceType,
-        string $referenceId,
-        string $reason,
-    ): array {
-        $lot = StockLot::withoutGlobalScopes()
-            ->whereHas('warehouse', fn ($q) => $q->withoutGlobalScopes()->where('operating_unit_id', $unitId))
-            ->whereKey($lotId)
-            ->lockForUpdate()
-            ->first();
-
-        if ($lot === null) {
-            throw new InvalidArgumentException(
-                "Selected stock lot is not in this operating unit's stock."
-            );
-        }
-
-        if ($lot->inventory_item_id !== $itemId) {
-            throw new InvalidArgumentException(
-                'Selected stock lot does not carry the inventory item on this line.'
-            );
-        }
-
-        if ($lot->status !== 'available') {
-            throw new InvalidArgumentException(
-                "Selected stock lot {$lot->lot_number} is not available ({$lot->status})."
-            );
-        }
-
-        if ((float) $lot->quantity < $quantity) {
-            throw new InsufficientComponentStockException(
-                "Selected stock lot {$lot->lot_number} cannot cover {$quantity}; it has {$lot->quantity}."
-            );
-        }
-
-        $cost = round($quantity * (float) $lot->unit_cost, 4);
-        $lot->quantity = round((float) $lot->quantity - $quantity, 4);
-
-        if ((float) $lot->quantity <= 0) {
-            $lot->quantity = 0;
-            $lot->status = 'consumed';
-        }
-
-        $lot->save();
-
-        InventoryMovement::create([
-            'operating_unit_id' => $unitId,
-            'stock_lot_id' => $lot->id,
-            'from_warehouse_id' => $lot->warehouse_id,
-            'sku' => $lot->inventoryItem?->code ?? 'ITEM',
-            'movement_type' => 'sale',
-            'quantity_delta' => -$quantity,
-            'unit_cost' => (float) $lot->unit_cost,
-            'reason' => $reason,
-            'reference_document_type' => $referenceType,
-            'reference_id' => $referenceId,
-        ]);
-
-        return [$cost, $lot];
-    }
-
-    /**
-     * FIFO draw of one item from one unit's stock, movement included.
-     *
-     * @return array{0: float, 1: array<int, StockLot>}
-     */
-    private function drawFromUnit(
-        string $itemId,
-        float $quantity,
-        string $unitId,
-        string $referenceType,
-        string $referenceId,
-        string $reason,
-    ): array {
-        // withoutGlobalScopes on both levels: the caller's unit context must not
-        // leak into the warehouse subquery, or a restock could never see the
-        // *source* unit's stock.
-        $lots = StockLot::withoutGlobalScopes()
-            ->where('inventory_item_id', $itemId)
-            ->where('status', 'available')
-            ->whereHas('warehouse', fn ($q) => $q->withoutGlobalScopes()->where('operating_unit_id', $unitId))
-            ->orderBy('created_at')
-            ->lockForUpdate()
-            ->get();
-
-        $available = (float) $lots->sum('quantity');
-
-        if ($available < $quantity) {
-            $sku = $lots->first()?->inventoryItem?->code ?? $itemId;
-
-            throw new InsufficientComponentStockException(
-                "Stock cannot cover the sale — {$sku}: need {$quantity}, have {$available}."
-            );
-        }
-
-        $remaining = $quantity;
-        $cost = 0.0;
-        $drawn = [];
-
-        foreach ($lots as $lot) {
-            if ($remaining <= 0) {
-                break;
-            }
-
-            $take = min((float) $lot->quantity, $remaining);
-            $cost += $take * (float) $lot->unit_cost;
-            $remaining = round($remaining - $take, 4);
-
-            $lot->quantity = round((float) $lot->quantity - $take, 4);
-
-            if ((float) $lot->quantity <= 0) {
-                $lot->quantity = 0;
-                $lot->status = 'consumed';
-            }
-
-            $lot->save();
-            $drawn[] = $lot;
-
-            InventoryMovement::create([
-                'operating_unit_id' => $unitId,
-                'stock_lot_id' => $lot->id,
-                'from_warehouse_id' => $lot->warehouse_id,
-                'sku' => $lot->inventoryItem?->code ?? 'ITEM',
-                'movement_type' => 'sale',
-                'quantity_delta' => -$take,
-                'unit_cost' => (float) $lot->unit_cost,
-                'reason' => $reason,
-                'reference_document_type' => $referenceType,
-                'reference_id' => $referenceId,
-            ]);
-        }
-
-        return [round($cost, 4), $drawn];
-    }
-
-    private function postExternalFulfillment(SalesOrder $order, float $totalCost, array $costByAccount): void
-    {
-        $price = (float) $order->total_amount;
-
-        $clientAccountCode = '13';
-        if ($order->client_id !== null) {
-            $client = Client::with('account')->find($order->client_id);
-            if ($client?->account?->account_code) {
-                $clientAccountCode = $client->account->account_code;
-            }
-        }
-
-        // Revenue is owed by the buyer; cost leaves stock. Both sides in one
-        // balanced entry (SALE-07).
-        $lines = [
-            ['account_code' => $clientAccountCode, 'debit' => $price, 'operating_unit_id' => $order->operating_unit_id],
-            ['account_code' => '41', 'credit' => $price, 'operating_unit_id' => $order->operating_unit_id],
-        ];
-
-        if ($totalCost > 0) {
-            $lines[] = ['account_code' => '51', 'debit' => $totalCost, 'operating_unit_id' => $order->operating_unit_id];
-            foreach ($costByAccount as $account => $amount) {
-                $lines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $order->operating_unit_id];
-            }
-        }
-
-        $this->accountingService->postJournal(
-            "Sales order {$order->order_number} fulfilled",
-            $lines,
-            'SalesOrder',
-            $order->id,
-            $order->operatingUnit?->company_id,
-        );
-
-        // The client now owes the invoice value (SALE-06).
-        if ($order->client_id !== null) {
-            $client = Client::whereKey($order->client_id)->lockForUpdate()->first();
-            $client->current_balance = round((float) $client->current_balance + $price, 4);
-            $client->save();
-        }
-    }
-
-    private function postInternalTransfer(SalesOrder $order, array $costByAccount): void
-    {
-        if ($costByAccount === []) {
-            return;
-        }
-
-        $lines = [];
-
-        foreach ($costByAccount as $account => $amount) {
-            // At-cost transfer: no profit between units, only subledger movement.
-            $lines[] = ['account_code' => (string) $account, 'debit' => $amount, 'operating_unit_id' => $order->buyer_unit_id];
-            $lines[] = ['account_code' => (string) $account, 'credit' => $amount, 'operating_unit_id' => $order->operating_unit_id];
-        }
-
-        $this->accountingService->postJournal(
-            "Internal transfer {$order->order_number}",
-            $lines,
-            'SalesOrder',
-            $order->id,
-            $order->operatingUnit?->company_id,
-        );
     }
 }

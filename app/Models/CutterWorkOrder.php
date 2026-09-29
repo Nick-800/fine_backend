@@ -30,23 +30,12 @@ final class CutterWorkOrder extends Model
         'order_number',
         'status',
         'notes',
-        'stock_lot_id',
-        'block_unit_cost_snapshot',
-        'block_length_m_snapshot',
-        'block_width_m_snapshot',
-        'block_height_m_snapshot',
-        'block_volume_m3_snapshot',
         'record_version',
     ];
 
     protected $casts = [
         'status' => CutterWorkOrderStatus::class,
         'wip_cost' => 'decimal:4',
-        'block_unit_cost_snapshot' => 'decimal:4',
-        'block_length_m_snapshot' => 'decimal:4',
-        'block_width_m_snapshot' => 'decimal:4',
-        'block_height_m_snapshot' => 'decimal:4',
-        'block_volume_m3_snapshot' => 'decimal:6',
         'record_version' => 'integer',
     ];
 
@@ -56,13 +45,12 @@ final class CutterWorkOrder extends Model
     }
 
     /**
-     * The precut block the customer is buying. Selected at order creation; the
-     * lot stays in `reserved` status until production starts, at which point
-     * CutterWorkOrderService flips it to `consumed`.
+     * The foam blocks this order cuts. Each stays `reserved` until production
+     * starts, when CutterWorkOrderService flips them all to `consumed`.
      */
-    public function stockLot(): BelongsTo
+    public function blocks(): HasMany
     {
-        return $this->belongsTo(StockLot::class, 'stock_lot_id');
+        return $this->hasMany(CutterWorkOrderBlock::class)->orderBy('created_at');
     }
 
     public function client(): BelongsTo
@@ -72,7 +60,7 @@ final class CutterWorkOrder extends Model
 
     public function lines(): HasMany
     {
-        return $this->hasMany(CutterWorkOrderLine::class);
+        return $this->hasMany(CutterWorkOrderLine::class)->orderBy('created_at');
     }
 
     public function byproductYields(): HasMany

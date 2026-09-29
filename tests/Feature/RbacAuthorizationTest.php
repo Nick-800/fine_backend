@@ -76,8 +76,20 @@ test('pos-cashier is granted POS and sales access but denied admin, hr and manuf
     // Allowed
     $this->actingAs($cashier)
         ->withHeader('X-Operating-Unit-ID', $this->unit->id)
-        ->getJson('/api/v1/sales-orders')
+        ->getJson('/api/v1/sales')
         ->assertOk();
+
+    $this->actingAs($cashier)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->getJson('/api/v1/pos/daily-report')
+        ->assertOk();
+
+    // Denied credit decisions — a cashier cannot approve their own over-limit sale
+    $this->actingAs($cashier)
+        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
+        ->getJson('/api/v1/credit-approval-requests')
+        ->assertStatus(403)
+        ->assertJsonPath('code', 'ACCESS_DENIED');
 
     // Denied Admin
     $this->actingAs($cashier)
