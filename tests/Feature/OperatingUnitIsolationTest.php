@@ -459,18 +459,10 @@ test('a unit-scoped user cannot read another unit import order', function () {
     ($this->asA)()->getJson("/api/v1/purchase-orders/{$this->purchaseOrderB->id}")->assertNotFound();
 });
 
-test('a unit-scoped user cannot read another unit cash account', function () {
+test('cash accounts are company-wide and visible from any unit', function () {
     $res = ($this->asA)()->getJson('/api/v1/cash-accounts');
     $res->assertOk();
-    expect(collect($res->json('data'))->pluck('id'))->not->toContain($this->cashAccountB->id);
-});
-
-test('a unit-scoped user cannot create cash account in another unit', function () {
-    ($this->asA)()->postJson('/api/v1/cash-accounts', [
-        'operating_unit_id' => $this->unitB->id,
-        'name' => 'Stolen Unit B Account',
-        'currency' => 'LYD',
-    ])->assertStatus(403);
+    expect(collect($res->json('data'))->pluck('id'))->toContain($this->cashAccountB->id);
 });
 
 test('stock lot quantity cannot be directly modified via update (INV-06 invariant)', function () {

@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Models\Traits\BelongsToOperatingUnit;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * Treasuries and bank accounts are company-wide: any unit's POS can receive
+ * money into them, so they are deliberately not operating-unit scoped.
+ * `operating_unit_id` only records the unit that owns the account.
+ */
 final class CashAccount extends Model
 {
-    use BelongsToOperatingUnit, HasFactory, HasUuids;
+    use HasFactory, HasUuids;
 
     public const KIND_CASH = 'cash';
 

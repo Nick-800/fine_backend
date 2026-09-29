@@ -183,3 +183,36 @@ test('the item list can carry what is on this unit shelves', function () {
         ->assertSuccessful()
         ->assertJsonPath('data.0.available_quantity', fn ($value) => (float) $value === 7.0);
 });
+
+test('payment accounts of any unit are offered to the POS', function () {
+    $blueprint = UnitBlueprint::firstOrFail();
+    $treasuryUnit = OperatingUnit::create([
+        'company_id' => $this->company->id, 'blueprint_id' => $blueprint->id,
+        'name' => 'Procurement', 'unit_type' => 'procurement',
+    ]);
+    $bank = CashAccount::create([
+        'operating_unit_id' => $treasuryUnit->id, 'name' => 'Central Bank', 'kind' => 'bank',
+        'account_id' => Account::where('account_code', '1212')->firstOrFail()->id,
+    ]);
+
+    ($this->api)()->getJson('/api/v1/sales/payment-accounts?kind=bank')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.id', $bank->id);
+});
+
+test('cash and bank ledger sub-accounts are offered to the POS without a treasury record', function () {
+    $box = Account::where('account_code', '121102')->firstOrFail();
+    $bank = Account::create([
+        'chart_of_accounts_id' => $box->chart_of_accounts_id, 'account_code' => '121201',
+        'name' => 'مصرف الجمهورية', 'type' => 'asset', 'section' => $box->section, 'currency' => 'LYD',
+        'parent_account_id' => Account::where('account_code', '1212')->value('id'),
+    ]);
+
+    $cash = ($this->api)()->getJson('/api/v1/sales/payment-accounts?kind=cash')->assertSuccessful();
+    expect(collect($cash->json('data'))->pluck('account_id'))->toContain($box->id);
+
+    ($this->api)()->getJson('/api/v1/sales/payment-accounts?kind=bank')
+        ->assertSuccessful()->assertJsonCount(1, 'data')->assertJsonPath('data.0.account_id', $bank->id);
+
+    expect(CashAccount::where('account_id', $bank->id)->count())->toBe(1);
+});

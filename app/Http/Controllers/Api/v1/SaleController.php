@@ -6,7 +6,9 @@ namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\v1\CashAccountResource;
+use App\Models\Account;
 use App\Models\CashAccount;
+use App\Models\OperatingUnit;
 use App\Models\SalesOrder;
 use App\Services\SaleCheckoutService;
 use App\Support\CurrentUnitContext;
@@ -141,12 +143,17 @@ final class SaleController extends Controller
     }
 
     /**
-     * The treasuries and bank accounts this unit's POS can receive money into.
-     * Unlinked ones are listed too, flagged, so the counter can explain why
-     * they cannot be picked.
+     * The treasuries and bank accounts any POS can receive money into
+     * (company-wide). They are the chart's cash (1211xx) and bank (1212xx)
+     * sub-accounts — the same ones purchase payments leave from — so each
+     * ledger account is given its treasury record on first sight. Unlinked
+     * records are listed too, flagged, so the counter can explain why they
+     * cannot be picked.
      */
     public function paymentAccounts(Request $request): AnonymousResourceCollection
     {
+        $this->syncTreasuriesFromChart();
+
         $query = CashAccount::with('account')->orderBy('name');
 
         if (filled($request->query('kind'))) {
@@ -154,6 +161,34 @@ final class SaleController extends Controller
         }
 
         return CashAccountResource::collection($query->get());
+    }
+
+    /**
+     * Give every cash/bank leaf account of the chart a treasury record.
+     */
+    private function syncTreasuriesFromChart(): void
+    {
+        $unitId = app(CurrentUnitContext::class)->id() ?? OperatingUnit::query()->value('id');
+
+        if ($unitId === null) {
+            return;
+        }
+
+        $known = CashAccount::query()->whereNotNull('account_id')->pluck('account_id')->all();
+
+        Account::query()
+            ->where('type', 'asset')
+            ->whereNotIn('id', $known)
+            ->where(fn ($q) => $q->where('account_code', 'like', '1211%')->orWhere('account_code', 'like', '1212%'))
+            ->whereRaw('length(account_code) > 4')
+            ->get()
+            ->each(fn (Account $account) => CashAccount::create([
+                'operating_unit_id' => $unitId,
+                'name' => $account->name,
+                'kind' => str_starts_with($account->account_code, '1212') ? CashAccount::KIND_BANK : CashAccount::KIND_CASH,
+                'account_id' => $account->id,
+                'currency' => 'LYD',
+            ]));
     }
 
     /**
