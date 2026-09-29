@@ -54,6 +54,8 @@ final class PurchaseOrderController extends Controller
             'goodsReceipt',
             'items.inventoryItem',
             'paymentSourceAccount',
+            'arrivedWarehouse',
+            'destinationWarehouse',
         ]);
 
         if ($request->has('operating_unit_id')) {
@@ -134,6 +136,7 @@ final class PurchaseOrderController extends Controller
                 'negotiated_price' => $headerUnitPrice ?? 0,
                 'quantity' => $headerQuantity ?? 0,
                 'booked_fx_rate' => $data['booked_fx_rate'] ?? null,
+                'destination_warehouse_id' => $data['destination_warehouse_id'] ?? null,
             ]);
 
             if ($request->has('items')) {
@@ -182,6 +185,10 @@ final class PurchaseOrderController extends Controller
 
             if ($request->filled('supplier_id')) {
                 $attributes['supplier_id'] = $request->input('supplier_id');
+            }
+
+            if ($request->has('destination_warehouse_id')) {
+                $attributes['destination_warehouse_id'] = $request->input('destination_warehouse_id');
             }
 
             $order->update($attributes);
@@ -283,7 +290,7 @@ final class PurchaseOrderController extends Controller
                 'landedCostLines',
                 'goodsReceipt',
                 'items.inventoryItem',
-                'arrivedWarehouse',
+                'arrivedWarehouse', 'destinationWarehouse',
             ])),
         ]);
     }
@@ -318,7 +325,7 @@ final class PurchaseOrderController extends Controller
                 'landedCostLines',
                 'goodsReceipt',
                 'items.inventoryItem',
-                'arrivedWarehouse',
+                'arrivedWarehouse', 'destinationWarehouse',
             ])),
         ]);
     }
@@ -357,7 +364,7 @@ final class PurchaseOrderController extends Controller
                 'landedCostLines',
                 'goodsReceipt',
                 'items.inventoryItem',
-                'arrivedWarehouse',
+                'arrivedWarehouse', 'destinationWarehouse',
                 'paymentSourceAccount',
             ])),
         ]);
@@ -494,7 +501,7 @@ final class PurchaseOrderController extends Controller
                 'landedCostLines',
                 'goodsReceipt',
                 'items.inventoryItem',
-                'arrivedWarehouse',
+                'arrivedWarehouse', 'destinationWarehouse',
                 'paymentSourceAccount',
             ])),
         ]);
