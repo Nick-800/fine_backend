@@ -7,6 +7,7 @@ use App\Exceptions\InvalidStateTransitionException;
 use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Exceptions\MissingAccountException;
 use App\Exceptions\OptimisticLockConflictException;
+use App\Exceptions\SalesRuleException;
 use App\Exceptions\SerializedQuantityException;
 use App\Exceptions\UnbalancedJournalException;
 use App\Http\Middleware\EnforceDesktopAppVersion;
@@ -100,6 +101,13 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'message' => $e->getMessage(),
                 'code' => 'INSUFFICIENT_TANK_STOCK',
+            ], 422);
+        });
+
+        $exceptions->render(function (SalesRuleException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => $e->errorCode,
             ], 422);
         });
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\InventoryEventType;
 use App\Models\Account;
+use App\Models\CashAccount;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Entity;
@@ -12,13 +13,11 @@ use App\Models\InventoryItemAccount;
 use App\Models\JournalLine;
 use App\Models\OperatingUnit;
 use App\Models\Role;
-use App\Models\SalesOrder;
 use App\Models\StockLot;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
-use App\Services\SalesOrderService;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -65,7 +64,8 @@ beforeEach(function () {
         'operating_unit_id' => $this->operatingUnit->id,
     ]);
 
-    $this->parentArAccount = Account::where('account_code', '13')->firstOrFail();
+    // Receivables live under 122 الزبائن والعملاء — 13 is inventory in the unified chart.
+    $this->parentArAccount = Account::where('account_code', '122')->firstOrFail();
 });
 
 test('operator can create client and manually provision dedicated COA account', function () {
@@ -81,18 +81,18 @@ test('operator can create client and manually provision dedicated COA account', 
             'coa_action' => 'create_new',
             'new_account' => [
                 'parent_account_id' => $this->parentArAccount->id,
-                'account_code' => '130001',
+                'account_code' => '122001',
                 'name' => 'عميل - شركة النور',
                 'currency' => 'LYD',
             ],
         ]);
 
     $response->assertStatus(201)
-        ->assertJsonPath('data.account.account_code', '130001')
+        ->assertJsonPath('data.account.account_code', '122001')
         ->assertJsonPath('data.account.name', 'عميل - شركة النور');
 
     $this->assertDatabaseHas('accounts', [
-        'account_code' => '130001',
+        'account_code' => '122001',
         'parent_account_id' => $this->parentArAccount->id,
     ]);
 
@@ -100,12 +100,12 @@ test('operator can create client and manually provision dedicated COA account', 
     expect($createdClient)->not->toBeNull();
 });
 
-test('sales fulfillment and payment directly routes to client linked account', function () {
+test('a receivable sale and its collection route to the client linked account', function () {
     // 1. Create client with linked sub-account
     $clientAccount = Account::create([
         'chart_of_accounts_id' => $this->parentArAccount->chart_of_accounts_id,
         'parent_account_id' => $this->parentArAccount->id,
-        'account_code' => '130002',
+        'account_code' => '122002',
         'name' => 'عميل - الواحة',
         'type' => 'asset',
         'section' => $this->parentArAccount->section,
@@ -150,40 +150,38 @@ test('sales fulfillment and payment directly routes to client linked account', f
         'status' => 'available',
     ]);
 
-    // 2. Create sales order via API with lines
-    $orderRes = $this->actingAs($this->user)
-        ->withHeaders(['X-Operating-Unit-ID' => $this->operatingUnit->id])
-        ->postJson('/api/v1/sales-orders', [
-            'order_number' => 'SO-TEST-001',
-            'buyer_type' => 'client',
-            'client_id' => $client->id,
-            'lines' => [[
-                'inventory_item_id' => $item->id,
-                'quantity' => 2,
-                'unit_price' => 100,
-            ]],
-        ])
-        ->assertStatus(201)
-        ->json();
+    $drawer = CashAccount::create([
+        'operating_unit_id' => $this->operatingUnit->id, 'name' => 'Drawer', 'kind' => 'cash',
+        'account_id' => Account::where('account_code', '121102')->value('id'),
+    ]);
 
-    $order = SalesOrder::findOrFail($orderRes['id']);
+    $api = fn () => $this->actingAs($this->user)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->operatingUnit->id]);
 
-    $service = app(SalesOrderService::class);
-    $service->submit($order);
-    $order->refresh();
-    $service->fulfill($order);
+    // 2. Sell on the client's receivable at the POS.
+    $sale = $api()->postJson('/api/v1/sales', [
+        'client_id' => $client->id,
+        'payment_method' => 'receivable',
+        'lines' => [[
+            'inventory_item_id' => $item->id,
+            'quantity' => 2,
+            'unit_price' => 100,
+        ]],
+    ])->assertCreated()->json();
 
-    // 3. Verify journal entry debited 130002 (client account) instead of 13
-    $fulfillmentLine = JournalLine::where('account_id', $clientAccount->id)
+    // 3. The sale debited 122002 (the client's own account), not a header.
+    $saleLine = JournalLine::where('account_id', $clientAccount->id)
         ->where('debit', 200)
         ->first();
 
-    expect($fulfillmentLine)->not->toBeNull();
+    expect($saleLine)->not->toBeNull();
 
-    // 4. Record payment on the sales order for 200 LYD
-    $service->recordPayment($order, 200);
+    // 4. Collect the 200 LYD into the drawer.
+    $api()->postJson("/api/v1/sales/{$sale['id']}/payments", [
+        'amount' => 200, 'method' => 'cash', 'cash_account_id' => $drawer->id,
+    ])->assertSuccessful();
 
-    // 5. Verify journal entry credited 130002 (client account)
+    // 5. The collection credited 122002.
     $paymentLine = JournalLine::where('account_id', $clientAccount->id)
         ->where('credit', 200)
         ->first();

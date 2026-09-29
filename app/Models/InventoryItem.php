@@ -32,6 +32,8 @@ final class InventoryItem extends Model
         'width_m',
         'height_m',
         'volume_m3',
+        'selling_price',
+        'price_basis',
     ];
 
     protected $casts = [
@@ -41,6 +43,11 @@ final class InventoryItem extends Model
         'width_m' => 'decimal:3',
         'height_m' => 'decimal:3',
         'volume_m3' => 'decimal:4',
+        'selling_price' => 'decimal:4',
+    ];
+
+    protected $attributes = [
+        'price_basis' => 'unit',
     ];
 
     protected static function booted(): void
@@ -67,6 +74,46 @@ final class InventoryItem extends Model
     public function tracksContainers(): bool
     {
         return $this->container_capacity !== null && (float) $this->container_capacity > 0;
+    }
+
+    /**
+     * The suggested selling price for a quantity of this item — the POS
+     * starting price, always editable by the cashier.
+     *
+     * A 'unit' item prices per piece. An 'm3' item prices per cubic metre of
+     * the given size, falling back to the catalog item's own dimensions.
+     * Returns null when the item has no price, or an m3 item has no size.
+     */
+    public function priceFor(float $quantity, ?float $lengthM = null, ?float $widthM = null, ?float $heightM = null): ?float
+    {
+        if ($this->selling_price === null) {
+            return null;
+        }
+
+        $rate = (float) $this->selling_price;
+
+        if ($this->price_basis !== 'm3') {
+            return round($rate * $quantity, 4);
+        }
+
+        $volume = ($lengthM !== null && $widthM !== null && $heightM !== null)
+            ? $lengthM * $widthM * $heightM
+            : ($this->volume_m3 !== null ? (float) $this->volume_m3 : null);
+
+        if ($volume === null) {
+            return null;
+        }
+
+        return round($rate * $volume * $quantity, 4);
+    }
+
+    /**
+     * Physical lots of this item. StockLot's warehouse scope keeps it to the
+     * caller's unit.
+     */
+    public function stockLots(): HasMany
+    {
+        return $this->hasMany(StockLot::class);
     }
 
     public function category(): BelongsTo

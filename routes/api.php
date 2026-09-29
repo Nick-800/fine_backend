@@ -45,9 +45,11 @@ use App\Http\Controllers\Api\v1\ProductController;
 use App\Http\Controllers\Api\v1\ProductionBatchController;
 use App\Http\Controllers\Api\v1\ProductionOrderController;
 use App\Http\Controllers\Api\v1\PurchaseOrderController;
+use App\Http\Controllers\Api\v1\QuotationController;
 use App\Http\Controllers\Api\v1\ReferenceLookupController;
 use App\Http\Controllers\Api\v1\RoleController;
-use App\Http\Controllers\Api\v1\SalesOrderController;
+use App\Http\Controllers\Api\v1\SaleBundleController;
+use App\Http\Controllers\Api\v1\SaleController;
 use App\Http\Controllers\Api\v1\StockAdjustmentRequestController;
 use App\Http\Controllers\Api\v1\StockLotController;
 use App\Http\Controllers\Api\v1\SupplierController;
@@ -132,6 +134,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/fixed-assets/{id}/transition', [FixedAssetController::class, 'transition']);
                 Route::post('/accounts', [AccountController::class, 'store']);
                 Route::put('/accounts/{id}', [AccountController::class, 'update']);
+                Route::patch('/accounts/{id}/parent', [AccountController::class, 'reparent']);
                 Route::delete('/accounts/{id}', [AccountController::class, 'destroy']);
             });
 
@@ -180,6 +183,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('/payable-settlements/outstanding', [PayableSettlementController::class, 'outstanding']);
                 Route::get('/cash-accounts', [CashAccountController::class, 'index']);
                 Route::post('/cash-accounts', [CashAccountController::class, 'store']);
+                Route::put('/cash-accounts/{id}', [CashAccountController::class, 'update']);
             });
 
             // Procurement
@@ -241,12 +245,14 @@ Route::prefix('v1')->group(function () {
             Route::middleware('require.role:owner,cutter-manager,cutter-operator,unit_manager,manager')->group(function () {
                 Route::get('/cutter-work-orders', [CutterWorkOrderController::class, 'index']);
                 Route::post('/cutter-work-orders', [CutterWorkOrderController::class, 'store']);
-                Route::get('/cutter-work-orders/{id}', [CutterWorkOrderController::class, 'show']);
+                // Registered before /{id}: the literal path must not be read as an order id.
+                Route::get('/cutter-work-orders/available-foam-blocks', [CutterWorkOrderController::class, 'availableFoamBlocks']);
+                Route::get('/cutter-work-orders/{id}', [CutterWorkOrderController::class, 'show'])->whereUuid('id');
+                Route::get('/cutter-work-orders/{id}/job-sheet', [CutterWorkOrderController::class, 'jobSheet'])->whereUuid('id');
                 Route::post('/cutter-work-orders/{id}/transition', [CutterWorkOrderController::class, 'transition']);
                 Route::post('/cutter-work-orders/{id}/lines', [CutterWorkOrderController::class, 'storeLine']);
                 Route::post('/cutter-work-orders/{id}/weigh-in', [CutterWorkOrderController::class, 'recordWeighIn']);
                 Route::get('/cutter-work-orders/{id}/byproduct-yields', [CutterWorkOrderController::class, 'byproductYields']);
-                Route::get('/cutter-work-orders/available-foam-blocks', [CutterWorkOrderController::class, 'availableFoamBlocks']);
                 Route::post('/cutter-work-orders/{id}/attach-block', [CutterWorkOrderController::class, 'attachBlock']);
                 Route::delete('/cutter-work-orders/{id}/detach-block', [CutterWorkOrderController::class, 'detachBlock']);
                 Route::put('/cutter-work-order-lines/{lineId}/assign-template', [CutterWorkOrderController::class, 'assignTemplate']);
@@ -286,24 +292,37 @@ Route::prefix('v1')->group(function () {
                 Route::post('/material-requests/{id}/cancel', [MaterialRequestController::class, 'cancel']);
             });
 
-            // Sales, POS & Credit
-            Route::middleware('require.role:owner,store-manager,pos-cashier,unit_manager,manager')->group(function () {
-                Route::get('/sales-orders', [SalesOrderController::class, 'index']);
-                Route::post('/sales-orders', [SalesOrderController::class, 'store']);
-                Route::get('/sales-orders/{id}', [SalesOrderController::class, 'show']);
-                Route::post('/sales-orders/{id}/submit', [SalesOrderController::class, 'submit']);
-                Route::post('/sales-orders/{id}/fulfill', [SalesOrderController::class, 'fulfill']);
-                Route::post('/sales-orders/{id}/record-payment', [SalesOrderController::class, 'recordPayment']);
-                Route::post('/sales-orders/{id}/complete', [SalesOrderController::class, 'complete']);
-                Route::get('/sales-orders/{id}/invoice', [SalesOrderController::class, 'invoice']);
-                Route::get('/credit-approval-requests', [CreditApprovalController::class, 'index']);
-                Route::put('/credit-approval-requests/{id}/approve', [CreditApprovalController::class, 'approve']);
-                Route::put('/credit-approval-requests/{id}/reject', [CreditApprovalController::class, 'reject']);
-                Route::post('/pos/sales', [PosController::class, 'checkout']);
+            // Sales & POS — the POS is the one place every sale happens.
+            Route::middleware('require.role:owner,store-manager,pos-cashier,cutter-manager,unit_manager,manager')->group(function () {
+                Route::get('/sales', [SaleController::class, 'index']);
+                Route::post('/sales', [SaleController::class, 'store']);
+                Route::get('/sales/payment-accounts', [SaleController::class, 'paymentAccounts']);
+                Route::get('/sales/{id}', [SaleController::class, 'show'])->whereUuid('id');
+                Route::post('/sales/{id}/payments', [SaleController::class, 'collectPayment'])->whereUuid('id');
+                Route::get('/sales/{id}/invoice', [SaleController::class, 'invoice'])->whereUuid('id');
+                Route::get('/sales/{id}/delivery-note', [SaleBundleController::class, 'deliveryNote'])->whereUuid('id');
+                Route::post('/sales/{id}/deliver', [SaleBundleController::class, 'deliver'])->whereUuid('id');
+                Route::post('/sales/{id}/send-to-cutter', [SaleBundleController::class, 'sendToCutter'])->whereUuid('id');
+                Route::get('/sales/open-cutter-orders', [SaleBundleController::class, 'openCutterOrders']);
+                Route::put('/sales/{id}/lines/{lineId}/components', [SaleBundleController::class, 'define'])->whereUuid(['id', 'lineId']);
+                Route::get('/sale-components/{componentId}/matching-stock', [SaleBundleController::class, 'matchingStock'])->whereUuid('componentId');
+                Route::post('/sale-components/{componentId}/reserve', [SaleBundleController::class, 'reserve'])->whereUuid('componentId');
+                Route::post('/sale-components/{componentId}/release', [SaleBundleController::class, 'release'])->whereUuid('componentId');
+                Route::get('/quotations', [QuotationController::class, 'index']);
+                Route::post('/quotations', [QuotationController::class, 'store']);
+                Route::get('/quotations/{id}', [QuotationController::class, 'show'])->whereUuid('id');
+                Route::post('/quotations/{id}/cancel', [QuotationController::class, 'cancel'])->whereUuid('id');
+                Route::post('/quotations/{id}/convert', [QuotationController::class, 'convert'])->whereUuid('id');
                 Route::get('/pos/daily-report', [PosController::class, 'dailyReport']);
                 Route::get('/pos/daily-close', [PosController::class, 'showDailyClose']);
                 Route::post('/pos/daily-close', [PosController::class, 'dailyClose']);
-                Route::get('/pos/sales/{id}', [PosController::class, 'show']);
+            });
+
+            // Credit decisions — managers only; a cashier cannot approve their own over-limit sale.
+            Route::middleware('require.role:owner,store-manager,unit_manager,manager,accounting-manager')->group(function () {
+                Route::get('/credit-approval-requests', [CreditApprovalController::class, 'index']);
+                Route::put('/credit-approval-requests/{id}/approve', [CreditApprovalController::class, 'approve']);
+                Route::put('/credit-approval-requests/{id}/reject', [CreditApprovalController::class, 'reject']);
             });
 
             // Inventory, Stock Lots, Tanks & Work Orders

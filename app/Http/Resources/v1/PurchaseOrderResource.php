@@ -29,6 +29,16 @@ final class PurchaseOrderResource extends JsonResource
                     'name' => $this->arrivedWarehouse->name,
                 ];
             }),
+            'destination_warehouse_id' => $this->destination_warehouse_id,
+            'destination_warehouse' => $this->whenLoaded('destinationWarehouse', function () {
+                return [
+                    'id' => $this->destinationWarehouse->id,
+                    'code' => $this->destinationWarehouse->code,
+                    'name' => $this->destinationWarehouse->name,
+                    'operating_unit_id' => $this->destinationWarehouse->operating_unit_id,
+                ];
+            }),
+            'resolved_warehouse_id' => $this->resolveDestinationWarehouseId(),
             'status' => $this->status->value ?? $this->status,
             'record_version' => $this->record_version,
             'items' => $this->whenLoaded('items', function () {

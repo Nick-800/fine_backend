@@ -97,4 +97,25 @@ final class OperatingUnitService
             return $unit;
         });
     }
+
+    /**
+     * The cutter plant that makes a selling unit's missing pieces: the unit
+     * itself when it is the cutter, else its company's cutter. Null when the
+     * company has none — or more than one, in which case the caller must name it.
+     */
+    public function cutterUnitFor(OperatingUnit $seller): ?OperatingUnit
+    {
+        if ($seller->isCutter()) {
+            return $seller;
+        }
+
+        $cutters = OperatingUnit::with('blueprint')
+            ->where('company_id', $seller->company_id)
+            ->where(fn ($q) => $q->whereNull('status')->orWhere('status', '!=', 'inactive'))
+            ->get()
+            ->filter(fn (OperatingUnit $unit): bool => $unit->isCutter())
+            ->values();
+
+        return $cutters->count() === 1 ? $cutters->first() : null;
+    }
 }

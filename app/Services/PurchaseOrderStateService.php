@@ -18,7 +18,10 @@ use App\Models\LandedCostLine;
 use App\Models\PaymentRequest;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\StockLot;
 use App\Models\Supplier;
+use App\Models\Warehouse;
+use App\Support\InventoryAccounts;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -53,6 +56,7 @@ final class PurchaseOrderStateService
 
     public function __construct(
         private readonly AccountingService $accountingService,
+        private readonly StockLotService $stockLotService,
     ) {}
 
     /**
@@ -545,7 +549,9 @@ final class PurchaseOrderStateService
      * Wave 5 (local flow): record a payment on a received local order.
      * Posts a DR supplier advance / CR chosen payment source journal,
      * persists the source account on the order, then transitions to `paid`;
-     * auto-closes when fully received + paid.
+     * auto-closes when fully received + paid. Routes the line items as
+     * StockLots into the destination warehouse and posts an inventory DR /
+     * supplier-advance CR journal to clear the advance and value the stock.
      */
     public function payLocal(PurchaseOrder $order, string $paymentSourceAccountId): PurchaseOrder
     {
@@ -600,6 +606,13 @@ final class PurchaseOrderStateService
                 );
             }
 
+            // Materialise the line items into the destination warehouse.
+            // Also posts an inventory DR / supplier-advance CR journal so
+            // the books carry the inventory value AND the supplier advance
+            // nets back to zero. Inventory DR uses the canonical
+            // InventoryAccounts::forItemType() mapping keyed by item type.
+            $this->routeGoodsIntoWarehouse($order);
+
             $order->payment_source_account_id = $source->id;
             $order->status = PurchaseOrderStatus::Paid;
             $order->save();
@@ -634,6 +647,11 @@ final class PurchaseOrderStateService
             // or not at all. Posting before the status flip keeps the guard
             // fatal — a completion that cannot post is refused, not skipped.
             $this->postCompletionJournal($order);
+
+            // Materialise the line items into the destination warehouse.
+            // `postCompletionJournal()` already posted the inventory DR
+            // using the canonical Raw Material Inventory (111) account.
+            $this->routeGoodsIntoWarehouse($order);
 
             $order->update(['status' => PurchaseOrderStatus::Complete]);
 
@@ -818,5 +836,185 @@ final class PurchaseOrderStateService
         throw new InvalidArgumentException(
             "Landed cost line in {$line->currency} cannot be converted to {$functionalCurrency}; no rate is available."
         );
+    }
+
+    /**
+     * Materialise every line item as a StockLot in the destination warehouse.
+     * Called by `completeOrder` (foreign) and `payLocal` (local) at the final
+     * accounting step, inside the same transaction that posts the inventory
+     * journal. Hard-fails with 422 INVENTORY_ACCOUNT_NOT_LINKED when any
+     * line item is missing its `purchases` per-event COA override.
+     *
+     * For local flow: one StockLot per line item with `received_quantity > 0`,
+     * `unit_cost = line.unit_price`. Partial receipts only stock the
+     * received qty.
+     *
+     * For foreign flow: one StockLot per line item, qty = ordered quantity
+     * (the goods receipt is a single-row summary, not per-item; we assume
+     * all ordered items arrived — partial-import handling is out of scope
+     * here), `unit_cost` = per-unit landed value.
+     *
+     * For local flow we also post an inventory DR / supplier-advance CR
+     * journal that clears the 15 advance created by `payLocal`'s earlier
+     * leg and values the stock. Foreign flow already posts the equivalent
+     * journal in `postCompletionJournal`, so we skip it there.
+     */
+    private function routeGoodsIntoWarehouse(PurchaseOrder $order): void
+    {
+        $warehouseId = $order->resolveDestinationWarehouseId();
+        if ($warehouseId === null) {
+            throw new InvalidArgumentException(
+                'Destination warehouse must be set before the order can be completed. Pick one on create or via the foreign arriveAtWarehouse step.',
+            );
+        }
+
+        $warehouse = Warehouse::query()->whereKey($warehouseId)->first();
+        if ($warehouse === null) {
+            throw new InvalidArgumentException("Destination warehouse {$warehouseId} does not exist.");
+        }
+
+        if ((string) $warehouse->operating_unit_id !== (string) $order->operating_unit_id) {
+            throw new InvalidArgumentException(
+                "Destination warehouse {$warehouse->name} does not belong to the order's operating unit.",
+            );
+        }
+
+        $items = $order->items()->with('inventoryItem')->get();
+        if ($items->isEmpty()) {
+            return;
+        }
+
+        if ($order->kind === PurchaseOrderKind::Local) {
+            $perAccountDebits = [];
+            $totalInventoryLyd = 0.0;
+
+            foreach ($items as $item) {
+                $received = (float) ($item->received_quantity ?? 0);
+                if ($received <= 0) {
+                    continue;
+                }
+
+                $lineTotal = round($received * (float) $item->unit_price, 4);
+                $totalInventoryLyd = round($totalInventoryLyd + $lineTotal, 4);
+
+                $itemType = $item->inventoryItem?->item_type;
+                if ($itemType === null) {
+                    throw new InvalidArgumentException(
+                        "Line item {$item->id} is missing its inventory item type.",
+                    );
+                }
+
+                $inventoryAccountCode = InventoryAccounts::forItemType($itemType);
+
+                // Force string keys — PHP coerces numeric strings to ints
+                // when used as array keys, which breaks the journal
+                // resolver (account_code must be a string).
+                $perAccountDebits[(string) $inventoryAccountCode] = round(
+                    ((float) ($perAccountDebits[(string) $inventoryAccountCode] ?? 0)) + $lineTotal,
+                    4,
+                );
+
+                $this->stockLotService->intake([
+                    'inventory_item_id' => $item->inventory_item_id,
+                    'warehouse_id' => $warehouseId,
+                    'lot_number' => $this->generatePoLotNumber($order, $item),
+                    'quantity' => $received,
+                    'unit_cost' => (float) $item->unit_price,
+                    'source' => 'import_receipt',
+                    'purchase_order_id' => $order->id,
+                ]);
+            }
+
+            if ($totalInventoryLyd > 0 && ! empty($perAccountDebits)) {
+                $supplierAccountCode = '15';
+                if ($order->supplier_id !== null) {
+                    $supplier = Supplier::with('account')->find($order->supplier_id);
+                    if ($supplier?->account?->account_code) {
+                        $supplierAccountCode = $supplier->account->account_code;
+                    }
+                }
+
+                $lines = [];
+                foreach ($perAccountDebits as $accountCode => $amount) {
+                    $lines[] = [
+                        'account_code' => (string) $accountCode,
+                        'debit' => (float) $amount,
+                        'operating_unit_id' => $order->operating_unit_id,
+                        'memo' => 'Inventory value on local PO receipt',
+                    ];
+                }
+                $lines[] = [
+                    'account_code' => (string) $supplierAccountCode,
+                    'credit' => (float) $totalInventoryLyd,
+                    'operating_unit_id' => $order->operating_unit_id,
+                    'memo' => 'Clear supplier advance on local PO receipt',
+                ];
+
+                $this->accountingService->postJournal(
+                    "Local PO receipt — {$order->supplier?->name}",
+                    $lines,
+                    'PurchaseOrder',
+                    $order->id,
+                    $order->operatingUnit?->company_id,
+                );
+            }
+
+            return;
+        }
+
+        // Foreign flow: per-unit landed value already posted by
+        // postCompletionJournal(); here we just materialise the lots.
+        $perUnit = $this->computeLandedValuePerUnit($order);
+        foreach ($items as $item) {
+            $this->stockLotService->intake([
+                'inventory_item_id' => $item->inventory_item_id,
+                'warehouse_id' => $warehouseId,
+                'lot_number' => $this->generatePoLotNumber($order, $item),
+                'quantity' => (float) $item->quantity,
+                'unit_cost' => $perUnit,
+                'source' => 'import_receipt',
+                'purchase_order_id' => $order->id,
+            ]);
+        }
+    }
+
+    /**
+     * Foreign flow per-unit landed value. Mirrors the computation in
+     * `postCompletionJournal()` so the StockLots match the inventory DR
+     * already posted.
+     */
+    private function computeLandedValuePerUnit(PurchaseOrder $order): float
+    {
+        $functionalCurrency = $order->operatingUnit?->company?->default_currency ?? 'LYD';
+        $supplierCostFc = $order->totalCost();
+        $realizedRate = $this->realizedFxRate($order, $functionalCurrency);
+        $settled = $this->settledLyd($order, $functionalCurrency);
+        $bookedRate = $this->bookedFxRate($order, $functionalCurrency);
+
+        $bookedCost = $bookedRate !== null ? round($supplierCostFc * $bookedRate, 4) : $settled;
+        unset($realizedRate);
+
+        $landedCostLines = $order->landedCostLines()
+            ->where('is_confirmed', true)
+            ->where('type', '!=', LandedCostType::SupplierPrice)
+            ->get();
+
+        $landedCostTotal = 0.0;
+        foreach ($landedCostLines as $line) {
+            $amount = $this->landedCostInFunctionalCurrency($line, $order, $functionalCurrency, $this->realizedFxRate($order, $functionalCurrency));
+            if ($amount > 0.0) {
+                $landedCostTotal = round($landedCostTotal + $amount, 4);
+            }
+        }
+
+        $totalInventoryValue = round($bookedCost + $landedCostTotal, 4);
+        $receivedQty = (float) ($order->goodsReceipt?->received_qty ?? 0);
+
+        return $receivedQty > 0.0 ? round($totalInventoryValue / $receivedQty, 4) : 0.0;
+    }
+
+    private function generatePoLotNumber(PurchaseOrder $order, PurchaseOrderItem $item): string
+    {
+        return 'PO-'.substr((string) $order->id, 0, 8).'-'.substr((string) $item->id, 0, 8);
     }
 }

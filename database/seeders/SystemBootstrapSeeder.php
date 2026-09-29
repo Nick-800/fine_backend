@@ -72,6 +72,7 @@ class SystemBootstrapSeeder extends Seeder
         $units = $this->seedOperatingUnits();
         $this->seedFxRates();
         $this->seedCashAccountsAndOpeningBalance($units['procurement']);
+        $this->seedSalesTreasuries($units);
 
         $this->seedInventoryMasterData($units['foam']);
         $this->seedEntityBackedClient($units['procurement']);
@@ -196,6 +197,56 @@ class SystemBootstrapSeeder extends Seeder
                     ['account_code' => '31', 'credit' => $openingValue, 'operating_unit_id' => $unit->id],
                 ],
             );
+        }
+    }
+
+    /**
+     * The treasuries the selling units' POS receives money into, each linked
+     * to its ledger account — a sale refuses an unlinked treasury. The cutter
+     * has its own cash box in the chart (121102); the showroom gets one
+     * (121103) under الخزائن النقدية. Both bank into 1212.
+     *
+     * @param  array<string, OperatingUnit>  $units
+     */
+    private function seedSalesTreasuries(array $units): void
+    {
+        $cashBoxes = Account::where('account_code', '1211')->first();
+        $banks = Account::where('account_code', '1212')->first();
+
+        if ($cashBoxes === null || $banks === null) {
+            return;
+        }
+
+        $showroomCashBox = Account::firstOrCreate(
+            ['account_code' => '121103'],
+            [
+                'chart_of_accounts_id' => $cashBoxes->chart_of_accounts_id,
+                'parent_account_id' => $cashBoxes->id,
+                'name' => 'خزينة صالة العرض',
+                'type' => $cashBoxes->type,
+                'section' => $cashBoxes->section,
+                'currency' => 'LYD',
+            ],
+        );
+
+        $treasuries = [
+            'cutter' => [['خزينة مقص فاين', 'cash', Account::where('account_code', '121102')->value('id')]],
+            'showroom' => [['خزينة صالة العرض', 'cash', $showroomCashBox->id]],
+        ];
+
+        foreach ($treasuries as $unitKey => $accounts) {
+            $unit = $units[$unitKey] ?? null;
+
+            if ($unit === null) {
+                continue;
+            }
+
+            foreach ([...$accounts, ['حساب المصرف', 'bank', $banks->id]] as [$name, $kind, $accountId]) {
+                CashAccount::firstOrCreate(
+                    ['operating_unit_id' => $unit->id, 'name' => $name],
+                    ['id' => (string) Str::uuid(), 'kind' => $kind, 'account_id' => $accountId, 'currency' => 'LYD', 'balance' => 0],
+                );
+            }
         }
     }
 

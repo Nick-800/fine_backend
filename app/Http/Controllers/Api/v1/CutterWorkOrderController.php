@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Enums\CutterWorkOrderStatus;
+use App\Exceptions\InvalidStateTransitionException;
 use App\Http\Controllers\Controller;
 use App\Models\CutterWorkOrder;
 use App\Models\CutterWorkOrderLine;
@@ -27,7 +28,7 @@ class CutterWorkOrderController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = CutterWorkOrder::with(['client', 'lines', 'stockLot'])
+        $query = CutterWorkOrder::with(['client', 'lines', 'blocks.stockLot'])
             ->withCount('lines')
             ->latest();
 
@@ -45,7 +46,8 @@ class CutterWorkOrderController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'order_number' => ['required', 'string', 'max:100', 'unique:cutter_work_orders,order_number'],
+            // Optional: the server numbers the order (CWO-2026-00001) when omitted.
+            'order_number' => ['nullable', 'string', 'max:100', 'unique:cutter_work_orders,order_number'],
             // Null means an internal order from another unit (no credit check).
             'client_id' => ['nullable', 'uuid', 'exists:clients,id'],
             'notes' => ['nullable', 'string'],
@@ -69,7 +71,7 @@ class CutterWorkOrderController extends Controller
 
         try {
             $order = $this->cutterService->createWithBlock(
-                [...$validated, 'operating_unit_id' => $unitId],
+                [...array_filter($validated, fn ($value) => $value !== null), 'operating_unit_id' => $unitId],
                 $block,
             );
         } catch (InvalidArgumentException $e) {
@@ -80,7 +82,7 @@ class CutterWorkOrderController extends Controller
         }
 
         return response()->json(
-            $order->load(['client', 'lines', 'stockLot']),
+            $order->load(['client', 'lines', 'blocks.stockLot']),
             201
         );
     }
@@ -92,7 +94,9 @@ class CutterWorkOrderController extends Controller
                 'client',
                 'lines.consumptions.stockLot',
                 'lines.outputItem',
-                'stockLot',
+                // The sale a line is cut for lives in the selling unit — read it past the cutter's own scope.
+                'lines.saleComponent.line.salesOrder' => fn ($q) => $q->withoutGlobalScopes()->select(['id', 'order_number', 'client_id', 'operating_unit_id']),
+                'blocks.stockLot',
                 'byproductYields',
             ])->findOrFail($id)
         );
@@ -117,6 +121,7 @@ class CutterWorkOrderController extends Controller
     public function storeLine(Request $request, string $id): JsonResponse
     {
         $order = CutterWorkOrder::findOrFail($id);
+        $this->ensureLinesEditable($order);
 
         $validated = $request->validate([
             'requested_spec' => ['required', 'string', 'max:255'],
@@ -134,7 +139,8 @@ class CutterWorkOrderController extends Controller
      */
     public function assignTemplate(Request $request, string $lineId): JsonResponse
     {
-        $line = CutterWorkOrderLine::findOrFail($lineId);
+        $line = CutterWorkOrderLine::whereHas('cutterWorkOrder')->with('cutterWorkOrder')->findOrFail($lineId);
+        $this->ensureLinesEditable($line->cutterWorkOrder);
 
         $validated = $request->validate([
             'template_length_m' => ['required', 'numeric', 'gt:0'],
@@ -241,12 +247,48 @@ class CutterWorkOrderController extends Controller
         return response()->json($updated);
     }
 
-    public function detachBlock(string $id): JsonResponse
+    /**
+     * Release a reserved block. With several blocks attached, name it by
+     * stock_lot_id.
+     */
+    public function detachBlock(Request $request, string $id): JsonResponse
     {
         $order = CutterWorkOrder::findOrFail($id);
 
-        $updated = $this->cutterService->detachBlock($order);
+        $validated = $request->validate([
+            'stock_lot_id' => ['nullable', 'uuid'],
+        ]);
+
+        try {
+            $updated = $this->cutterService->detachBlock($order, $validated['stock_lot_id'] ?? null);
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'BLOCK_REQUIRED',
+            ], 422);
+        }
 
         return response()->json($updated);
+    }
+
+    /**
+     * The cutter's job sheet — sizes and quantities, no prices.
+     */
+    public function jobSheet(string $id): JsonResponse
+    {
+        return response()->json($this->cutterService->jobSheet(CutterWorkOrder::findOrFail($id)));
+    }
+
+    /**
+     * Lines are the cutting instructions; once production starts they are
+     * what is being cut and cannot change.
+     */
+    private function ensureLinesEditable(CutterWorkOrder $order): void
+    {
+        if (! in_array($order->status, [CutterWorkOrderStatus::Requested, CutterWorkOrderStatus::Confirmed], true)) {
+            throw new InvalidStateTransitionException(
+                "Order {$order->order_number} is {$order->status->value}; its lines can no longer change."
+            );
+        }
     }
 }

@@ -22,6 +22,7 @@ final class CutterWorkOrderLine extends Model
         'template_width_m',
         'template_height_m',
         'output_inventory_item_id',
+        'sale_bundle_component_id',
     ];
 
     protected $casts = [
@@ -64,6 +65,14 @@ final class CutterWorkOrderLine extends Model
     public function consumptions(): HasMany
     {
         return $this->hasMany(FoamBlockConsumption::class);
+    }
+
+    /**
+     * The sold bundle piece this line cuts; null for a line the cutter added.
+     */
+    public function saleComponent(): BelongsTo
+    {
+        return $this->belongsTo(SaleBundleComponent::class, 'sale_bundle_component_id');
     }
 
     public function hasTemplate(): bool
