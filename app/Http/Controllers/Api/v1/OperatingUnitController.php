@@ -96,10 +96,11 @@ final class OperatingUnitController extends Controller
             'name' => 'sometimes|required|string|max:255',
             'status' => 'sometimes|required|string|in:provisioning,active,inactive',
             'manager_user_id' => 'sometimes|nullable|uuid|exists:users,id',
+            'revenue_account_id' => 'sometimes|nullable|uuid|exists:accounts,id',
         ]);
 
         $unit = OperatingUnit::findOrFail($id);
-        $unit->update($request->only('name', 'status', 'manager_user_id'));
+        $unit->update($request->only('name', 'status', 'manager_user_id', 'revenue_account_id'));
 
         return new OperatingUnitResource($unit);
     }

@@ -6,17 +6,24 @@ namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
 use App\Models\CreditApprovalRequest;
-use App\Services\SalesOrderService;
+use App\Services\SaleCheckoutService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+/**
+ * Over-limit receivable sales waiting on a manager (SALE-02). Requests carry
+ * no unit of their own; whereHas('salesOrder') applies the sale's unit scope,
+ * so a manager only sees and decides their own unit's requests.
+ */
 class CreditApprovalController extends Controller
 {
-    public function __construct(public SalesOrderService $salesOrderService) {}
+    public function __construct(public SaleCheckoutService $checkoutService) {}
 
     public function index(Request $request): JsonResponse
     {
-        $query = CreditApprovalRequest::with(['salesOrder.client.entity', 'decidedBy'])->latest();
+        $query = CreditApprovalRequest::with(['salesOrder.client.entity', 'salesOrder.lines', 'decidedBy:id,name'])
+            ->whereHas('salesOrder')
+            ->latest();
 
         if (filled($request->query('status'))) {
             $query->where('status', $request->query('status'));
@@ -27,23 +34,19 @@ class CreditApprovalController extends Controller
 
     public function approve(Request $request, string $id): JsonResponse
     {
-        $approval = CreditApprovalRequest::findOrFail($id);
+        $approval = CreditApprovalRequest::whereHas('salesOrder')->findOrFail($id);
 
         return response()->json(
-            $this->salesOrderService->decideCreditApproval(
-                $approval, true, $request->user(), $request->input('notes'),
-            )
+            $this->checkoutService->approveCredit($approval, $request->user(), $request->input('notes'))
         );
     }
 
     public function reject(Request $request, string $id): JsonResponse
     {
-        $approval = CreditApprovalRequest::findOrFail($id);
+        $approval = CreditApprovalRequest::whereHas('salesOrder')->findOrFail($id);
 
         return response()->json(
-            $this->salesOrderService->decideCreditApproval(
-                $approval, false, $request->user(), $request->input('notes'),
-            )
+            $this->checkoutService->rejectCredit($approval, $request->user(), $request->input('notes'))
         );
     }
 }

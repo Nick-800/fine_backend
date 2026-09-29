@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\SaleFulfillmentStatus;
 use App\Enums\SalesOrderStatus;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToOperatingUnit;
@@ -22,23 +23,29 @@ final class SalesOrder extends Model
 
     /**
      * Money fields are excluded: totals derive from lines, cost from the lots
-     * actually drawn, and amount_paid only ever moves through recordPayment.
+     * actually drawn, and amount_paid only ever moves through SaleCheckoutService.
      */
     protected $fillable = [
         'operating_unit_id',
         'order_number',
+        'client_request_id',
+        'quotation_id',
         'buyer_type',
         'client_id',
         'buyer_unit_id',
         'channel',
         'status',
+        'fulfillment_status',
         'payment_method',
+        'cash_account_id',
         'notes',
+        'sold_by_user_id',
         'record_version',
     ];
 
     protected $casts = [
         'status' => SalesOrderStatus::class,
+        'fulfillment_status' => SaleFulfillmentStatus::class,
         'total_amount' => 'decimal:4',
         'total_cost' => 'decimal:4',
         'amount_paid' => 'decimal:4',
@@ -47,7 +54,7 @@ final class SalesOrder extends Model
 
     public function lines(): HasMany
     {
-        return $this->hasMany(SalesOrderLine::class);
+        return $this->hasMany(SalesOrderLine::class)->orderBy('position');
     }
 
     public function client(): BelongsTo
@@ -63,6 +70,24 @@ final class SalesOrder extends Model
     public function operatingUnit(): BelongsTo
     {
         return $this->belongsTo(OperatingUnit::class);
+    }
+
+    /**
+     * The treasury or bank a cash/bank sale was received into.
+     */
+    public function cashAccount(): BelongsTo
+    {
+        return $this->belongsTo(CashAccount::class);
+    }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(SalePayment::class);
+    }
+
+    public function soldBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'sold_by_user_id');
     }
 
     public function creditApprovalRequest(): HasOne
@@ -86,5 +111,10 @@ final class SalesOrder extends Model
     public function outstanding(): float
     {
         return round((float) $this->total_amount - (float) $this->amount_paid, 4);
+    }
+
+    public function isReceivable(): bool
+    {
+        return $this->payment_method === 'receivable';
     }
 }

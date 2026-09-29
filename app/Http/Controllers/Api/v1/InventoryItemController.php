@@ -33,7 +33,12 @@ class InventoryItemController extends Controller
             });
         }
 
-        return response()->json($query->orderBy('name')->paginate($request->integer('per_page', 15)));
+        // The POS picker shows what is on this unit's shelves.
+        if ($request->boolean('with_stock')) {
+            $query->withSum(['stockLots as available_quantity' => fn ($q) => $q->where('status', 'available')], 'quantity');
+        }
+
+        return response()->json($query->orderBy('name')->paginate(min($request->integer('per_page', 15), 100)));
     }
 
     public function store(Request $request): JsonResponse
@@ -63,6 +68,9 @@ class InventoryItemController extends Controller
             'length_m' => ['nullable', 'numeric', 'min:0'],
             'width_m' => ['nullable', 'numeric', 'min:0'],
             'height_m' => ['nullable', 'numeric', 'min:0'],
+            // POS starting price: per piece, or per m³ for sized pieces.
+            'selling_price' => ['nullable', 'numeric', 'min:0'],
+            'price_basis' => ['sometimes', 'string', 'in:unit,m3'],
         ]);
 
         $item = InventoryItem::create($validated);
@@ -97,6 +105,8 @@ class InventoryItemController extends Controller
             'length_m' => ['nullable', 'numeric', 'min:0'],
             'width_m' => ['nullable', 'numeric', 'min:0'],
             'height_m' => ['nullable', 'numeric', 'min:0'],
+            'selling_price' => ['nullable', 'numeric', 'min:0'],
+            'price_basis' => ['sometimes', 'string', 'in:unit,m3'],
         ]);
 
         $item->update($validated);

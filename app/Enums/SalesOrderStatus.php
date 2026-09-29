@@ -6,30 +6,43 @@ namespace App\Enums;
 
 enum SalesOrderStatus: string
 {
-    case Draft = 'draft';
+    /** A receivable sale over the client's credit limit, waiting on a manager (SALE-02). */
     case PendingApproval = 'pending_approval';
+
+    /** Sold: stock and ledger have moved; payment or delivery may still be outstanding. */
+    case Open = 'open';
+
+    /** Fully paid and fully delivered. Internal transfers land here at checkout. */
+    case Completed = 'completed';
+
+    case Rejected = 'rejected';
+
+    /*
+     * Legacy states from the retired draft → submit → fulfill → pay flow.
+     * Kept so historical rows still load; no code path moves an order into them.
+     */
+    case Draft = 'draft';
     case Confirmed = 'confirmed';
     case Fulfilled = 'fulfilled';
     case PartiallyPaid = 'partially_paid';
     case Paid = 'paid';
-    case Rejected = 'rejected';
-    case Completed = 'completed'; // internal transfers end here
 
     /**
-     * Unlike the manufacturing lifecycles this one branches, and the branch is
-     * never the caller's to pick: submit lands on confirmed or pending_approval
-     * depending on the credit check, and payment lands on paid or partially_paid
-     * depending on the amount. There is deliberately no free-target transition
-     * endpoint — actions decide outcomes, so the credit gate cannot be walked
-     * around by naming the state directly.
+     * There is deliberately no free-target transition endpoint — actions
+     * decide outcomes (checkout, credit decision, collection, delivery), so
+     * the credit gate cannot be walked around by naming a state.
      */
     public function isOpen(): bool
     {
         return ! in_array($this, [self::Paid, self::Rejected, self::Completed], true);
     }
 
-    public function acceptsPayment(): bool
+    /**
+     * A sale that has actually happened — stock and ledger moved. Excludes
+     * ones waiting on, or refused, credit approval.
+     */
+    public function isSold(): bool
     {
-        return in_array($this, [self::Fulfilled, self::PartiallyPaid], true);
+        return ! in_array($this, [self::PendingApproval, self::Rejected, self::Draft], true);
     }
 }

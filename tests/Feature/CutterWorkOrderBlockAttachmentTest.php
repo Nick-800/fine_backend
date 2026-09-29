@@ -94,12 +94,13 @@ it('lets an owner create an order with a block attached — block becomes reserv
     $response->assertStatus(201);
 
     $order = CutterWorkOrder::find($response->json('id'));
-    expect($order->stock_lot_id)->toBe($this->block->id);
+    $attached = $order->blocks()->sole();
+    expect($attached->stock_lot_id)->toBe($this->block->id);
     expect((float) $order->wip_cost)->toBe(500.0);
-    expect((float) $order->block_unit_cost_snapshot)->toBe(500.0);
-    expect((float) $order->block_length_m_snapshot)->toBe(2.0);
-    expect((float) $order->block_width_m_snapshot)->toBe(1.5);
-    expect((float) $order->block_height_m_snapshot)->toBe(1.0);
+    expect((float) $attached->unit_cost_snapshot)->toBe(500.0);
+    expect((float) $attached->length_m_snapshot)->toBe(2.0);
+    expect((float) $attached->width_m_snapshot)->toBe(1.5);
+    expect((float) $attached->height_m_snapshot)->toBe(1.0);
 
     $this->block->refresh();
     expect($this->block->status)->toBe('reserved');
@@ -146,7 +147,7 @@ it('snapshot fields stay locked even if the block unit_cost changes later', func
             'stock_lot_id' => $this->block->id,
         ]);
 
-    expect($response->json('block_unit_cost_snapshot'))->toBe('500.0000');
+    expect($response->json('blocks.0.unit_cost_snapshot'))->toBe('500.0000');
 
     // Force a fresh DB read — the block itself now reports its current cost,
     // but the order's snapshot must still be the original.
@@ -269,7 +270,7 @@ it('completing the order produces pieces that carry source_stock_lot_id + source
     expect((float) $pieces->first()->length_m)->toBe(1.0);
 });
 
-it('orders list includes the attached block snapshot fields and stock_lot relation', function () {
+it('orders list includes the attached blocks with their snapshot and lot', function () {
     $this->actingAs($this->owner)
         ->withHeader('X-Operating-Unit-ID', $this->unit->id)
         ->postJson('/api/v1/cutter-work-orders', [
@@ -285,8 +286,8 @@ it('orders list includes the attached block snapshot fields and stock_lot relati
 
     $row = collect($list['data'])->firstWhere('order_number', 'CW-TEST-LIST');
     expect($row)->not->toBeNull();
-    expect($row['stock_lot']['lot_number'])->toBe('BLK-TEST-001');
-    expect((float) $row['block_unit_cost_snapshot'])->toBe(500.0);
+    expect($row['blocks'][0]['stock_lot']['lot_number'])->toBe('BLK-TEST-001');
+    expect((float) $row['blocks'][0]['unit_cost_snapshot'])->toBe(500.0);
 });
 
 it('can attach a block to an order that was created without a block', function () {
@@ -298,7 +299,8 @@ it('can attach a block to an order that was created without a block', function (
         ]);
     $createRes->assertStatus(201);
     $orderId = $createRes->json('id');
-    expect($createRes->json('stock_lot_id'))->toBeNull();
+    expect($createRes->json('blocks'))->toBe([])
+        ->and($createRes->json('order_number'))->toBe('CW-TEST-NO-BLOCK');
 
     // 2. Attach block later via attachBlock endpoint
     $attachRes = $this->actingAs($this->owner)
@@ -308,18 +310,18 @@ it('can attach a block to an order that was created without a block', function (
         ]);
 
     $attachRes->assertOk()
-        ->assertJsonPath('stock_lot_id', $this->block->id)
-        ->assertJsonPath('stock_lot.lot_number', 'BLK-TEST-001');
+        ->assertJsonPath('blocks.0.stock_lot_id', $this->block->id)
+        ->assertJsonPath('blocks.0.stock_lot.lot_number', 'BLK-TEST-001');
 
     $this->block->refresh();
     expect($this->block->status)->toBe('reserved');
 
     $order = CutterWorkOrder::findOrFail($orderId);
     expect((float) $order->wip_cost)->toBe(500.0)
-        ->and((float) $order->block_length_m_snapshot)->toBe(2.0);
+        ->and((float) $order->blocks()->sole()->length_m_snapshot)->toBe(2.0);
 });
 
-it('can change the attached block to another block before production starts', function () {
+it('a second block joins the order, and either can be released before production', function () {
     $secondBlock = StockLot::create([
         'inventory_item_id' => $this->foamItem->id,
         'warehouse_id' => $this->warehouse->id,
@@ -335,36 +337,66 @@ it('can change the attached block to another block before production starts', fu
 
     $order = CutterWorkOrder::create([
         'operating_unit_id' => $this->unit->id,
-        'order_number' => 'CW-TEST-SWAP',
+        'order_number' => 'CW-TEST-TWO',
         'status' => 'confirmed',
     ]);
 
-    // Attach first block
-    $this->actingAs($this->owner)
-        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
-        ->postJson("/api/v1/cutter-work-orders/{$order->id}/attach-block", [
-            'stock_lot_id' => $this->block->id,
-        ])->assertOk();
+    $api = fn () => $this->actingAs($this->owner)->withHeader('X-Operating-Unit-ID', $this->unit->id);
 
-    expect($this->block->fresh()->status)->toBe('reserved');
+    $api()->postJson("/api/v1/cutter-work-orders/{$order->id}/attach-block", ['stock_lot_id' => $this->block->id])->assertOk();
+    $api()->postJson("/api/v1/cutter-work-orders/{$order->id}/attach-block", ['stock_lot_id' => $secondBlock->id])
+        ->assertOk()
+        ->assertJsonCount(2, 'blocks');
 
-    // Replace with second block
-    $swapRes = $this->actingAs($this->owner)
-        ->withHeader('X-Operating-Unit-ID', $this->unit->id)
-        ->postJson("/api/v1/cutter-work-orders/{$order->id}/attach-block", [
-            'stock_lot_id' => $secondBlock->id,
-        ]);
+    // Both reserved; the order's WIP carries both.
+    expect($this->block->fresh()->status)->toBe('reserved')
+        ->and($secondBlock->fresh()->status)->toBe('reserved')
+        ->and((float) $order->fresh()->wip_cost)->toBe(1150.0);
 
-    $swapRes->assertOk()
-        ->assertJsonPath('stock_lot_id', $secondBlock->id);
+    // With two blocks the one to release must be named.
+    $api()->deleteJson("/api/v1/cutter-work-orders/{$order->id}/detach-block")
+        ->assertUnprocessable()->assertJsonPath('code', 'BLOCK_REQUIRED');
 
-    // First block restored to available; second block reserved
+    $api()->deleteJson("/api/v1/cutter-work-orders/{$order->id}/detach-block", ['stock_lot_id' => $this->block->id])
+        ->assertOk()
+        ->assertJsonCount(1, 'blocks');
+
     expect($this->block->fresh()->status)->toBe('available')
         ->and($secondBlock->fresh()->status)->toBe('reserved');
 
     $order->refresh();
     expect((float) $order->wip_cost)->toBe(650.0)
-        ->and((float) $order->block_unit_cost_snapshot)->toBe(650.0);
+        ->and((float) $order->blocks()->sole()->unit_cost_snapshot)->toBe(650.0);
+});
+
+it('advancing to in_production consumes every attached block', function () {
+    $secondBlock = StockLot::create([
+        'inventory_item_id' => $this->foamItem->id, 'warehouse_id' => $this->warehouse->id,
+        'lot_number' => 'BLK-TEST-003', 'quantity' => 1, 'length_m' => 2, 'width_m' => 1, 'height_m' => 1,
+        'volume_m3' => 2, 'unit_cost' => 300.0, 'status' => 'available',
+    ]);
+    $pieceItem = InventoryItem::create([
+        'name' => 'Cut Piece', 'code' => 'PIECE-TWO', 'item_type' => 'cut_template_piece', 'unit_of_measure' => 'each',
+    ]);
+
+    $api = fn () => $this->actingAs($this->owner)->withHeader('X-Operating-Unit-ID', $this->unit->id);
+
+    $orderId = $api()->postJson('/api/v1/cutter-work-orders', ['stock_lot_id' => $this->block->id])
+        ->assertCreated()->json('id');
+    $api()->postJson("/api/v1/cutter-work-orders/{$orderId}/attach-block", ['stock_lot_id' => $secondBlock->id])->assertOk();
+
+    CutterWorkOrder::findOrFail($orderId)->lines()->create([
+        'requested_spec' => 'seat', 'quantity' => 2, 'output_inventory_item_id' => $pieceItem->id,
+        'template_length_m' => 2, 'template_width_m' => 0.7, 'template_height_m' => 0.1,
+    ]);
+
+    $api()->postJson("/api/v1/cutter-work-orders/{$orderId}/transition", ['status' => 'confirmed'])->assertOk();
+    $api()->postJson("/api/v1/cutter-work-orders/{$orderId}/transition", ['status' => 'in_production'])->assertOk();
+
+    expect($this->block->fresh()->status)->toBe('consumed')
+        ->and($secondBlock->fresh()->status)->toBe('consumed')
+        ->and(FoamBlockConsumption::count())->toBe(2)
+        ->and((float) FoamBlockConsumption::sum('consumed_cost'))->toBe(800.0);
 });
 
 it('can detach an attached block before production', function () {
@@ -391,7 +423,7 @@ it('can detach an attached block before production', function () {
     expect($this->block->fresh()->status)->toBe('available');
 
     $order->refresh();
-    expect($order->stock_lot_id)->toBeNull()
+    expect($order->blocks()->count())->toBe(0)
         ->and((float) $order->wip_cost)->toBe(0.0);
 });
 
