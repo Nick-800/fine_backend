@@ -56,7 +56,6 @@ beforeEach(function () {
     ]);
 
     $this->category = ItemCategory::create([
-        'operating_unit_id' => null,
         'name' => 'Raw', 'code' => 'RAW', 'parent_id' => null, 'item_type' => 'raw_material',
     ]);
     $this->itemA = InventoryItem::create([

@@ -7,10 +7,10 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryAttributeDefinition;
 use App\Models\ItemCategory;
-use App\Rules\ExistsInCurrentUnit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 final class InventoryAttributeController extends Controller
 {
@@ -24,7 +24,7 @@ final class InventoryAttributeController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'category_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(ItemCategory::class, 'category')],
+            'category_id' => ['nullable', 'uuid', Rule::exists('item_categories', 'id')->whereNull('deleted_at')],
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['nullable', 'string', 'max:50', 'unique:inventory_attribute_definitions,slug'],
             'data_type' => ['required', 'string', 'in:number,text,select,boolean'],

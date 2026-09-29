@@ -269,7 +269,7 @@ class SystemBootstrapSeeder extends Seeder
             ['name' => 'Accessories', 'code' => 'CAT-ACC', 'description' => 'Hardware, fabric and trim.'],
         ];
         foreach ($categories as $row) {
-            ItemCategory::firstOrCreate(['code' => $row['code']], $row + ['operating_unit_id' => null]);
+            ItemCategory::firstOrCreate(['code' => $row['code']], $row);
         }
 
         // Container items

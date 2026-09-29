@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Models\Scopes\OperatingUnitOrSharedScope;
 use App\Models\Traits\Auditable;
-use App\Support\CurrentUnitContext;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -18,23 +16,8 @@ final class ItemCategory extends Model
 {
     use Auditable, HasFactory, HasUuids, SoftDeletes;
 
-    /**
-     * `operating_unit_id` is nullable here: a null category is shared across every
-     * unit, so it must stay visible to unit-scoped users.
-     */
     protected static function booted(): void
     {
-        self::addGlobalScope(new OperatingUnitOrSharedScope);
-
-        self::creating(function (ItemCategory $category): void {
-            if ($category->operating_unit_id === null) {
-                $context = app(CurrentUnitContext::class);
-                if ($context->hasUnit()) {
-                    $category->operating_unit_id = $context->id();
-                }
-            }
-        });
-
         // The full code is derived from the parent's code plus this category's
         // own segment — but only for categories that opt into the segment
         // system. Pre-existing flat categories (no code_segment, e.g. the
@@ -66,7 +49,6 @@ final class ItemCategory extends Model
     }
 
     protected $fillable = [
-        'operating_unit_id',
         'parent_id',
         'name',
         'code_segment',

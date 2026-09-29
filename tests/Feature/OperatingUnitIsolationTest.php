@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\PurchaseOrderStatus;
+use App\Models\Bundle;
 use App\Models\CashAccount;
 use App\Models\Client;
 use App\Models\Company;
@@ -24,6 +25,7 @@ use App\Services\AccountingService;
 use App\Support\CurrentUnitContext;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -86,9 +88,7 @@ beforeEach(function () {
         'status' => 'graded',
     ]);
 
-    $this->categoryB = ItemCategory::create([
-        'operating_unit_id' => $this->unitB->id, 'name' => 'B Category', 'code' => 'CAT-B',
-    ]);
+    $this->category = ItemCategory::create(['name' => 'Universal Category', 'code' => 'CAT-U']);
 
     $this->lotB = StockLot::create([
         'inventory_item_id' => $this->item->id,
@@ -179,8 +179,8 @@ test('a unit-scoped user cannot delete another unit production batch', function 
     ($this->asA)()->deleteJson("/api/v1/production-batches/{$this->batchB->id}")->assertNotFound();
 });
 
-test('a unit-scoped user cannot read another unit item category', function () {
-    ($this->asA)()->getJson("/api/v1/item-categories/{$this->categoryB->id}")->assertNotFound();
+test('item categories are universal and readable from any unit', function () {
+    ($this->asA)()->getJson("/api/v1/item-categories/{$this->category->id}")->assertOk();
 });
 
 test('a unit-scoped user cannot read another unit stock lot', function () {
@@ -191,23 +191,22 @@ test('a unit-scoped user cannot read another unit stock lot', function () {
 test('listings exclude other units', function () {
     ($this->asA)()->getJson('/api/v1/production-batches')->assertStatus(200)->assertJsonPath('total', 0);
     ($this->asA)()->getJson('/api/v1/stock-lots')->assertStatus(200)->assertJsonPath('total', 0);
-    // item-categories returns a plain collection rather than a paginator
-    ($this->asA)()->getJson('/api/v1/item-categories')->assertStatus(200)->assertJsonCount(0);
 });
 
-test('a shared category with no unit stays visible to every unit', function () {
-    app(CurrentUnitContext::class)->clear();
-
-    ItemCategory::create(['operating_unit_id' => null, 'name' => 'Shared', 'code' => 'CAT-SHARED']);
-
-    // Visible to a unit-scoped user despite belonging to no unit...
+test('item categories are listed for every unit', function () {
+    // item-categories returns a plain collection rather than a paginator
     ($this->asA)()->getJson('/api/v1/item-categories')
         ->assertStatus(200)
         ->assertJsonCount(1)
-        ->assertJsonFragment(['code' => 'CAT-SHARED']);
+        ->assertJsonFragment(['code' => 'CAT-U']);
+});
 
-    // ...while unit B's own category remains hidden from unit A.
-    ($this->asA)()->getJson('/api/v1/item-categories')->assertJsonMissing(['code' => 'CAT-B']);
+test('bundles are universal and listed for every unit', function () {
+    app(CurrentUnitContext::class)->clear();
+    $bundle = Bundle::create(['name' => 'Universal Bundle']);
+
+    ($this->asA)()->getJson("/api/v1/bundles/{$bundle->id}")->assertOk();
+    ($this->asA)()->getJson('/api/v1/bundles')->assertOk()->assertJsonFragment(['name' => 'Universal Bundle']);
 });
 
 test('a company-wide owner still sees across every unit', function () {
@@ -289,27 +288,24 @@ test('a stock lot cannot be attached to another unit production batch', function
     ])->assertStatus(422)->assertJsonValidationErrors('production_batch_id');
 });
 
-test('an inventory item cannot be filed under another unit category', function () {
+test('an inventory item can use any category', function () {
     ($this->asA)()->postJson('/api/v1/inventory-items', [
-        'name' => 'Cross Item',
-        'code' => 'CROSS-1',
+        'name' => 'Universal Item',
+        'code' => 'UNIV-1',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
-        'category_id' => $this->categoryB->id,
-    ])->assertStatus(422)->assertJsonValidationErrors('category_id');
+        'category_id' => $this->category->id,
+    ])->assertStatus(201);
 });
 
-test('an inventory item can use a shared category', function () {
-    app(CurrentUnitContext::class)->clear();
-    $shared = ItemCategory::create(['operating_unit_id' => null, 'name' => 'Shared', 'code' => 'CAT-SH2']);
-
+test('an inventory item cannot use a missing category', function () {
     ($this->asA)()->postJson('/api/v1/inventory-items', [
-        'name' => 'Shared Item',
-        'code' => 'SHARED-1',
+        'name' => 'Bad Item',
+        'code' => 'BAD-1',
         'item_type' => 'raw_material',
         'unit_of_measure' => 'kg',
-        'category_id' => $shared->id,
-    ])->assertStatus(201);
+        'category_id' => (string) Str::uuid(),
+    ])->assertStatus(422)->assertJsonValidationErrors('category_id');
 });
 
 test('an owner is not blocked by the scope-aware existence rule', function () {

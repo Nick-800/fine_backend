@@ -36,7 +36,6 @@ final class ItemCategoryController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            // Unit comes from the role-validated request context, not the body.
             // Two ways to set the code: pass `code_segment` and it's derived
             // from the parent's code (see ItemCategory::buildCode) — the path
             // the hierarchical categories UI uses; or pass a flat `code`

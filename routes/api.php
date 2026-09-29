@@ -41,7 +41,6 @@ use App\Http\Controllers\Api\v1\PaymentRequestController;
 use App\Http\Controllers\Api\v1\PayrollRunController;
 use App\Http\Controllers\Api\v1\PermissionController;
 use App\Http\Controllers\Api\v1\PosController;
-use App\Http\Controllers\Api\v1\ProductController;
 use App\Http\Controllers\Api\v1\ProductionBatchController;
 use App\Http\Controllers\Api\v1\ProductionOrderController;
 use App\Http\Controllers\Api\v1\PurchaseOrderController;
@@ -262,8 +261,6 @@ Route::prefix('v1')->group(function () {
 
             // Furniture Manufacturing
             Route::middleware('require.role:owner,furniture-manager,assembler,unit_manager,manager')->group(function () {
-                Route::apiResource('products', ProductController::class);
-                Route::get('/products/{id}/boms', [ProductController::class, 'boms']);
                 Route::post('/boms', [BomController::class, 'store']);
                 Route::get('/boms/{id}', [BomController::class, 'show']);
                 Route::post('/boms/{id}/activate', [BomController::class, 'activate']);

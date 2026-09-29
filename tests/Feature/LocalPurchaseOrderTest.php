@@ -48,7 +48,6 @@ beforeEach(function () {
     // Create a procurement-eligible inventory category + items so the
     // purchase_order_items FK to inventory_items is satisfied.
     $this->category = ItemCategory::create([
-        'operating_unit_id' => null,
         'name' => 'Raw Materials', 'code' => 'RM', 'parent_id' => null,
         'item_type' => 'raw_material',
     ]);
