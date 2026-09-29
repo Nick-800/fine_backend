@@ -134,6 +134,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/fixed-assets/{id}/transition', [FixedAssetController::class, 'transition']);
                 Route::post('/accounts', [AccountController::class, 'store']);
                 Route::put('/accounts/{id}', [AccountController::class, 'update']);
+                Route::patch('/accounts/{id}/parent', [AccountController::class, 'reparent']);
                 Route::delete('/accounts/{id}', [AccountController::class, 'destroy']);
             });
 
