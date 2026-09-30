@@ -49,6 +49,12 @@ beforeEach(function () {
     $this->storeWarehouse = Warehouse::create(['operating_unit_id' => $this->store->id, 'name' => 'Store WH', 'code' => 'WH-S']);
     $this->cutterWarehouse = Warehouse::create(['operating_unit_id' => $this->cutter->id, 'name' => 'Block Yard', 'code' => 'WH-C']);
 
+    // The cutter's purchases account is its cut-template-piece inventory
+    // account (1132); the showroom's purchases stays on 111 for raw
+    // materials. Per-unit overrides require per-unit calls.
+    seedUnitAccounts($this->store);
+    seedUnitAccounts($this->cutter, ['purchases' => '1132']);
+
     $this->cashier = User::factory()->create(['must_change_password' => false]);
     UserRole::create([
         'user_id' => $this->cashier->id,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\InventoryEventType;
 use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -48,6 +49,29 @@ final class OperatingUnit extends Model
     public function revenueAccount(): BelongsTo
     {
         return $this->belongsTo(Account::class, 'revenue_account_id');
+    }
+
+    /**
+     * Per-event chart-of-accounts overrides for this unit. The COA chart is
+     * mapped onto each unit by event (purchases, sales, COGS, returns,
+     * waste, discounts, transport, sales commission, opening/ending).
+     */
+    public function accounts(): HasMany
+    {
+        return $this->hasMany(OperatingUnitAccount::class);
+    }
+
+    /**
+     * Resolve the chart-of-accounts account to use when posting the given
+     * event for this unit. Returns the linked `Account` or `null` if no
+     * override is set — the caller is responsible for turning `null` into a
+     * hard `INVENTORY_ACCOUNT_NOT_LINKED` 422 (no canonical fallback).
+     */
+    public function accountFor(InventoryEventType $event): ?Account
+    {
+        $row = $this->accounts()->where('event_type', $event->value)->first();
+
+        return $row?->account;
     }
 
     /**

@@ -6,10 +6,10 @@ namespace App\Services;
 
 use App\Enums\InventoryEventType;
 use App\Exceptions\InvalidStateTransitionException;
+use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Models\InternalRestockRequest;
 use App\Models\InventoryItem;
 use App\Models\OperatingUnit;
-use App\Support\InventoryAccounts;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -25,18 +25,19 @@ class SalesOrderService
 
     /**
      * Which chart-of-accounts sub-account carries the restocked item's value
-     * when it leaves the source unit. Honours the operator-set per-item
-     * `purchases` override when present; falls back to the canonical
-     * `InventoryAccounts::forItemType()` mapping for legacy items that
-     * predate the per-item override table.
+     * when it leaves the source unit. Resolved from the source unit's
+     * `purchases` override; hard-fails with `INVENTORY_ACCOUNT_NOT_LINKED`
+     * when none is set.
      */
-    private function inventoryAccountFor(InventoryItem $item): string
+    private function inventoryAccountFor(InventoryItem $item, OperatingUnit $unit): string
     {
-        $account = $item->accountFor(InventoryEventType::Purchases);
+        $account = $unit->accountFor(InventoryEventType::Purchases);
 
-        return $account !== null
-            ? $account->account_code
-            : InventoryAccounts::forItemType($item->item_type);
+        if ($account === null) {
+            throw new InventoryAccountNotLinkedException($item, $unit, InventoryEventType::Purchases);
+        }
+
+        return $account->account_code;
     }
 
     /**
@@ -83,8 +84,10 @@ class SalesOrderService
                 );
 
                 $totalCost += $cost;
+                $sourceUnit = $locked->sourceUnit ?? throw new InvalidStateTransitionException('Restock request is missing its source operating unit.');
                 $account = $this->inventoryAccountFor(
-                    $line->inventoryItem ?? throw new InvalidStateTransitionException('Restock line is missing its inventory item.')
+                    $line->inventoryItem ?? throw new InvalidStateTransitionException('Restock line is missing its inventory item.'),
+                    $sourceUnit,
                 );
                 $costByAccount[$account] = round(($costByAccount[$account] ?? 0) + $cost, 4);
             }

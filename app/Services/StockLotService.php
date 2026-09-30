@@ -9,6 +9,7 @@ use App\Exceptions\InsufficientComponentStockException;
 use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
+use App\Models\OperatingUnit;
 use App\Models\PurchaseOrder;
 use App\Models\StockLot;
 use App\Models\Warehouse;
@@ -141,7 +142,7 @@ class StockLotService
                     "Stock intake: {$item->code} lot {$lotNumber} ({$data['source']})",
                     [
                         [
-                            'account_code' => $this->inventoryAccountFor($item),
+                            'account_code' => $this->inventoryAccountFor($item, $warehouse->operatingUnit),
                             'debit' => $value,
                             'operating_unit_id' => $warehouse->operating_unit_id,
                             'memo' => $memo,
@@ -164,16 +165,17 @@ class StockLotService
 
     /**
      * Which chart-of-accounts sub-account carries this item's value on the
-     * inventory DR leg during intake. Pulled from the operator-set per-item
-     * override (Purchases event); hard-fails with
-     * `INVENTORY_ACCOUNT_NOT_LINKED` when none is set.
+     * inventory DR leg during intake. Pulled from the operator-set
+     * per-unit override (Purchases event on the warehouse's operating
+     * unit); hard-fails with `INVENTORY_ACCOUNT_NOT_LINKED` when none is
+     * set.
      */
-    private function inventoryAccountFor(InventoryItem $item): string
+    private function inventoryAccountFor(InventoryItem $item, OperatingUnit $unit): string
     {
-        $account = $item->accountFor(InventoryEventType::Purchases);
+        $account = $unit->accountFor(InventoryEventType::Purchases);
 
         if ($account === null) {
-            throw new InventoryAccountNotLinkedException($item, InventoryEventType::Purchases);
+            throw new InventoryAccountNotLinkedException($item, $unit, InventoryEventType::Purchases);
         }
 
         return $account->account_code;

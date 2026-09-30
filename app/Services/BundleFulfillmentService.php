@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\CutterWorkOrderStatus;
+use App\Enums\InventoryEventType;
 use App\Enums\SaleComponentStatus;
 use App\Enums\SaleFulfillmentStatus;
 use App\Enums\SalesOrderStatus;
+use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Exceptions\SalesRuleException;
 use App\Models\CutterWorkOrder;
 use App\Models\InventoryItem;
@@ -18,7 +20,6 @@ use App\Models\SaleComponentAllocation;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderLine;
 use App\Models\StockLot;
-use App\Support\InventoryAccounts;
 use App\Support\SalesAccounts;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -329,8 +330,20 @@ final class BundleFulfillmentService
                     $allocation->update(['delivered_at' => now()]);
 
                     $componentCost += $cost;
-                    $account = InventoryAccounts::forItemType($lot->inventoryItem?->item_type);
                     $unitId = $lot->warehouse()->withoutGlobalScopes()->value('operating_unit_id');
+                    $unit = $unitId !== null ? OperatingUnit::find($unitId) : null;
+                    $inventoryItem = $lot->inventoryItem;
+                    if ($unit === null || $inventoryItem === null) {
+                        throw new SalesRuleException(
+                            'Bundle component lot is missing its warehouse unit or inventory item.',
+                            'BUNDLE_COMPONENT_LINK_MISSING',
+                        );
+                    }
+                    $purchasesAccount = $unit->accountFor(InventoryEventType::Purchases);
+                    if ($purchasesAccount === null) {
+                        throw new InventoryAccountNotLinkedException($inventoryItem, $unit, InventoryEventType::Purchases);
+                    }
+                    $account = $purchasesAccount->account_code;
                     $key = $account.'|'.$unitId;
                     $creditsByUnitAccount[$key] = round(($creditsByUnitAccount[$key] ?? 0) + $cost, 4);
                 }

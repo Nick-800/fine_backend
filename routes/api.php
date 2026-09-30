@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\v1\LaborRoleRateController;
 use App\Http\Controllers\Api\v1\LandedCostLineController;
 use App\Http\Controllers\Api\v1\LeaveRequestController;
 use App\Http\Controllers\Api\v1\MaterialRequestController;
+use App\Http\Controllers\Api\v1\OperatingUnitAccountController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\OverheadAllocationController;
 use App\Http\Controllers\Api\v1\OverheadExpenseController;
@@ -97,6 +98,9 @@ Route::prefix('v1')->group(function () {
                 Route::post('operating-units/{id}/restore', [OperatingUnitController::class, 'restore']);
                 Route::get('operating-units/{id}/warehouses', [WarehouseController::class, 'forOperatingUnit']);
                 Route::post('operating-units/{id}/warehouses', [WarehouseController::class, 'storeForOperatingUnit']);
+                Route::get('/operating-units/{id}/accounts', [OperatingUnitAccountController::class, 'index']);
+                Route::post('/operating-units/{id}/accounts', [OperatingUnitAccountController::class, 'upsert']);
+                Route::delete('/operating-units/{id}/accounts/{rowId}', [OperatingUnitAccountController::class, 'destroy']);
                 Route::get('/unit-blueprints', [UnitBlueprintController::class, 'index']);
                 Route::post('/unit-blueprints', [UnitBlueprintController::class, 'store']);
                 Route::get('/unit-blueprints/{id}', [UnitBlueprintController::class, 'show']);
@@ -333,9 +337,6 @@ Route::prefix('v1')->group(function () {
                 Route::put('/attribute-definitions/{id}', [InventoryAttributeController::class, 'update']);
                 Route::delete('/attribute-definitions/{id}', [InventoryAttributeController::class, 'destroy']);
                 Route::apiResource('inventory-items', InventoryItemController::class);
-                Route::get('/inventory-items/{id}/accounts', [InventoryItemController::class, 'accounts']);
-                Route::post('/inventory-items/{id}/accounts', [InventoryItemController::class, 'upsertAccount']);
-                Route::delete('/inventory-items/{id}/accounts/{rowId}', [InventoryItemController::class, 'deleteAccount']);
                 Route::get('/stock-lots/available-for-cutting', [StockLotController::class, 'availableForCutting']);
                 Route::get('/stock-lots/available-foam-blocks', [StockLotController::class, 'availableFoamBlocks']);
                 Route::post('/stock-lots/intake', [StockLotController::class, 'intake']);

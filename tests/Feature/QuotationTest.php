@@ -42,6 +42,8 @@ beforeEach(function () {
 
     $warehouse = Warehouse::create(['operating_unit_id' => $this->store->id, 'name' => 'Store WH', 'code' => 'WH-S']);
 
+    seedUnitAccounts([$this->store, $this->otherUnit]);
+
     $this->user = User::factory()->create(['must_change_password' => false]);
     $role = Role::create(['name' => 'Cashier', 'slug' => 'pos-cashier']);
     UserRole::create(['user_id' => $this->user->id, 'role_id' => $role->id, 'operating_unit_id' => $this->store->id]);

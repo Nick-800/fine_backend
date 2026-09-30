@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\InventoryEventType;
 use App\Enums\LandedCostType;
 use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
 use App\Enums\PurchaseOrderKind;
 use App\Enums\PurchaseOrderStatus;
 use App\Exceptions\InvalidStateTransitionException;
+use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Models\Account;
 use App\Models\BankHold;
 use App\Models\FxRate;
@@ -21,7 +23,6 @@ use App\Models\PurchaseOrderItem;
 use App\Models\StockLot;
 use App\Models\Supplier;
 use App\Models\Warehouse;
-use App\Support\InventoryAccounts;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -609,8 +610,8 @@ final class PurchaseOrderStateService
             // Materialise the line items into the destination warehouse.
             // Also posts an inventory DR / supplier-advance CR journal so
             // the books carry the inventory value AND the supplier advance
-            // nets back to zero. Inventory DR uses the canonical
-            // InventoryAccounts::forItemType() mapping keyed by item type.
+            // nets back to zero. Inventory DR uses the order's operating
+            // unit `purchases` account mapping.
             $this->routeGoodsIntoWarehouse($order);
 
             $order->payment_source_account_id = $source->id;
@@ -897,14 +898,26 @@ final class PurchaseOrderStateService
                 $lineTotal = round($received * (float) $item->unit_price, 4);
                 $totalInventoryLyd = round($totalInventoryLyd + $lineTotal, 4);
 
-                $itemType = $item->inventoryItem?->item_type;
-                if ($itemType === null) {
+                $inventoryItem = $item->inventoryItem;
+                if ($inventoryItem === null) {
                     throw new InvalidArgumentException(
-                        "Line item {$item->id} is missing its inventory item type.",
+                        "Line item {$item->id} is missing its inventory item.",
                     );
                 }
 
-                $inventoryAccountCode = InventoryAccounts::forItemType($itemType);
+                $orderUnit = $order->operatingUnit;
+                if ($orderUnit === null) {
+                    throw new InvalidArgumentException(
+                        "Order {$order->id} is missing its operating unit.",
+                    );
+                }
+
+                $purchasesAccount = $orderUnit->accountFor(InventoryEventType::Purchases);
+                if ($purchasesAccount === null) {
+                    throw new InventoryAccountNotLinkedException($inventoryItem, $orderUnit, InventoryEventType::Purchases);
+                }
+
+                $inventoryAccountCode = $purchasesAccount->account_code;
 
                 // Force string keys — PHP coerces numeric strings to ints
                 // when used as array keys, which breaks the journal
