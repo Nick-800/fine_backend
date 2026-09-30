@@ -21,7 +21,7 @@ use Illuminate\Database\Seeder;
  */
 class ChartOfAccountsSeeder extends Seeder
 {
-    public function run(): void
+    public function run(?string $customJsonPath = null): void
     {
         $company = Company::first() ?? Company::firstOrCreate(
             ['name' => 'Fine'],
@@ -170,10 +170,10 @@ class ChartOfAccountsSeeder extends Seeder
 
         $catalogByCode = [];
         foreach ($catalog as $row) {
-            $catalogByCode[(string) $row[0]] = $row;
+            $catalogByCode[(string) $row[0]] = [$row[0], $row[1], $row[2], $row[3], $row[4] ?? 'LYD', null];
         }
 
-        $jsonPath = database_path('data/chart_of_accounts.json');
+        $jsonPath = $customJsonPath ?? database_path('data/chart_of_accounts.json');
         if (file_exists($jsonPath)) {
             $raw = json_decode((string) file_get_contents($jsonPath), true);
             if (is_array($raw) && ! empty($raw)) {
@@ -185,13 +185,14 @@ class ChartOfAccountsSeeder extends Seeder
                         ? ($item['parent_code'] !== null ? (string) $item['parent_code'] : null)
                         : ($item[3] ?? null);
                     $currency = (string) ($item['currency'] ?? $item[4] ?? $company->default_currency ?? 'LYD');
+                    $section = isset($item['section']) ? (string) $item['section'] : null;
 
                     // Ensure accounts 6 and 7 remain parentless root accounts
                     if (in_array($code, ['6', '7'], true)) {
                         $parentCode = null;
                     }
 
-                    $catalogByCode[$code] = [$code, $name, $type, $parentCode, $currency];
+                    $catalogByCode[$code] = [$code, $name, $type, $parentCode, $currency, $section];
                 }
             }
         }
@@ -225,22 +226,28 @@ class ChartOfAccountsSeeder extends Seeder
             $type = $row[2];
             $parentCode = $row[3] ?? null;
             $currency = $row[4] ?? $company->default_currency ?? 'LYD';
+            $section = $row[5] ?? null;
 
             $parentId = $parentCode !== null && isset($created[$parentCode])
                 ? $created[$parentCode]->id
                 : null;
+
+            $payload = [
+                'name' => $name,
+                'type' => $type,
+                'currency' => $currency,
+                'parent_account_id' => $parentId,
+            ];
+            if ($section !== null) {
+                $payload['section'] = $section;
+            }
 
             $account = Account::updateOrCreate(
                 [
                     'chart_of_accounts_id' => $coa->id,
                     'account_code' => $code,
                 ],
-                [
-                    'name' => $name,
-                    'type' => $type,
-                    'currency' => $currency,
-                    'parent_account_id' => $parentId,
-                ],
+                $payload,
             );
 
             $created[$code] = $account;

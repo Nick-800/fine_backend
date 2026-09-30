@@ -14,6 +14,8 @@ use App\Models\JournalLine;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 final class AccountController extends Controller
 {
@@ -144,6 +146,7 @@ final class AccountController extends Controller
             'type' => 'required|string|in:asset,liability,equity,revenue,expense',
             'parent_account_id' => 'nullable|uuid|exists:accounts,id',
             'currency' => 'nullable|string|size:3',
+            'section' => 'nullable|string|max:100',
         ]);
 
         $parent = null;
@@ -175,6 +178,7 @@ final class AccountController extends Controller
             'account_code' => $validated['account_code'],
             'name' => $validated['name'],
             'type' => $validated['type'],
+            'section' => $validated['section'] ?? null,
             'currency' => strtoupper($validated['currency'] ?? $company->default_currency ?? 'LYD'),
             'parent_account_id' => $validated['parent_account_id'] ?? null,
         ]);
@@ -273,6 +277,9 @@ final class AccountController extends Controller
         if ($request->filled('currency')) {
             $payload['currency'] = strtoupper((string) $request->input('currency'));
         }
+        if ($request->has('section')) {
+            $payload['section'] = $request->input('section');
+        }
 
         $account->update($payload);
 
@@ -290,19 +297,20 @@ final class AccountController extends Controller
         ]);
     }
 
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
         $account = Account::findOrFail($id);
         $isMain = $account->parent_account_id === null;
+        $force = $request->boolean('force');
 
-        if ($isMain) {
+        if ($isMain && ! $force) {
             return response()->json([
                 'message' => 'Main accounts cannot be deleted.',
                 'code' => 'MAIN_ACCOUNT_NOT_DELETABLE',
             ], 422);
         }
 
-        if ($account->journalLines()->exists()) {
+        if ($account->journalLines()->exists() && ! $force) {
             return response()->json([
                 'message' => 'Account has journal lines and cannot be deleted.',
                 'code' => 'ACCOUNT_HAS_TRANSACTIONS',
@@ -319,5 +327,54 @@ final class AccountController extends Controller
         $account->delete();
 
         return response()->json(['message' => 'Account deleted successfully.'], 200);
+    }
+
+    public function wipe(Request $request): JsonResponse
+    {
+        $force = $request->boolean('force');
+
+        if (! $force && JournalLine::query()->exists()) {
+            return response()->json([
+                'message' => 'Cannot wipe accounts because journal transactions exist. Use force=1 to override.',
+                'code' => 'ACCOUNT_HAS_TRANSACTIONS',
+            ], 422);
+        }
+
+        $deletedCount = 0;
+        DB::transaction(function () use ($force, &$deletedCount) {
+            if ($force) {
+                JournalLine::query()->delete();
+            }
+
+            if (Schema::hasTable('operating_unit_accounts')) {
+                DB::table('operating_unit_accounts')->delete();
+            }
+            if (Schema::hasTable('cash_accounts') && Schema::hasColumn('cash_accounts', 'account_id')) {
+                DB::table('cash_accounts')->update(['account_id' => null]);
+            }
+            if (Schema::hasTable('operating_units') && Schema::hasColumn('operating_units', 'revenue_account_id')) {
+                DB::table('operating_units')->update(['revenue_account_id' => null]);
+            }
+            if (Schema::hasTable('suppliers') && Schema::hasColumn('suppliers', 'account_id')) {
+                DB::table('suppliers')->update(['account_id' => null]);
+            }
+            if (Schema::hasTable('fixed_assets') && Schema::hasColumn('fixed_assets', 'account_id')) {
+                DB::table('fixed_assets')->update(['account_id' => null]);
+            }
+            if (Schema::hasTable('purchase_orders') && Schema::hasColumn('purchase_orders', 'payment_source_account_id')) {
+                DB::table('purchase_orders')->update(['payment_source_account_id' => null]);
+            }
+
+            // Unlink self-referential parent_account_id
+            Account::query()->update(['parent_account_id' => null]);
+
+            // Delete all accounts
+            $deletedCount = Account::query()->delete();
+        });
+
+        return response()->json([
+            'message' => 'All accounts wiped successfully.',
+            'deleted_count' => $deletedCount,
+        ], 200);
     }
 }

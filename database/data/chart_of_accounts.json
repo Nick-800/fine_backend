@@ -29,7 +29,7 @@
     },
     {
         "account_code": "5",
-        "name": "المصروفات والتكاليف",
+        "name": "المصروفات التشغلية والتكاليف والمصروفات الادارية",
         "type": "expense",
         "currency": "LYD",
         "parent_code": null
@@ -37,13 +37,6 @@
     {
         "account_code": "6",
         "name": "المصاريف التشغيلية والإدارية",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": null
-    },
-    {
-        "account_code": "7",
-        "name": "العمليات الصناعية",
         "type": "expense",
         "currency": "LYD",
         "parent_code": null
@@ -119,78 +112,22 @@
         "parent_code": "4"
     },
     {
+        "account_code": "43",
+        "name": "مردودات المشتريات",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "4"
+    },
+    {
         "account_code": "51",
-        "name": "تكلفة البضاعة المباعة",
+        "name": "المصروفات الشتغيلية والتكاليف",
         "type": "expense",
         "currency": "LYD",
         "parent_code": "5"
     },
     {
         "account_code": "52",
-        "name": "فروقات المخزون والتصنيع",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "5"
-    },
-    {
-        "account_code": "53",
-        "name": "خسائر فروق أسعار الصرف",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "5"
-    },
-    {
-        "account_code": "54",
-        "name": "المصروفات العامة والصناعية",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "5"
-    },
-    {
-        "account_code": "55",
-        "name": "مصروف الإهلاك",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "5"
-    },
-    {
-        "account_code": "56",
-        "name": "خسائر استبعاد أصول ثابتة",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "5"
-    },
-    {
-        "account_code": "57",
-        "name": "مصروف الرواتب والأجور",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "5"
-    },
-    {
-        "account_code": "212",
-        "name": "الدائنون",
-        "type": "liability",
-        "currency": "LYD",
-        "parent_code": "2"
-    },
-    {
-        "account_code": "403",
-        "name": "المشتريات",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "5"
-    },
-    {
-        "account_code": "405",
-        "name": "مردودات المشتريات",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "5"
-    },
-    {
-        "account_code": "406",
-        "name": "مصاريف الشراء والنقل",
+        "name": "مصروفات إدارية و عمومية لشركة فاين",
         "type": "expense",
         "currency": "LYD",
         "parent_code": "5"
@@ -203,36 +140,8 @@
         "parent_code": "6"
     },
     {
-        "account_code": "602",
-        "name": "إهلاكات الأصول",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "6"
-    },
-    {
         "account_code": "603",
         "name": "نثريات",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "6"
-    },
-    {
-        "account_code": "606",
-        "name": "ضريبة دمغة",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "6"
-    },
-    {
-        "account_code": "607",
-        "name": "ضريبة المرتبات والأجور",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "6"
-    },
-    {
-        "account_code": "608",
-        "name": "الاشتراكات الضمانية",
         "type": "expense",
         "currency": "LYD",
         "parent_code": "6"
@@ -322,20 +231,6 @@
         "parent_code": "6"
     },
     {
-        "account_code": "701",
-        "name": "العمليات الصناعية — مصنع الإسفنج",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "7"
-    },
-    {
-        "account_code": "702",
-        "name": "العمليات الصناعية — مقص فاين",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "7"
-    },
-    {
         "account_code": "111",
         "name": "الخزائن",
         "type": "asset",
@@ -364,6 +259,34 @@
         "parent_code": "11"
     },
     {
+        "account_code": "115",
+        "name": "المصروفات المدفوعة مقدما",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "11"
+    },
+    {
+        "account_code": "121",
+        "name": "أصول ثابتة المصنع",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "12"
+    },
+    {
+        "account_code": "122",
+        "name": "أصول ثابتة المقص",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "12"
+    },
+    {
+        "account_code": "123",
+        "name": "أصول ثابتة المعرض",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "12"
+    },
+    {
         "account_code": "211",
         "name": "الموردون",
         "type": "liability",
@@ -371,39 +294,25 @@
         "parent_code": "21"
     },
     {
+        "account_code": "212",
+        "name": "الدائنون",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "21"
+    },
+    {
+        "account_code": "213",
+        "name": "المصروفات المستحقة",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "21"
+    },
+    {
         "account_code": "221",
-        "name": "دائنون المصنع",
+        "name": "مجمع الاهلاكات",
         "type": "liability",
         "currency": "LYD",
-        "parent_code": "212"
-    },
-    {
-        "account_code": "222",
-        "name": "دائنون المقص",
-        "type": "liability",
-        "currency": "LYD",
-        "parent_code": "212"
-    },
-    {
-        "account_code": "223",
-        "name": "دائنون المعرض",
-        "type": "liability",
-        "currency": "LYD",
-        "parent_code": "212"
-    },
-    {
-        "account_code": "224",
-        "name": "الامانات والودائع",
-        "type": "liability",
-        "currency": "LYD",
-        "parent_code": "212"
-    },
-    {
-        "account_code": "225",
-        "name": "وسيط تكاليف الاستيراد",
-        "type": "liability",
-        "currency": "LYD",
-        "parent_code": "212"
+        "parent_code": "22"
     },
     {
         "account_code": "411",
@@ -427,22 +336,36 @@
         "parent_code": "41"
     },
     {
+        "account_code": "414",
+        "name": "ايراد الخصم المكتسب",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "41"
+    },
+    {
+        "account_code": "415",
+        "name": "ايراد خصم المشتريات",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "41"
+    },
+    {
+        "account_code": "416",
+        "name": "ايراد فائض المخزون",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "41"
+    },
+    {
+        "account_code": "417",
+        "name": "ايراد خصم الموظفين",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "41"
+    },
+    {
         "account_code": "421",
         "name": "ايراد من بيع عبوات شحن المشتريات",
-        "type": "revenue",
-        "currency": "LYD",
-        "parent_code": "42"
-    },
-    {
-        "account_code": "422",
-        "name": "ايراد من الخصم المكتسب",
-        "type": "revenue",
-        "currency": "LYD",
-        "parent_code": "42"
-    },
-    {
-        "account_code": "423",
-        "name": "ايراد من خصم المستريات",
         "type": "revenue",
         "currency": "LYD",
         "parent_code": "42"
@@ -456,66 +379,115 @@
     },
     {
         "account_code": "425",
-        "name": "ايراد من فائض المخزون",
+        "name": "ايراد فرق سعر الصرف",
         "type": "revenue",
         "currency": "LYD",
         "parent_code": "42"
     },
     {
-        "account_code": "426",
-        "name": "ايراد من خصم الموظفين",
+        "account_code": "431",
+        "name": "مردودات المشتريات لمصنع فاين",
         "type": "revenue",
         "currency": "LYD",
-        "parent_code": "42"
+        "parent_code": "43"
     },
     {
-        "account_code": "1201",
-        "name": "أصول ثابتة المصنع",
-        "type": "asset",
+        "account_code": "432",
+        "name": "مردودات المشتريات لمقص فاين",
+        "type": "revenue",
         "currency": "LYD",
-        "parent_code": "12"
+        "parent_code": "43"
     },
     {
-        "account_code": "1202",
-        "name": "أصول ثابتة المقص",
-        "type": "asset",
+        "account_code": "433",
+        "name": "مردودات المشتريات لمعرض فاين",
+        "type": "revenue",
         "currency": "LYD",
-        "parent_code": "12"
+        "parent_code": "43"
     },
     {
-        "account_code": "1203",
-        "name": "أصول ثابتة المعرض",
-        "type": "asset",
-        "currency": "LYD",
-        "parent_code": "12"
-    },
-    {
-        "account_code": "40301",
-        "name": "مشتريات — مصنع الإسفنج",
+        "account_code": "511",
+        "name": "تكلفة البضاعة المباعة",
         "type": "expense",
         "currency": "LYD",
-        "parent_code": "403"
+        "parent_code": "51"
     },
     {
-        "account_code": "40302",
-        "name": "مشتريات — مقص فاين",
+        "account_code": "512",
+        "name": "مصروفات التشغيل المتنوعة",
         "type": "expense",
         "currency": "LYD",
-        "parent_code": "403"
+        "parent_code": "51"
     },
     {
-        "account_code": "40501",
-        "name": "مردودات مشتريات — مصنع الإسفنج",
+        "account_code": "521",
+        "name": "مرتبات الموظفين و الادارة العليا",
         "type": "expense",
         "currency": "LYD",
-        "parent_code": "405"
+        "parent_code": "52"
     },
     {
-        "account_code": "40502",
-        "name": "مردودات مشتريات — مقص فاين",
+        "account_code": "522",
+        "name": "مكافات وحوافز موظفى الادارة",
         "type": "expense",
         "currency": "LYD",
-        "parent_code": "405"
+        "parent_code": "52"
+    },
+    {
+        "account_code": "523",
+        "name": "مياه وكهرباء الادارة",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "52"
+    },
+    {
+        "account_code": "524",
+        "name": "قرطاسية وادوات مكتبية ومطبوعات الادارة",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "52"
+    },
+    {
+        "account_code": "525",
+        "name": "اتصالات ونت الادارة",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "52"
+    },
+    {
+        "account_code": "526",
+        "name": "نثرية الادارة",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "52"
+    },
+    {
+        "account_code": "527",
+        "name": "مصروفات الضيافة الادارة",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "52"
+    },
+    {
+        "account_code": "528",
+        "name": "مصروفات وعمولات مصرفية",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "52"
+    },
+    {
+        "account_code": "529",
+        "name": "مصروفات واشتراكات ضمانية",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "52"
+    },
+    {
+        "account_code": "5210",
+        "name": "مصاريف ورسوم الدولة",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "52"
     },
     {
         "account_code": "60101",
@@ -651,13 +623,6 @@
         "parent_code": "622"
     },
     {
-        "account_code": "62202",
-        "name": "صيانة وتشغيل — مقص فاين",
-        "type": "expense",
-        "currency": "LYD",
-        "parent_code": "622"
-    },
-    {
         "account_code": "1111",
         "name": "خزائن مصنع فاين",
         "type": "asset",
@@ -728,6 +693,13 @@
         "parent_code": "112"
     },
     {
+        "account_code": "1128",
+        "name": "مصرف شمال أفريقيا",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "112"
+    },
+    {
         "account_code": "1131",
         "name": "مخزون أول المدة للمصنع",
         "type": "asset",
@@ -770,6 +742,104 @@
         "parent_code": "114"
     },
     {
+        "account_code": "1211",
+        "name": "أراضي المصنع",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "121"
+    },
+    {
+        "account_code": "1212",
+        "name": "عدد و الادوات المصنع",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "121"
+    },
+    {
+        "account_code": "1213",
+        "name": "اثاث المصنع",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "121"
+    },
+    {
+        "account_code": "1214",
+        "name": "المباني وعقارات المصنع",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "121"
+    },
+    {
+        "account_code": "1215",
+        "name": "الاالات و المعدات المصنع",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "121"
+    },
+    {
+        "account_code": "1216",
+        "name": "الاجهزة الاكترونية المصنع",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "121"
+    },
+    {
+        "account_code": "1217",
+        "name": "سيارات المصنع",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "121"
+    },
+    {
+        "account_code": "1221",
+        "name": "الالات و معدات المقص",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "122"
+    },
+    {
+        "account_code": "1222",
+        "name": "عدد و الادوات المقص",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "122"
+    },
+    {
+        "account_code": "1223",
+        "name": "اثاث المقص",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "122"
+    },
+    {
+        "account_code": "1224",
+        "name": "الاجهزة الاكترونية المقص",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "122"
+    },
+    {
+        "account_code": "1231",
+        "name": "الاالات و المعدات المعرض",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "123"
+    },
+    {
+        "account_code": "1232",
+        "name": "اثاث المعرض",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "123"
+    },
+    {
+        "account_code": "1233",
+        "name": "الاجهزة الالكترونية المعرض",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "123"
+    },
+    {
         "account_code": "2111",
         "name": "موردون مصنع فاين",
         "type": "liability",
@@ -791,102 +861,284 @@
         "parent_code": "211"
     },
     {
-        "account_code": "12011",
-        "name": "أراضي المصنع",
-        "type": "asset",
+        "account_code": "2121",
+        "name": "دائنون مصنع فاين",
+        "type": "liability",
         "currency": "LYD",
-        "parent_code": "1201"
+        "parent_code": "212"
     },
     {
-        "account_code": "12012",
-        "name": "عدد و الادوات المصنع",
-        "type": "asset",
+        "account_code": "2122",
+        "name": "دائنون مقص فاين",
+        "type": "liability",
         "currency": "LYD",
-        "parent_code": "1201"
+        "parent_code": "212"
     },
     {
-        "account_code": "12013",
-        "name": "اثاث المصنع",
-        "type": "asset",
+        "account_code": "2123",
+        "name": "دائنون معرض فاين",
+        "type": "liability",
         "currency": "LYD",
-        "parent_code": "1201"
+        "parent_code": "212"
     },
     {
-        "account_code": "12014",
-        "name": "المباني وعقارات المصنع",
-        "type": "asset",
+        "account_code": "2124",
+        "name": "الامانات والودائع",
+        "type": "liability",
         "currency": "LYD",
-        "parent_code": "1201"
+        "parent_code": "212"
     },
     {
-        "account_code": "12015",
-        "name": "الاالات و المعدات المصنع",
-        "type": "asset",
+        "account_code": "2131",
+        "name": "المصروفات المستحقة على مصنع فاين",
+        "type": "liability",
         "currency": "LYD",
-        "parent_code": "1201"
+        "parent_code": "213"
     },
     {
-        "account_code": "12016",
-        "name": "الاجهزة الاكترونية المصنع",
-        "type": "asset",
+        "account_code": "2132",
+        "name": "المصروفات المستحقة على مقص فاين",
+        "type": "liability",
         "currency": "LYD",
-        "parent_code": "1201"
+        "parent_code": "213"
     },
     {
-        "account_code": "12017",
-        "name": "سيارات المصنع",
-        "type": "asset",
+        "account_code": "2133",
+        "name": "المصروفات المستحقة على معرض فاين",
+        "type": "liability",
         "currency": "LYD",
-        "parent_code": "1201"
+        "parent_code": "213"
     },
     {
-        "account_code": "12021",
-        "name": "الالات و معدات المقص",
-        "type": "asset",
+        "account_code": "2211",
+        "name": "مجمع اهلاكات المصنع",
+        "type": "liability",
         "currency": "LYD",
-        "parent_code": "1202"
+        "parent_code": "221"
     },
     {
-        "account_code": "12022",
-        "name": "عدد و الادوات المقص",
-        "type": "asset",
+        "account_code": "2212",
+        "name": "مجمع اهلاكات المقص",
+        "type": "liability",
         "currency": "LYD",
-        "parent_code": "1202"
+        "parent_code": "221"
     },
     {
-        "account_code": "12023",
-        "name": "اثاث المقص",
-        "type": "asset",
+        "account_code": "2213",
+        "name": "مجمع اهلاكات المعرض",
+        "type": "liability",
         "currency": "LYD",
-        "parent_code": "1202"
+        "parent_code": "221"
     },
     {
-        "account_code": "12024",
-        "name": "الاجهزة الاكترونية المقص",
-        "type": "asset",
+        "account_code": "4141",
+        "name": "ايراد الخصم المكتسب لمصنع فاين",
+        "type": "revenue",
         "currency": "LYD",
-        "parent_code": "1202"
+        "parent_code": "414"
     },
     {
-        "account_code": "12031",
-        "name": "الاالات و المعدات المعرض",
-        "type": "asset",
+        "account_code": "4142",
+        "name": "ايراد الخصم المكتسب لمقص فاين",
+        "type": "revenue",
         "currency": "LYD",
-        "parent_code": "1203"
+        "parent_code": "414"
     },
     {
-        "account_code": "12032",
-        "name": "اثاث المعرض",
-        "type": "asset",
+        "account_code": "4143",
+        "name": "ايراد الخصم المكتسب لمعرض فاين",
+        "type": "revenue",
         "currency": "LYD",
-        "parent_code": "1203"
+        "parent_code": "414"
     },
     {
-        "account_code": "12033",
-        "name": "الاجهزة الالكترونية المعرض",
+        "account_code": "4151",
+        "name": "ايراد خصم المشتريات لمصنع فاين",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "415"
+    },
+    {
+        "account_code": "4152",
+        "name": "ايراد خصم المشتريات لمقص فاين",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "415"
+    },
+    {
+        "account_code": "4153",
+        "name": "ايراد خصم المشتريات لمعرض فاين",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "415"
+    },
+    {
+        "account_code": "4161",
+        "name": "ايراد فائض المخزون لمصنع فاين",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "416"
+    },
+    {
+        "account_code": "4162",
+        "name": "ايراد فائض المخزون لمقص فاين",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "416"
+    },
+    {
+        "account_code": "4163",
+        "name": "ايراد فائض المخزون لمعرض فاين",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "416"
+    },
+    {
+        "account_code": "4171",
+        "name": "ايراد خصم الموظفين لمصنع فاين",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "417"
+    },
+    {
+        "account_code": "4172",
+        "name": "ايراد خصم الموظفين لمقص فاين",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "417"
+    },
+    {
+        "account_code": "4173",
+        "name": "ايراد خصم الموظفين لمعرض فاين",
+        "type": "revenue",
+        "currency": "LYD",
+        "parent_code": "417"
+    },
+    {
+        "account_code": "5111",
+        "name": "المشتريات",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "511"
+    },
+    {
+        "account_code": "5112",
+        "name": "مردودات المبيعات",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "511"
+    },
+    {
+        "account_code": "5113",
+        "name": "خصم المبيعات المسموح بة",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "511"
+    },
+    {
+        "account_code": "5114",
+        "name": "مصاريف المشتريات",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "511"
+    },
+    {
+        "account_code": "5121",
+        "name": "مصروف الكهرباء",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "512"
+    },
+    {
+        "account_code": "5122",
+        "name": "مصروف المياه",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "512"
+    },
+    {
+        "account_code": "5123",
+        "name": "مصروف صيانة الالات والمعدات والسيارات",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "512"
+    },
+    {
+        "account_code": "5124",
+        "name": "مصروف مهمات و ادوات الانتاج",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "512"
+    },
+    {
+        "account_code": "5125",
+        "name": "مصروف زيوت وشحوم",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "512"
+    },
+    {
+        "account_code": "5126",
+        "name": "مصروف المحروقات",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "512"
+    },
+    {
+        "account_code": "5127",
+        "name": "مصروف مرتبات التشغيل والمكافات",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "512"
+    },
+    {
+        "account_code": "5128",
+        "name": "مصروف الاهلاكات",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "512"
+    },
+    {
+        "account_code": "5129",
+        "name": "مصروفات البيع والتسويق",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "512"
+    },
+    {
+        "account_code": "51210",
+        "name": "مصروفات النثرية للاقسام التشغلية",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "512"
+    },
+    {
+        "account_code": "122005",
+        "name": "عميل - نورالدين الهوني",
         "type": "asset",
         "currency": "LYD",
-        "parent_code": "1203"
+        "parent_code": "122"
+    },
+    {
+        "account_code": "122006",
+        "name": "عميل - صهيب",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "122"
+    },
+    {
+        "account_code": "122007",
+        "name": "عميل - القذافي",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "122"
+    },
+    {
+        "account_code": "122008",
+        "name": "عميل - high",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "122"
     },
     {
         "account_code": "11111",
@@ -980,6 +1232,13 @@
         "parent_code": "1126"
     },
     {
+        "account_code": "11281",
+        "name": "مصرف شمال أفريقيا دولار $",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "1128"
+    },
+    {
         "account_code": "11431",
         "name": "سلف الموظفين المصنع",
         "type": "asset",
@@ -987,31 +1246,486 @@
         "parent_code": "1143"
     },
     {
-        "account_code": "110432",
+        "account_code": "11432",
         "name": "سلف الموظفين المقص",
         "type": "asset",
         "currency": "LYD",
         "parent_code": "1143"
     },
     {
-        "account_code": "110433",
+        "account_code": "11433",
         "name": "سلف الموظفين المعرض",
         "type": "asset",
         "currency": "LYD",
         "parent_code": "1143"
     },
     {
+        "account_code": "22111",
+        "name": "مجمع اهلاك الالات والمعدات والسيارات لمصنع فاين",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "2211"
+    },
+    {
+        "account_code": "22112",
+        "name": "مجمع اهلاك المبانى لمصنع فاين",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "2211"
+    },
+    {
+        "account_code": "22113",
+        "name": "مجمع اهلاك الاجهزة الكترونيةوالادوات والاثاث لمصنع فاين",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "2211"
+    },
+    {
+        "account_code": "22121",
+        "name": "مجمع اهلاك الالات والمعدات والسيارات لمقص فاين",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "2212"
+    },
+    {
+        "account_code": "22122",
+        "name": "مجمع اهلاك المبانى لمقص فاين",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "2212"
+    },
+    {
+        "account_code": "22123",
+        "name": "مجمع اهلاك الاجهزة الكترونيةوالادوات والاثاث لمقص فاين",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "2212"
+    },
+    {
+        "account_code": "22131",
+        "name": "مجمع اهلاك الالات والمعدات والسيارات لمعرض فاين",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "2213"
+    },
+    {
+        "account_code": "22132",
+        "name": "مجمع اهلاك المبانى لمعرض فاين",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "2213"
+    },
+    {
+        "account_code": "22133",
+        "name": "مجمع اهلاك الالات والمعدات والسيارات لمعرض فاين",
+        "type": "liability",
+        "currency": "LYD",
+        "parent_code": "2213"
+    },
+    {
+        "account_code": "51111",
+        "name": "مشتريات مصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5111"
+    },
+    {
+        "account_code": "51112",
+        "name": "مشتريات مقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5111"
+    },
+    {
+        "account_code": "51113",
+        "name": "مشتريات معرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5111"
+    },
+    {
+        "account_code": "51121",
+        "name": "مردودات المبيعات لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5112"
+    },
+    {
+        "account_code": "51122",
+        "name": "مردودات المبيعات لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5112"
+    },
+    {
+        "account_code": "51123",
+        "name": "مردودات المبيعات لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5112"
+    },
+    {
+        "account_code": "51131",
+        "name": "خصم المبيعات المسموح بة لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5113"
+    },
+    {
+        "account_code": "51132",
+        "name": "خصم المبيعات المسموح بة لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5113"
+    },
+    {
+        "account_code": "51133",
+        "name": "خصم المبيعات المسموح بة لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5113"
+    },
+    {
+        "account_code": "51141",
+        "name": "مصاريف المشتريات لمصنع فابن",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5114"
+    },
+    {
+        "account_code": "51142",
+        "name": "مصاريف المشتريات لمقص فابن",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5114"
+    },
+    {
+        "account_code": "51143",
+        "name": "مصاريف المشتريات لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5114"
+    },
+    {
+        "account_code": "51211",
+        "name": "مصروفات الكهرباء لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5121"
+    },
+    {
+        "account_code": "51212",
+        "name": "مصروفات الكهرباء لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5121"
+    },
+    {
+        "account_code": "51213",
+        "name": "مصروفات الكهرباء لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5121"
+    },
+    {
+        "account_code": "51221",
+        "name": "مصروف مياه لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5122"
+    },
+    {
+        "account_code": "51222",
+        "name": "مصروف مياه لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5122"
+    },
+    {
+        "account_code": "51223",
+        "name": "مصروف مياه لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5122"
+    },
+    {
+        "account_code": "51231",
+        "name": "مصروفات صيانة الاالات والمعدات والسيارات لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5123"
+    },
+    {
+        "account_code": "51232",
+        "name": "مصروفات صيانة الاالات والمعدات والسيارات لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5123"
+    },
+    {
+        "account_code": "51233",
+        "name": "مصروفات صيانة الاالات والمعدات والسيارات لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5123"
+    },
+    {
+        "account_code": "51241",
+        "name": "مصروف مهمات و ادوات الانتاج لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5124"
+    },
+    {
+        "account_code": "51242",
+        "name": "مصروف مهمات و ادوات الانتاج لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5124"
+    },
+    {
+        "account_code": "51243",
+        "name": "مصروف مهمات و ادوات الانتاج لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5124"
+    },
+    {
+        "account_code": "51251",
+        "name": "مصروف زيوت وشحوم لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5125"
+    },
+    {
+        "account_code": "51252",
+        "name": "مصروف زيوت وشحوم لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5125"
+    },
+    {
+        "account_code": "51253",
+        "name": "مصروف زيوت وشحوم لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5125"
+    },
+    {
+        "account_code": "51261",
+        "name": "مصروف المحروقات لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5126"
+    },
+    {
+        "account_code": "51262",
+        "name": "مصروف المحروقات لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5126"
+    },
+    {
+        "account_code": "51263",
+        "name": "مصروف المحروقات لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5126"
+    },
+    {
+        "account_code": "51271",
+        "name": "مصروف مرتبات التشغيل لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5127"
+    },
+    {
+        "account_code": "51272",
+        "name": "مصروف مرتبات التشغيل لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5127"
+    },
+    {
+        "account_code": "51273",
+        "name": "مصروف مرتبات التشغيل لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5127"
+    },
+    {
+        "account_code": "51281",
+        "name": "مصروف اهلاكات مصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5128"
+    },
+    {
+        "account_code": "51282",
+        "name": "مصروف اهلاكات مقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5128"
+    },
+    {
+        "account_code": "51283",
+        "name": "مصروف اهلاكات معرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5128"
+    },
+    {
+        "account_code": "51291",
+        "name": "مرتبات وعمولات مندوب المبيعات",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5129"
+    },
+    {
+        "account_code": "51292",
+        "name": "مصروفات نقل وشحن المبيعات",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5129"
+    },
+    {
+        "account_code": "51293",
+        "name": "مصروفات نقل وشحن المبيعات",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5129"
+    },
+    {
+        "account_code": "51294",
+        "name": "مصروفات دعاية واعلان",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5129"
+    },
+    {
+        "account_code": "51295",
+        "name": "مصروفات معارض ومخازن التوزيع",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "5129"
+    },
+    {
         "account_code": "120311",
         "name": "الاالات و المعدات الورشة",
         "type": "asset",
         "currency": "LYD",
-        "parent_code": "12031"
+        "parent_code": "1231"
     },
     {
         "account_code": "120312",
         "name": "الاالات و المعدات قسم الخياطة",
         "type": "asset",
         "currency": "LYD",
-        "parent_code": "12031"
+        "parent_code": "1231"
+    },
+    {
+        "account_code": "512101",
+        "name": "مصروفات النثرية للاقسام التشغلية لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51210"
+    },
+    {
+        "account_code": "512102",
+        "name": "مصروفات النثرية للاقسام التشغلية لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51210"
+    },
+    {
+        "account_code": "512103",
+        "name": "مصروفات النثرية للاقسام التشغلية لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51210"
+    },
+    {
+        "account_code": "1141001",
+        "name": "شــ كمفورت لصناعة الاسفنج\/ لطفي نعاس- بنغازي",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "1141"
+    },
+    {
+        "account_code": "1141002",
+        "name": "أشرف الدرسي",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "1141"
+    },
+    {
+        "account_code": "1141003",
+        "name": "نبيل البرغثي- بنغازي",
+        "type": "asset",
+        "currency": "LYD",
+        "parent_code": "1141"
+    },
+    {
+        "account_code": "512811",
+        "name": "مصروف اهلاك الالات ومعدات وسيارات لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51281"
+    },
+    {
+        "account_code": "512812",
+        "name": "مصروف اهلاك المبانى لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51281"
+    },
+    {
+        "account_code": "512813",
+        "name": "مصروف اهلاك الاجهزة الكترونية والادوات المكتبية والاثاث لمصنع فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51281"
+    },
+    {
+        "account_code": "512821",
+        "name": "مصروف اهلاك الالات والمعدات والسيارات لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51282"
+    },
+    {
+        "account_code": "512822",
+        "name": "مصروف اهلاك المبانى لمقص",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51282"
+    },
+    {
+        "account_code": "512823",
+        "name": "مصروف اهلاك الاجهزة الكترونية والادوات المكتبية والاثاث لمقص فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51282"
+    },
+    {
+        "account_code": "512831",
+        "name": "مصروف اهلاك الالات والمعدات والسيارات لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51283"
+    },
+    {
+        "account_code": "512832",
+        "name": "مصروف اهلاك المبانى لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51283"
+    },
+    {
+        "account_code": "512833",
+        "name": "مصروف اهلاك الاجهزة الكترونية والادوات المكتبية والاثاث لمعرض فاين",
+        "type": "expense",
+        "currency": "LYD",
+        "parent_code": "51283"
     }
 ]

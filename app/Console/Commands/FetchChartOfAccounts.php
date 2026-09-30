@@ -4,24 +4,30 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Models\AppVersion;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 
 final class FetchChartOfAccounts extends Command
 {
     protected $signature = 'coa:fetch
-        {--url=http://192.168.2.200:8000 : The remote backend base URL}
-        {--email=owner@erp.com : Login email}
+        {--ip= : Server IP address or host (e.g. 192.168.1.50 or 192.168.1.50:8000)}
+        {--port=8000 : Server port (defaults to 8000)}
+        {--url= : Full remote backend base URL (overrides --ip)}
+        {--login= : Login identifier (email or phone number)}
+        {--email=owner@erp.com : Login email (alias for login)}
+        {--phone= : Login phone number (alias for login)}
         {--password=password : Login password}
         {--token= : Pre-existing Bearer token (optional)}
         {--output=database/data/chart_of_accounts.json : Output JSON file path}
+        {--app-version= : Desktop app version to send in X-Desktop-Version header (defaults to latest)}
         {--raw : Keep exact remote parent references without decoupling accounts 6 and 7}';
 
     protected $description = 'Fetch Chart of Accounts data from remote backend and save to a JSON file';
 
     public function handle(): int
     {
-        $baseUrl = rtrim((string) $this->option('url'), '/');
+        $baseUrl = $this->resolveBaseUrl();
         $outputFile = (string) $this->option('output');
         $token = $this->option('token');
         $raw = (bool) $this->option('raw');
@@ -31,20 +37,31 @@ final class FetchChartOfAccounts extends Command
             ? $outputFile
             : base_path($outputFile);
 
-        $this->info("Connecting to remote backend at {$baseUrl}…");
+        $appVersion = (string) $this->option('app-version');
+        if ($appVersion === '') {
+            $latestDb = AppVersion::latest()->value('desktop_version');
+            $appVersion = $latestDb && version_compare((string) $latestDb, '1.0.40', '>=')
+                ? (string) $latestDb
+                : '1.0.40';
+        }
+
+        $headers = [
+            'X-Desktop-Version' => $appVersion,
+            'Accept' => 'application/json',
+        ];
+
+        $this->info("Connecting to remote backend at {$baseUrl} (client version: {$appVersion})…");
 
         if (empty($token)) {
-            $email = (string) $this->option('email');
+            $identifier = (string) ($this->option('login') ?: $this->option('phone') ?: $this->option('email'));
             $password = (string) $this->option('password');
 
-            $this->line("Authenticating as {$email}…");
+            $this->line("Authenticating as {$identifier}…");
             $loginRes = Http::timeout(10)
-                ->withHeaders([
-                    'X-Desktop-Version' => '1.0.30',
-                    'Accept' => 'application/json',
-                ])
+                ->withHeaders($headers)
                 ->post("{$baseUrl}/api/v1/auth/login", [
-                    'email' => $email,
+                    'login' => $identifier,
+                    'email' => $identifier,
                     'password' => $password,
                 ]);
 
@@ -65,10 +82,7 @@ final class FetchChartOfAccounts extends Command
         $this->line('Fetching accounts…');
         $accountsRes = Http::timeout(15)
             ->withToken((string) $token)
-            ->withHeaders([
-                'X-Desktop-Version' => '1.0.30',
-                'Accept' => 'application/json',
-            ])
+            ->withHeaders($headers)
             ->get("{$baseUrl}/api/v1/accounts");
 
         if ($accountsRes->failed()) {
@@ -104,13 +118,19 @@ final class FetchChartOfAccounts extends Command
                 $parentCode = null;
             }
 
-            $catalog[$code] = [
+            $entry = [
                 'account_code' => $code,
                 'name' => (string) $acc['name'],
                 'type' => (string) $acc['type'],
                 'currency' => (string) ($acc['currency'] ?? 'LYD'),
                 'parent_code' => $parentCode,
             ];
+
+            if (isset($acc['section']) && $acc['section'] !== null) {
+                $entry['section'] = (string) $acc['section'];
+            }
+
+            $catalog[$code] = $entry;
         }
 
         // Topologically sort accounts: roots first, followed by descendants by depth
@@ -153,5 +173,46 @@ final class FetchChartOfAccounts extends Command
         $this->info("Successfully fetched {$count} accounts and saved to {$outputFile}.");
 
         return self::SUCCESS;
+    }
+
+    protected function resolveBaseUrl(): string
+    {
+        $url = trim((string) $this->option('url'));
+        if ($url !== '') {
+            return $this->formatUrlFromHost($url);
+        }
+
+        $ip = trim((string) $this->option('ip'));
+        $port = trim((string) ($this->option('port') ?: '8000'));
+
+        if ($ip !== '') {
+            return $this->formatUrlFromHost($ip, $port);
+        }
+
+        if ($this->input->isInteractive()) {
+            $input = (string) $this->ask('Server IP address or URL', '192.168.2.200:8000');
+
+            return $this->formatUrlFromHost($input, $port);
+        }
+
+        return $this->formatUrlFromHost('192.168.2.200:8000', $port);
+    }
+
+    protected function formatUrlFromHost(string $input, string $defaultPort = '8000'): string
+    {
+        $input = trim($input);
+        if ($input === '') {
+            $input = '192.168.2.200:8000';
+        }
+
+        if (str_starts_with($input, 'http://') || str_starts_with($input, 'https://')) {
+            return rtrim($input, '/');
+        }
+
+        if (str_contains($input, ':')) {
+            return 'http://'.rtrim($input, '/');
+        }
+
+        return "http://{$input}:{$defaultPort}";
     }
 }
