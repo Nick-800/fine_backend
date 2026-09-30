@@ -18,6 +18,7 @@ final class EntityResource extends JsonResource
             'tax_number' => $this->tax_number,
             'user_id' => $this->user_id,
             'is_active' => (bool) $this->is_active,
+            'phone' => $this->relationLoaded('primaryContact') ? $this->primaryContact?->phone : null,
             'city' => $this->relationLoaded('primaryContact') ? $this->primaryContact?->city : null,
             'address' => $this->relationLoaded('primaryContact') ? $this->primaryContact?->address : null,
             'primary_contact' => $this->whenLoaded('primaryContact'),

@@ -75,3 +75,36 @@ test('authenticated user can list and store suppliers', function () {
     $listResponse->assertStatus(200)
         ->assertJsonCount(1, 'data');
 });
+
+test('authenticated user can update supplier details', function () {
+    $supplier = \App\Models\Supplier::create([
+        'operating_unit_id' => $this->operatingUnit->id,
+        'name' => 'Original Supplier',
+        'contact' => 'original@supplier.com',
+        'default_currency' => 'USD',
+        'address' => 'Old Address',
+    ]);
+
+    $response = $this->actingAs($this->user)
+        ->withHeader('X-Operating-Unit-ID', $this->operatingUnit->id)
+        ->putJson("/api/v1/suppliers/{$supplier->id}", [
+            'name' => 'Updated Supplier LLC',
+            'contact' => '+218910000000',
+            'default_currency' => 'EUR',
+            'address' => 'Tripoli Harbor Zone',
+        ]);
+
+    $response->assertStatus(200)
+        ->assertJsonPath('data.name', 'Updated Supplier LLC')
+        ->assertJsonPath('data.contact', '+218910000000')
+        ->assertJsonPath('data.default_currency', 'EUR')
+        ->assertJsonPath('data.address', 'Tripoli Harbor Zone');
+
+    $this->assertDatabaseHas('suppliers', [
+        'id' => $supplier->id,
+        'name' => 'Updated Supplier LLC',
+        'contact' => '+218910000000',
+        'default_currency' => 'EUR',
+        'address' => 'Tripoli Harbor Zone',
+    ]);
+});

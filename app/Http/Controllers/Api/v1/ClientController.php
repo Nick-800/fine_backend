@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\v1;
 
+use App\Enums\ClientStatus;
 use App\Enums\EntityRoleType;
 use App\Enums\EntityType;
 use App\Http\Controllers\Controller;
@@ -20,6 +21,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 final class ClientController extends Controller
 {
@@ -138,9 +140,13 @@ final class ClientController extends Controller
      */
     public function update(Request $request, string $id, CoaLinkService $coaLinkService): ClientResource
     {
-        $client = Client::findOrFail($id);
-
         $request->validate([
+            'name' => 'sometimes|required|string|max:255',
+            'entity_type' => ['sometimes', 'required', Rule::enum(EntityType::class)],
+            'tax_number' => 'nullable|string|max:100',
+            'phone' => 'nullable|string|max:50',
+            'city' => 'nullable|string|max:100',
+            'address' => 'nullable|string|max:500',
             'operating_unit_id' => 'sometimes|required|uuid|exists:operating_units,id',
             'credit_limit' => 'sometimes|numeric|min:0',
             'payment_terms_days' => 'sometimes|integer|min:0',
@@ -151,30 +157,69 @@ final class ClientController extends Controller
             'new_account.account_code' => 'required_if:coa_action,create_new|nullable|string|max:50|unique:accounts,account_code',
             'new_account.name' => 'required_if:coa_action,create_new|nullable|string|max:255',
             'new_account.currency' => 'nullable|string|size:3',
-            'status' => 'sometimes|required|string',
+            'status' => ['sometimes', 'required', Rule::enum(ClientStatus::class)],
             'record_version' => 'required|integer',
         ]);
 
-        $accountId = $client->account_id;
-        if ($request->has('coa_action') || $request->has('account_id')) {
-            $accountId = $coaLinkService->resolveOrProvisionAccount(
-                $request->only(['coa_action', 'account_id', 'new_account']),
-                $request->user()?->company_id
+        $client = DB::transaction(function () use ($request, $id, $coaLinkService) {
+            $client = Client::with('entity')->findOrFail($id);
+
+            $accountId = $client->account_id;
+            if ($request->has('coa_action') || $request->has('account_id')) {
+                $accountId = $coaLinkService->resolveOrProvisionAccount(
+                    $request->only(['coa_action', 'account_id', 'new_account']),
+                    $request->user()?->company_id
+                );
+            }
+
+            $data = $request->only(
+                'operating_unit_id',
+                'credit_limit',
+                'payment_terms_days',
+                'status',
+                'record_version'
             );
-        }
+            $data['account_id'] = $accountId;
 
-        $data = $request->only(
-            'operating_unit_id',
-            'credit_limit',
-            'payment_terms_days',
-            'status',
-            'record_version'
-        );
-        $data['account_id'] = $accountId;
+            $client->update($data);
 
-        $client->update($data);
+            if ($client->entity) {
+                $entityData = [];
+                if ($request->has('name')) {
+                    $entityData['name'] = $request->input('name');
+                }
+                if ($request->has('entity_type')) {
+                    $entityData['entity_type'] = $request->input('entity_type');
+                }
+                if ($request->has('tax_number')) {
+                    $entityData['tax_number'] = $request->input('tax_number');
+                }
+                if (!empty($entityData)) {
+                    $client->entity->update($entityData);
+                }
 
-        return new ClientResource($client->load(['entity', 'operatingUnit', 'account']));
+                if ($request->has('phone') || $request->has('city') || $request->has('address')) {
+                    $contactData = ['country' => 'LY'];
+                    if ($request->has('phone')) {
+                        $contactData['phone'] = $request->input('phone');
+                    }
+                    if ($request->has('city')) {
+                        $contactData['city'] = $request->input('city');
+                    }
+                    if ($request->has('address')) {
+                        $contactData['address'] = $request->input('address');
+                    }
+                    $client->entity->contacts()->updateOrCreate(
+                        ['is_primary' => true],
+                        $contactData
+                    );
+                }
+            }
+
+            return $client->load(['entity.primaryContact', 'operatingUnit', 'account']);
+        });
+
+        return new ClientResource($client);
     }
 
     /**

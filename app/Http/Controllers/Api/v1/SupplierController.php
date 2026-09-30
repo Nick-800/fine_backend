@@ -58,6 +58,7 @@ final class SupplierController extends Controller
         $supplier = Supplier::findOrFail($id);
 
         $request->validate([
+            'operating_unit_id' => 'sometimes|required|uuid|exists:operating_units,id',
             'name' => 'sometimes|required|string|max:255',
             'contact' => 'nullable|string|max:255',
             'default_currency' => 'sometimes|string|size:3',
@@ -79,7 +80,7 @@ final class SupplierController extends Controller
             );
         }
 
-        $data = $request->only('name', 'contact', 'default_currency', 'address');
+        $data = $request->only('operating_unit_id', 'name', 'contact', 'default_currency', 'address');
         $data['account_id'] = $accountId;
 
         $supplier->update($data);
