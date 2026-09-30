@@ -8,6 +8,7 @@ use App\Enums\ClientStatus;
 use App\Enums\EmployeeStatus;
 use App\Enums\EntityRoleType;
 use App\Enums\EntityType;
+use App\Enums\InventoryEventType;
 use App\Enums\LandedCostType;
 use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
@@ -28,6 +29,7 @@ use App\Models\ItemCategory;
 use App\Models\JournalEntry;
 use App\Models\LandedCostLine;
 use App\Models\OperatingUnit;
+use App\Models\OperatingUnitAccount;
 use App\Models\PaymentRequest;
 use App\Models\Permission;
 use App\Models\ProductionBatch;
@@ -73,6 +75,7 @@ class SystemBootstrapSeeder extends Seeder
         $this->seedFxRates();
         $this->seedCashAccountsAndOpeningBalance($units['procurement']);
         $this->seedSalesTreasuries($units);
+        $this->seedPerUnitInventoryAccounts($units);
 
         $this->seedInventoryMasterData($units['foam']);
         $this->seedEntityBackedClient($units['procurement']);
@@ -256,6 +259,73 @@ class SystemBootstrapSeeder extends Seeder
             ->where('description', 'Opening treasury cash (bootstrap)')
             ->whereHas('lines', fn ($q) => $q->where('operating_unit_id', $unit->id))
             ->exists();
+    }
+
+    /**
+     * Pre-fill every operating unit's chart-of-accounts event mapping so a
+     * fresh install can move stock immediately. Each unit gets the standard
+     * sub-account codes for the 12 events:
+     *
+     *   - purchases / opening / ending / purchase_returns: 111 (raw materials)
+     *   - sales: unit's own revenue_account_id (set elsewhere) or 41 header
+     *   - sales_returns: 41 header (sales returns reduce revenue)
+     *   - cogs: 51 (cost of goods sold)
+     *   - waste: 52 (inventory & production variance)
+     *   - earned_discount / granted_discount / sales_commission: 41 header
+     *   - transport_in: 53 (transport in)
+     *
+     * Re-runnable: existing rows are skipped via the unique index on
+     * (operating_unit_id, event_type).
+     *
+     * @param  array<string, OperatingUnit>  $units
+     */
+    private function seedPerUnitInventoryAccounts(array $units): void
+    {
+        $defaultsByEvent = [
+            InventoryEventType::Opening->value => '111',
+            InventoryEventType::Ending->value => '111',
+            InventoryEventType::Purchases->value => '111',
+            InventoryEventType::PurchaseReturns->value => '111',
+            InventoryEventType::Cogs->value => '51',
+            InventoryEventType::Waste->value => '52',
+            InventoryEventType::EarnedDiscount->value => '41',
+            InventoryEventType::GrantedDiscount->value => '41',
+            InventoryEventType::TransportIn->value => '53',
+            InventoryEventType::SalesCommission->value => '41',
+            InventoryEventType::SalesReturns->value => '41',
+        ];
+
+        foreach ($units as $unit) {
+            $salesAccountCode = $unit->revenueAccount?->account_code ?? '41';
+            foreach ($defaultsByEvent as $event => $code) {
+                if (OperatingUnitAccount::where('operating_unit_id', $unit->id)
+                    ->where('event_type', $event)->exists()) {
+                    continue;
+                }
+                $account = Account::where('account_code', $code)->first();
+                if ($account === null) {
+                    continue;
+                }
+                OperatingUnitAccount::create([
+                    'operating_unit_id' => $unit->id,
+                    'event_type' => $event,
+                    'account_id' => $account->id,
+                ]);
+            }
+
+            if (! OperatingUnitAccount::where('operating_unit_id', $unit->id)
+                ->where('event_type', InventoryEventType::Sales->value)->exists()) {
+                $salesAccount = $unit->revenueAccount
+                    ?? Account::where('account_code', '41')->first();
+                if ($salesAccount !== null) {
+                    OperatingUnitAccount::create([
+                        'operating_unit_id' => $unit->id,
+                        'event_type' => InventoryEventType::Sales->value,
+                        'account_id' => $salesAccount->id,
+                    ]);
+                }
+            }
+        }
     }
 
     private function seedInventoryMasterData(OperatingUnit $foamUnit): void

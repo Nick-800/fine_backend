@@ -10,16 +10,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * One row per (inventory_item, event_type) → links an item to a specific
- * chart-of-accounts sub-account. Resolved by `InventoryItem::accountFor()`
- * during posting — absence triggers `INVENTORY_ACCOUNT_NOT_LINKED` 422.
+ * One row per (operating_unit, event_type) → links an operating unit to a
+ * specific chart-of-accounts sub-account. Resolved by
+ * `OperatingUnit::accountFor()` during posting — absence triggers
+ * `INVENTORY_ACCOUNT_NOT_LINKED` 422.
  */
-final class InventoryItemAccount extends Model
+final class OperatingUnitAccount extends Model
 {
     use HasUuids;
 
     protected $fillable = [
-        'inventory_item_id',
+        'operating_unit_id',
         'event_type',
         'account_id',
     ];
@@ -28,9 +29,9 @@ final class InventoryItemAccount extends Model
         'event_type' => InventoryEventType::class,
     ];
 
-    public function inventoryItem(): BelongsTo
+    public function operatingUnit(): BelongsTo
     {
-        return $this->belongsTo(InventoryItem::class);
+        return $this->belongsTo(OperatingUnit::class);
     }
 
     public function account(): BelongsTo

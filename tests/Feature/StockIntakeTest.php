@@ -6,10 +6,10 @@ use App\Enums\InventoryEventType;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\InventoryItem;
-use App\Models\InventoryItemAccount;
 use App\Models\InventoryMovement;
 use App\Models\JournalEntry;
 use App\Models\OperatingUnit;
+use App\Models\OperatingUnitAccount;
 use App\Models\PurchaseOrder;
 use App\Models\Role;
 use App\Models\StockLot;
@@ -41,10 +41,10 @@ beforeEach(function () {
         'name' => 'Fabric', 'code' => 'FAB-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'meter',
     ]);
 
-    // Link the Purchases override so intake can post. Without it, the new
-    // INVENTORY_ACCOUNT_NOT_LINKED guard hard-fails every intake.
-    InventoryItemAccount::create([
-        'inventory_item_id' => $this->fabric->id,
+    // Link the unit's Purchases override so intake can post. Without it, the
+    // new INVENTORY_ACCOUNT_NOT_LINKED guard hard-fails every intake.
+    OperatingUnitAccount::create([
+        'operating_unit_id' => $this->unit->id,
         'event_type' => InventoryEventType::Purchases->value,
         'account_id' => Account::where('account_code', '111')->sole()->id,
     ]);
@@ -138,12 +138,14 @@ test('finished-good item types land on their own inventory accounts', function (
         'name' => 'Foam Block', 'code' => 'BLK-1', 'item_type' => 'foam_block', 'unit_of_measure' => 'm3',
     ]);
 
-    // The new per-event override guard requires an explicit Purchases link.
-    InventoryItemAccount::create([
-        'inventory_item_id' => $block->id,
-        'event_type' => InventoryEventType::Purchases->value,
-        'account_id' => Account::where('account_code', '1131')->sole()->id,
-    ]);
+    // The per-event override guard requires an explicit Purchases link on
+    // the unit; re-route this unit to the foam-block account 1131 so the
+    // intake lands on the right inventory sub-account.
+    OperatingUnitAccount::where('operating_unit_id', $this->unit->id)
+        ->where('event_type', InventoryEventType::Purchases->value)
+        ->update([
+            'account_id' => Account::where('account_code', '1131')->sole()->id,
+        ]);
 
     // Serialized items keep their rules on this path too: two blocks in one
     // lot is refused (SERIALIZED_QUANTITY_INVALID)…

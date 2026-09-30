@@ -36,6 +36,18 @@ final class OperatingUnitResource extends JsonResource
                 'created_at' => $w->created_at?->toIso8601String(),
                 'updated_at' => $w->updated_at?->toIso8601String(),
             ])),
+            'accounts' => $this->whenLoaded('accounts', fn () => $this->accounts->map(fn ($a) => [
+                'id' => $a->id,
+                'event_type' => $a->event_type->value,
+                'event_label' => $a->event_type->arabicLabel(),
+                'account' => $a->account ? [
+                    'id' => $a->account->id,
+                    'account_code' => $a->account->account_code,
+                    'name' => $a->account->name,
+                    'type' => $a->account->type,
+                    'currency' => $a->account->currency,
+                ] : null,
+            ])),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

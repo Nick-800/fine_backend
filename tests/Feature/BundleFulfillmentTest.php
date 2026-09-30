@@ -49,6 +49,9 @@ beforeEach(function () {
     $this->storeWarehouse = Warehouse::create(['operating_unit_id' => $this->store->id, 'name' => 'Store WH', 'code' => 'WH-S']);
     $this->cutterWarehouse = Warehouse::create(['operating_unit_id' => $this->cutter->id, 'name' => 'Cutter WH', 'code' => 'WH-C']);
 
+    seedUnitAccounts($this->store);
+    seedUnitAccounts($this->cutter, ['purchases' => '1132']);
+
     $this->user = User::factory()->create(['must_change_password' => false]);
     $role = Role::create(['name' => 'Cashier', 'slug' => 'pos-cashier']);
     UserRole::create(['user_id' => $this->user->id, 'role_id' => $role->id, 'operating_unit_id' => $this->store->id]);
@@ -266,8 +269,13 @@ test('delivering hands the pieces over and books their cost, each from the unit 
     expect($tb['balanced'])->toBeTrue()
         ->and((float) $byCode['41']['credit'])->toBe(2500.0)
         ->and((float) $byCode['51']['debit'])->toBe(390.0)
-        ->and((float) $byCode['1132']['credit'])->toBe(270.0)
-        ->and((float) $byCode['111']['credit'])->toBe(120.0);
+        // The cutter's purchases account is 1132 (overridden in beforeEach
+        // to match what the legacy per-item-type mapping used to dispatch),
+        // so only the two seats that left the cutter warehouse land on it.
+        ->and((float) $byCode['1132']['credit'])->toBe(110.0)
+        // The showroom's purchases account is the raw-materials header 111;
+        // its two seats, two backs and 12 m of fabric all leave from there.
+        ->and((float) $byCode['111']['credit'])->toBe(280.0);
 
     // The cutter's two seats left the cutter's own subledger.
     $cutterCredit = JournalLine::where('operating_unit_id', $this->cutter->id)->sum('credit');

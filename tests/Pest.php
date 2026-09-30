@@ -1,5 +1,9 @@
 <?php
 
+use App\Enums\InventoryEventType;
+use App\Models\Account;
+use App\Models\OperatingUnit;
+use App\Models\OperatingUnitAccount;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -47,4 +51,56 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * Seed the standard per-unit chart-of-accounts mapping for one or more
+ * operating units. Idempotent: re-running is a no-op because the unique
+ * index on (operating_unit_id, event_type) blocks duplicates.
+ *
+ * Mirrors `SystemBootstrapSeeder::seedPerUnitInventoryAccounts()` so tests
+ * reflect what a fresh `migrate:fresh --seed` install looks like. Override
+ * individual events via the third argument when a test cares about a
+ * specific code (e.g. `['purchases' => '1134']`).
+ *
+ * @param  OperatingUnit|array<int, OperatingUnit>  $units
+ * @param  array<string, string>  $overrides  event value => account_code
+ */
+function seedUnitAccounts(OperatingUnit|array $units, array $overrides = []): void
+{
+    $units = is_array($units) ? $units : [$units];
+
+    $defaults = [
+        InventoryEventType::Opening->value => '111',
+        InventoryEventType::Ending->value => '111',
+        InventoryEventType::Purchases->value => '111',
+        InventoryEventType::PurchaseReturns->value => '111',
+        InventoryEventType::Sales->value => '41',
+        InventoryEventType::SalesReturns->value => '41',
+        InventoryEventType::Cogs->value => '51',
+        InventoryEventType::Waste->value => '52',
+        InventoryEventType::EarnedDiscount->value => '41',
+        InventoryEventType::GrantedDiscount->value => '41',
+        InventoryEventType::TransportIn->value => '53',
+        InventoryEventType::SalesCommission->value => '41',
+    ];
+
+    foreach ($units as $unit) {
+        $merged = array_merge($defaults, $overrides);
+        foreach ($merged as $event => $code) {
+            if (OperatingUnitAccount::where('operating_unit_id', $unit->id)
+                ->where('event_type', $event)->exists()) {
+                continue;
+            }
+            $account = Account::where('account_code', $code)->first();
+            if ($account === null) {
+                continue;
+            }
+            OperatingUnitAccount::create([
+                'operating_unit_id' => $unit->id,
+                'event_type' => $event,
+                'account_id' => $account->id,
+            ]);
+        }
+    }
 }

@@ -51,6 +51,8 @@ beforeEach(function () {
     $this->foreignWarehouse = Warehouse::create([
         'operating_unit_id' => $this->otherUnit->id, 'name' => 'Foreign WH', 'code' => 'WH-FOR',
     ]);
+
+    seedUnitAccounts([$this->unit, $this->otherUnit]);
     $this->supplier = Supplier::create([
         'operating_unit_id' => $this->unit->id, 'name' => 'Routing Vendor', 'default_currency' => 'LYD',
     ]);

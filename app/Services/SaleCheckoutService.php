@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\InventoryEventType;
 use App\Enums\SaleFulfillmentStatus;
 use App\Enums\SalesOrderStatus;
 use App\Exceptions\InvalidStateTransitionException;
+use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Exceptions\SalesRuleException;
 use App\Models\Bundle;
 use App\Models\CashAccount;
@@ -18,7 +20,6 @@ use App\Models\SalePayment;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderLine;
 use App\Models\User;
-use App\Support\InventoryAccounts;
 use App\Support\SalesAccounts;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -302,7 +303,18 @@ final class SaleCheckoutService
             $line->save();
 
             $totalCost += $cost;
-            $account = InventoryAccounts::forItemType($line->inventoryItem?->item_type);
+            $inventoryItem = $line->inventoryItem;
+            $orderUnit = $order->operatingUnit;
+            if ($inventoryItem === null || $orderUnit === null) {
+                throw new InvalidStateTransitionException(
+                    'Sales order line is missing its inventory item or operating unit.',
+                );
+            }
+            $purchasesAccount = $orderUnit->accountFor(InventoryEventType::Purchases);
+            if ($purchasesAccount === null) {
+                throw new InventoryAccountNotLinkedException($inventoryItem, $orderUnit, InventoryEventType::Purchases);
+            }
+            $account = $purchasesAccount->account_code;
             $costByAccount[$account] = round(($costByAccount[$account] ?? 0) + $cost, 4);
         }
 

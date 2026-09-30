@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\v1;
 
-use App\Enums\InventoryEventType;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
-use App\Models\InventoryItemAccount;
 use App\Models\ItemCategory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +15,7 @@ class InventoryItemController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = InventoryItem::with(['category', 'accounts.account']);
+        $query = InventoryItem::with(['category']);
 
         if ($request->has('category_id') && filled($request->query('category_id'))) {
             $query->where('category_id', $request->query('category_id'));
@@ -77,12 +75,12 @@ class InventoryItemController extends Controller
 
         $item = InventoryItem::create($validated);
 
-        return response()->json($item->load(['category', 'accounts.account']), 201);
+        return response()->json($item->load(['category']), 201);
     }
 
     public function show(string $id): JsonResponse
     {
-        $item = InventoryItem::with(['category', 'accounts.account'])->findOrFail($id);
+        $item = InventoryItem::with(['category'])->findOrFail($id);
 
         return response()->json($item);
     }
@@ -113,7 +111,7 @@ class InventoryItemController extends Controller
 
         $item->update($validated);
 
-        return response()->json($item->load(['category', 'accounts.account']));
+        return response()->json($item->load(['category']));
     }
 
     public function destroy(string $id): JsonResponse
@@ -122,104 +120,5 @@ class InventoryItemController extends Controller
         $item->delete();
 
         return response()->json(['message' => 'Inventory item soft deleted.']);
-    }
-
-    /**
-     * List every per-event chart-of-accounts override for this item, one row
-     * per (event_type). Sorted by event order so the FE can render a stable
-     * list.
-     */
-    public function accounts(string $id): JsonResponse
-    {
-        $item = InventoryItem::with(['accounts.account'])->findOrFail($id);
-
-        $rows = InventoryEventType::cases();
-        $byType = $item->accounts->keyBy(fn ($r) => $r->event_type->value);
-
-        $payload = [];
-        foreach ($rows as $case) {
-            $row = $byType->get($case->value);
-            $payload[] = [
-                'id' => $row?->id,
-                'event_type' => $case->value,
-                'event_label' => $case->arabicLabel(),
-                'account' => $row?->account ? [
-                    'id' => $row->account->id,
-                    'account_code' => $row->account->account_code,
-                    'name' => $row->account->name,
-                    'type' => $row->account->type,
-                    'currency' => $row->account->currency,
-                ] : null,
-            ];
-        }
-
-        return response()->json([
-            'data' => $payload,
-            'meta' => [
-                'linked_count' => $item->accounts()->count(),
-                'total_events' => count($rows),
-            ],
-        ]);
-    }
-
-    /**
-     * Upsert one (item, event_type) → account mapping. The unique index
-     * enforces one row per (item, event) so we always update-or-create.
-     */
-    public function upsertAccount(Request $request, string $id): JsonResponse
-    {
-        $item = InventoryItem::findOrFail($id);
-
-        $validated = $request->validate([
-            'event_type' => ['required', 'string', 'in:'.implode(',', array_column(InventoryEventType::cases(), 'value'))],
-            'account_id' => ['required', 'uuid', 'exists:accounts,id'],
-        ]);
-
-        $event = InventoryEventType::from($validated['event_type']);
-
-        $row = InventoryItemAccount::updateOrCreate(
-            [
-                'inventory_item_id' => $item->id,
-                'event_type' => $event->value,
-            ],
-            [
-                'account_id' => $validated['account_id'],
-            ],
-        );
-
-        $row->load('account');
-
-        return response()->json([
-            'data' => [
-                'id' => $row->id,
-                'event_type' => $row->event_type->value,
-                'event_label' => $row->event_type->arabicLabel(),
-                'account' => $row->account ? [
-                    'id' => $row->account->id,
-                    'account_code' => $row->account->account_code,
-                    'name' => $row->account->name,
-                    'type' => $row->account->type,
-                    'currency' => $row->account->currency,
-                ] : null,
-            ],
-            'message' => 'تم ربط الحساب بنجاح',
-        ]);
-    }
-
-    /**
-     * Remove one (item, event_type) override. Returns 204-style empty JSON
-     * body for parity with the rest of the API.
-     */
-    public function deleteAccount(string $id, string $rowId): JsonResponse
-    {
-        $item = InventoryItem::findOrFail($id);
-
-        $row = InventoryItemAccount::where('inventory_item_id', $item->id)
-            ->whereKey($rowId)
-            ->firstOrFail();
-
-        $row->delete();
-
-        return response()->json(['message' => 'تم حذف الربط']);
     }
 }

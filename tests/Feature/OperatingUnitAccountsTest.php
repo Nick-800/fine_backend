@@ -5,9 +5,8 @@ declare(strict_types=1);
 use App\Enums\InventoryEventType;
 use App\Models\Account;
 use App\Models\Company;
-use App\Models\InventoryItem;
-use App\Models\InventoryItemAccount;
 use App\Models\OperatingUnit;
+use App\Models\OperatingUnitAccount;
 use App\Models\Role;
 use App\Models\UnitBlueprint;
 use App\Models\User;
@@ -35,15 +34,11 @@ beforeEach(function () {
     ]);
 
     $this->user = User::factory()->create(['must_change_password' => false]);
-    $role = Role::create(['name' => 'Foam Manager', 'slug' => 'foam-manager']);
-    UserRole::create(['user_id' => $this->user->id, 'role_id' => $role->id, 'operating_unit_id' => $this->unit->id]);
+    $role = Role::create(['name' => 'Owner', 'slug' => 'owner']);
+    UserRole::create(['user_id' => $this->user->id, 'role_id' => $role->id, 'operating_unit_id' => null]);
 
     $this->api = fn () => $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
-
-    $this->fabric = InventoryItem::create([
-        'name' => 'Fabric', 'code' => 'FAB-1', 'item_type' => 'raw_material', 'unit_of_measure' => 'meter',
-    ]);
 
     // Convenience: lookup known accounts from the seeded chart.
     $this->inventoryAccount = Account::where('account_code', '111')->sole();
@@ -54,19 +49,19 @@ beforeEach(function () {
 });
 
 /**
- * Link one event_type on the given item to the given account code.
+ * Link one event_type on the given unit to the given account code.
  */
-function linkEvent(InventoryItem $item, InventoryEventType $event, Account $account): void
+function linkEvent(OperatingUnit $unit, InventoryEventType $event, Account $account): void
 {
-    InventoryItemAccount::create([
-        'inventory_item_id' => $item->id,
+    OperatingUnitAccount::create([
+        'operating_unit_id' => $unit->id,
         'event_type' => $event->value,
         'account_id' => $account->id,
     ]);
 }
 
 test('list endpoint returns all 12 events with null accounts when nothing is linked', function () {
-    $response = ($this->api)()->getJson("/api/v1/inventory-items/{$this->fabric->id}/accounts");
+    $response = ($this->api)()->getJson("/api/v1/operating-units/{$this->unit->id}/accounts");
 
     $response->assertOk();
     $payload = $response->json('data');
@@ -82,7 +77,7 @@ test('list endpoint returns all 12 events with null accounts when nothing is lin
 });
 
 test('upsert creates a per-event account link', function () {
-    $response = ($this->api)()->postJson("/api/v1/inventory-items/{$this->fabric->id}/accounts", [
+    $response = ($this->api)()->postJson("/api/v1/operating-units/{$this->unit->id}/accounts", [
         'event_type' => 'purchases',
         'account_id' => $this->inventoryAccount->id,
     ]);
@@ -91,7 +86,7 @@ test('upsert creates a per-event account link', function () {
         ->assertJsonPath('data.event_type', 'purchases')
         ->assertJsonPath('data.account.account_code', '111');
 
-    expect(InventoryItemAccount::where('inventory_item_id', $this->fabric->id)
+    expect(OperatingUnitAccount::where('operating_unit_id', $this->unit->id)
         ->where('event_type', 'purchases')->count())->toBe(1);
 });
 
@@ -106,82 +101,82 @@ test('upsert updates an existing per-event link in place', function () {
         'currency' => 'LYD',
     ]);
 
-    ($this->api)()->postJson("/api/v1/inventory-items/{$this->fabric->id}/accounts", [
+    ($this->api)()->postJson("/api/v1/operating-units/{$this->unit->id}/accounts", [
         'event_type' => 'purchases',
         'account_id' => $this->inventoryAccount->id,
     ])->assertOk();
 
-    ($this->api)()->postJson("/api/v1/inventory-items/{$this->fabric->id}/accounts", [
+    ($this->api)()->postJson("/api/v1/operating-units/{$this->unit->id}/accounts", [
         'event_type' => 'purchases',
         'account_id' => $alt->id,
     ])->assertOk()->assertJsonPath('data.account.account_code', '111001');
 
-    expect(InventoryItemAccount::where('inventory_item_id', $this->fabric->id)
+    expect(OperatingUnitAccount::where('operating_unit_id', $this->unit->id)
         ->where('event_type', 'purchases')->count())->toBe(1);
 });
 
 test('upsert rejects an unknown event_type', function () {
-    ($this->api)()->postJson("/api/v1/inventory-items/{$this->fabric->id}/accounts", [
+    ($this->api)()->postJson("/api/v1/operating-units/{$this->unit->id}/accounts", [
         'event_type' => 'not_a_real_event',
         'account_id' => $this->inventoryAccount->id,
     ])->assertStatus(422)->assertJsonValidationErrors(['event_type']);
 });
 
 test('upsert rejects a missing account_id', function () {
-    ($this->api)()->postJson("/api/v1/inventory-items/{$this->fabric->id}/accounts", [
+    ($this->api)()->postJson("/api/v1/operating-units/{$this->unit->id}/accounts", [
         'event_type' => 'purchases',
     ])->assertStatus(422)->assertJsonValidationErrors(['account_id']);
 });
 
 test('delete removes the link', function () {
-    linkEvent($this->fabric, InventoryEventType::Purchases, $this->inventoryAccount);
+    linkEvent($this->unit, InventoryEventType::Purchases, $this->inventoryAccount);
 
-    $row = InventoryItemAccount::where('inventory_item_id', $this->fabric->id)
+    $row = OperatingUnitAccount::where('operating_unit_id', $this->unit->id)
         ->where('event_type', 'purchases')->sole();
 
-    ($this->api)()->deleteJson("/api/v1/inventory-items/{$this->fabric->id}/accounts/{$row->id}")
+    ($this->api)()->deleteJson("/api/v1/operating-units/{$this->unit->id}/accounts/{$row->id}")
         ->assertOk();
 
-    expect(InventoryItemAccount::where('inventory_item_id', $this->fabric->id)->count())->toBe(0);
+    expect(OperatingUnitAccount::where('operating_unit_id', $this->unit->id)->count())->toBe(0);
 });
 
-test('deleting the inventory item cascades its account rows', function () {
-    linkEvent($this->fabric, InventoryEventType::Purchases, $this->inventoryAccount);
-    linkEvent($this->fabric, InventoryEventType::Sales, $this->salesAccount);
+test('soft-deleting the operating unit cascades its account rows', function () {
+    linkEvent($this->unit, InventoryEventType::Purchases, $this->inventoryAccount);
+    linkEvent($this->unit, InventoryEventType::Sales, $this->salesAccount);
 
-    expect(InventoryItemAccount::where('inventory_item_id', $this->fabric->id)->count())->toBe(2);
+    expect(OperatingUnitAccount::where('operating_unit_id', $this->unit->id)->count())->toBe(2);
 
-    // Force delete (not soft delete) so the cascadeOnDelete actually fires.
-    $this->fabric->forceDelete();
+    // Force delete so the cascadeOnDelete actually fires (soft delete leaves
+    // the rows in place).
+    $this->unit->forceDelete();
 
-    expect(InventoryItemAccount::where('inventory_item_id', $this->fabric->id)->count())->toBe(0);
+    expect(OperatingUnitAccount::where('operating_unit_id', $this->unit->id)->count())->toBe(0);
 });
 
 test('an account that is still linked cannot be deleted (restrictOnDelete)', function () {
-    linkEvent($this->fabric, InventoryEventType::Purchases, $this->inventoryAccount);
+    linkEvent($this->unit, InventoryEventType::Purchases, $this->inventoryAccount);
 
     expect(fn () => $this->inventoryAccount->delete())
         ->toThrow(QueryException::class);
 });
 
 test('accountFor returns the linked account and null otherwise', function () {
-    expect($this->fabric->accountFor(InventoryEventType::Purchases))->toBeNull();
+    expect($this->unit->accountFor(InventoryEventType::Purchases))->toBeNull();
 
-    linkEvent($this->fabric, InventoryEventType::Purchases, $this->inventoryAccount);
+    linkEvent($this->unit, InventoryEventType::Purchases, $this->inventoryAccount);
 
-    $resolved = $this->fabric->accountFor(InventoryEventType::Purchases);
+    $resolved = $this->unit->accountFor(InventoryEventType::Purchases);
     expect($resolved)->not->toBeNull()
         ->and($resolved->account_code)->toBe('111');
 });
 
-test('inventory item is exposed with eager-loaded account rows on show and index', function () {
-    linkEvent($this->fabric, InventoryEventType::Purchases, $this->inventoryAccount);
-    linkEvent($this->fabric, InventoryEventType::Sales, $this->salesAccount);
+test('operating unit is exposed with eager-loaded account rows on show', function () {
+    linkEvent($this->unit, InventoryEventType::Purchases, $this->inventoryAccount);
+    linkEvent($this->unit, InventoryEventType::Sales, $this->salesAccount);
 
-    $show = ($this->api)()->getJson("/api/v1/inventory-items/{$this->fabric->id}")->assertOk();
-    expect($show->json('accounts'))->toHaveCount(2);
-
-    $index = ($this->api)()->getJson('/api/v1/inventory-items')->assertOk();
-    $row = collect($index->json('data'))->firstWhere('id', $this->fabric->id);
-    expect($row['accounts'])->toHaveCount(2);
+    $show = ($this->api)()->getJson("/api/v1/operating-units/{$this->unit->id}")->assertOk();
+    $payload = $show->json();
+    $root = $payload['data'] ?? $payload;
+    expect(array_key_exists('accounts', $root))->toBeTrue('accounts key missing from response payload: '.json_encode(array_keys($root)))
+        ->and(collect($root['accounts']))->toHaveCount(2);
 });

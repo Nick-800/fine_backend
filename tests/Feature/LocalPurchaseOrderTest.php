@@ -45,6 +45,8 @@ beforeEach(function () {
         'operating_unit_id' => $this->unit->id, 'name' => 'Local Vendor', 'default_currency' => 'LYD',
     ]);
 
+    seedUnitAccounts($this->unit);
+
     // Create a procurement-eligible inventory category + items so the
     // purchase_order_items FK to inventory_items is satisfied.
     $this->category = ItemCategory::create([
