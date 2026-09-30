@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\Account;
 use App\Models\Bundle;
 use App\Models\FixedAsset;
 use App\Models\InventoryItem;
@@ -80,5 +81,9 @@ class AppServiceProvider extends ServiceProvider
 
         // Phase 07: a quotation is the price the client was promised.
         Quotation::observe(AuditObserver::class);
+
+        // COA: every create / update / reparent / delete on an account is
+        // audit-logged so the edit-detail page can show a full timeline.
+        Account::observe(AuditObserver::class);
     }
 }

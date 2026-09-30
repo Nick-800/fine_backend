@@ -16,7 +16,7 @@ final class AuditObserver
      */
     public function created(Model $model): void
     {
-        $this->log($model, 'create', null, $model->getAttributes());
+        $this->log($model, 'created', null, $model->getAttributes());
     }
 
     /**
@@ -37,7 +37,7 @@ final class AuditObserver
         }
 
         if (count($new) > 0) {
-            $this->log($model, 'update', $old, $new);
+            $this->log($model, 'updated', $old, $new);
         }
     }
 
@@ -46,7 +46,7 @@ final class AuditObserver
      */
     public function deleted(Model $model): void
     {
-        $this->log($model, 'delete', $model->getAttributes(), null);
+        $this->log($model, 'deleted', $model->getAttributes(), null);
     }
 
     /**
