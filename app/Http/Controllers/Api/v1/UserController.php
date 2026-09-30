@@ -41,13 +41,19 @@ final class UserController extends Controller
 
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
+            'email' => 'nullable|email|max:255|unique:users,email|required_without:phone',
+            'phone' => ['nullable', 'regex:/^09[0-9]{8}$/', 'unique:users,phone', 'required_without:email'],
             'password' => 'required|string|min:8',
+        ], [
+            'phone.regex' => 'رقم الهاتف يجب أن يتكون من 10 أرقام ويبدأ بـ 09.',
+            'email.required_without' => 'يجب إدخال البريد الإلكتروني أو رقم الهاتف.',
+            'phone.required_without' => 'يجب إدخال البريد الإلكتروني أو رقم الهاتف.',
         ]);
 
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
+            'phone' => $request->phone,
             'password' => Hash::make($request->password),
             'is_active' => true,
             'must_change_password' => true,
@@ -83,13 +89,25 @@ final class UserController extends Controller
 
         $request->validate([
             'name' => 'sometimes|required|string|max:255',
-            'email' => 'sometimes|required|email|unique:users,email,'.$id,
+            'email' => ['nullable', 'email', 'max:255', \Illuminate\Validation\Rule::unique('users', 'email')->ignore($user->id)],
+            'phone' => ['nullable', 'regex:/^09[0-9]{8}$/', \Illuminate\Validation\Rule::unique('users', 'phone')->ignore($user->id)],
             'password' => 'sometimes|required|string|min:8',
             'is_active' => 'sometimes|required|boolean',
             'record_version' => 'required|integer',
+        ], [
+            'phone.regex' => 'رقم الهاتف يجب أن يتكون من 10 أرقام ويبدأ بـ 09.',
         ]);
 
-        $data = $request->only('name', 'email', 'is_active', 'record_version');
+        $resultingEmail = $request->has('email') ? $request->input('email') : $user->email;
+        $resultingPhone = $request->has('phone') ? $request->input('phone') : $user->phone;
+
+        if (empty($resultingEmail) && empty($resultingPhone)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'email' => ['يجب توفير البريد الإلكتروني أو رقم الهاتف على الأقل.'],
+            ]);
+        }
+
+        $data = $request->only('name', 'email', 'phone', 'is_active', 'record_version');
         if ($request->has('password')) {
             $data['password'] = Hash::make($request->password);
             $data['must_change_password'] = true;

@@ -19,11 +19,17 @@ final class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'email' => 'required|email',
+            'login' => 'required_without:email|string',
+            'email' => 'required_without:login|string',
             'password' => 'required|string',
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        $identifier = (string) ($request->input('login') ?? $request->input('email'));
+
+        $user = User::where(function ($query) use ($identifier) {
+            $query->where('email', $identifier)
+                ->orWhere('phone', $identifier);
+        })->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             return response()->json([

@@ -34,19 +34,30 @@ final class ProvisionUserController extends Controller
         }
 
         $request->validate([
-            'email' => $entity->primaryContact?->email
-                ? 'nullable|email|unique:users,email'
-                : 'required|email|unique:users,email',
+            'email' => 'nullable|email|unique:users,email',
+            'phone' => ['nullable', 'regex:/^09[0-9]{8}$/', 'unique:users,phone'],
             'password' => 'nullable|string|min:8',
+        ], [
+            'phone.regex' => 'رقم الهاتف يجب أن يتكون من 10 أرقام ويبدأ بـ 09.',
         ]);
 
         $email = $request->input('email') ?: $entity->primaryContact?->email;
+        $rawPhone = $request->input('phone') ?: $entity->primaryContact?->phone;
+        $phone = ($rawPhone && preg_match('/^09[0-9]{8}$/', $rawPhone)) ? $rawPhone : null;
+
+        if (empty($email) && empty($phone)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'email' => ['يجب توفير البريد الإلكتروني أو رقم هاتف صالح (10 أرقام يبدأ بـ 09).'],
+            ]);
+        }
+
         $plainPassword = $request->input('password') ?: Str::random(16);
 
-        DB::transaction(function () use ($entity, $email, $plainPassword): void {
+        DB::transaction(function () use ($entity, $email, $phone, $plainPassword): void {
             $user = User::create([
                 'name' => $entity->name,
                 'email' => $email,
+                'phone' => $phone,
                 'password' => Hash::make($plainPassword),
                 'is_active' => true,
                 'must_change_password' => true,
