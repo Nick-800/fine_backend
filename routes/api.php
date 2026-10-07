@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\v1\OperatingUnitAccountController;
 use App\Http\Controllers\Api\v1\OperatingUnitController;
 use App\Http\Controllers\Api\v1\OverheadAllocationController;
 use App\Http\Controllers\Api\v1\OverheadExpenseController;
+use App\Http\Controllers\Api\v1\PartnerReportController;
 use App\Http\Controllers\Api\v1\PayableSettlementController;
 use App\Http\Controllers\Api\v1\PaymentRequestController;
 use App\Http\Controllers\Api\v1\PayrollRunController;
@@ -164,6 +165,8 @@ Route::prefix('v1')->group(function () {
                 Route::get('/reports/balance-sheet', [FinancialReportController::class, 'balanceSheet']);
                 Route::get('/reports/unit-profitability', [FinancialReportController::class, 'unitProfitability']);
                 Route::get('/reports/bundle-sales', [BundleController::class, 'salesReport']);
+                Route::get('/reports/partner-balances', [PartnerReportController::class, 'balances']);
+                Route::get('/reports/partner-statement', [PartnerReportController::class, 'statement']);
                 Route::get('/overhead-expenses', [OverheadExpenseController::class, 'index']);
                 Route::get('/fixed-assets', [FixedAssetController::class, 'index']);
                 Route::get('/fixed-assets/{id}', [FixedAssetController::class, 'show']);

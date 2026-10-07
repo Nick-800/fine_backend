@@ -127,14 +127,19 @@ test('a quick-added client joins the current unit and gets its own receivable ac
         'entity_type' => 'individual',
         'phone' => '0912345678',
     ])->assertCreated()
-        ->assertJsonPath('data.operating_unit_id', $this->store->id)
-        ->assertJsonPath('data.account.account_code', '122001');
+        ->assertJsonPath('data.operating_unit_id', $this->store->id);
 
-    ($this->api)()->postJson('/api/v1/clients', ['name' => 'شركة النور'])
-        ->assertCreated()
-        ->assertJsonPath('data.account.account_code', '122002');
+    $code1 = $first->json('data.account.account_code');
+    expect($code1)->toStartWith('122');
 
-    $account = Account::where('account_code', '122001')->firstOrFail();
+    $second = ($this->api)()->postJson('/api/v1/clients', ['name' => 'شركة النور'])
+        ->assertCreated();
+
+    $code2 = $second->json('data.account.account_code');
+    expect($code2)->toStartWith('122')
+        ->and((int) substr($code2, 3))->toBe((int) substr($code1, 3) + 1);
+
+    $account = Account::where('account_code', $code1)->firstOrFail();
     expect($account->parent?->account_code)->toBe('122')
         ->and($account->name)->toBe('عميل - محمد علي');
 

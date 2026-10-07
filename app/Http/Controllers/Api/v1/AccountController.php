@@ -27,33 +27,91 @@ final class AccountController extends Controller
 
     public function index(): JsonResponse
     {
-        $accounts = Account::query()
-            ->withSum('journalLines as total_debit', 'debit')
-            ->withSum('journalLines as total_credit', 'credit')
+        $rawAccounts = Account::query()
+            ->withSum('journalLines as direct_debit', 'debit')
+            ->withSum('journalLines as direct_credit', 'credit')
             ->orderBy('account_code')
-            ->get()
-            ->map(function (Account $account): array {
-                $debit = round((float) ($account->total_debit ?? 0), 4);
-                $credit = round((float) ($account->total_credit ?? 0), 4);
+            ->get();
 
-                $balance = in_array($account->type, ['asset', 'expense'], true)
-                    ? round($debit - $credit, 4)
-                    : round($credit - $debit, 4);
+        $childrenMap = [];
+        $accountsById = [];
 
-                return [
-                    'id' => $account->id,
-                    'account_code' => $account->account_code,
-                    'name' => $account->name,
-                    'type' => $account->type,
-                    'section' => $account->section,
-                    'currency' => $account->currency,
-                    'parent_account_id' => $account->parent_account_id,
-                    'is_main' => $account->parent_account_id === null,
-                    'total_debit' => $debit,
-                    'total_credit' => $credit,
-                    'balance' => $balance,
-                ];
-            });
+        foreach ($rawAccounts as $account) {
+            $accountsById[$account->id] = $account;
+            $parentId = $account->parent_account_id;
+            if ($parentId !== null) {
+                $childrenMap[$parentId][] = $account->id;
+            }
+        }
+
+        $rollupTotals = [];
+
+        $computeRollup = function (string $accountId) use (&$computeRollup, &$rollupTotals, $accountsById, $childrenMap): array {
+            if (isset($rollupTotals[$accountId])) {
+                return $rollupTotals[$accountId];
+            }
+
+            $account = $accountsById[$accountId] ?? null;
+            if ($account === null) {
+                return ['debit' => 0.0, 'credit' => 0.0];
+            }
+
+            $debit = (float) ($account->direct_debit ?? 0);
+            $credit = (float) ($account->direct_credit ?? 0);
+
+            if (isset($childrenMap[$accountId])) {
+                foreach ($childrenMap[$accountId] as $childId) {
+                    $childTotals = $computeRollup($childId);
+                    $debit += $childTotals['debit'];
+                    $credit += $childTotals['credit'];
+                }
+            }
+
+            $rollupTotals[$accountId] = [
+                'debit' => round($debit, 4),
+                'credit' => round($credit, 4),
+            ];
+
+            return $rollupTotals[$accountId];
+        };
+
+        foreach ($rawAccounts as $account) {
+            $computeRollup($account->id);
+        }
+
+        $accounts = $rawAccounts->map(function (Account $account) use ($rollupTotals, $childrenMap): array {
+            $directDebit = round((float) ($account->direct_debit ?? 0), 4);
+            $directCredit = round((float) ($account->direct_credit ?? 0), 4);
+            $directBalance = in_array($account->type, ['asset', 'expense'], true)
+                ? round($directDebit - $directCredit, 4)
+                : round($directCredit - $directDebit, 4);
+
+            $totals = $rollupTotals[$account->id] ?? ['debit' => $directDebit, 'credit' => $directCredit];
+            $debit = $totals['debit'];
+            $credit = $totals['credit'];
+
+            $balance = in_array($account->type, ['asset', 'expense'], true)
+                ? round($debit - $credit, 4)
+                : round($credit - $debit, 4);
+
+            return [
+                'id' => $account->id,
+                'account_code' => $account->account_code,
+                'name' => $account->name,
+                'type' => $account->type,
+                'section' => $account->section,
+                'currency' => $account->currency,
+                'parent_account_id' => $account->parent_account_id,
+                'is_main' => $account->parent_account_id === null,
+                'total_debit' => $debit,
+                'total_credit' => $credit,
+                'balance' => $balance,
+                'direct_debit' => $directDebit,
+                'direct_credit' => $directCredit,
+                'direct_balance' => $directBalance,
+                'has_children' => ! empty($childrenMap[$account->id]),
+            ];
+        });
 
         return response()->json([
             'data' => $accounts,
@@ -65,19 +123,34 @@ final class AccountController extends Controller
     {
         $account = Account::with(['parent:id,account_code,name,type'])->findOrFail($id);
 
+        $descendantIds = $this->getDescendantAccountIds($account->id);
+        $allAccountIds = array_merge([$account->id], $descendantIds);
+
         $unitId = $this->resolveReportUnitId($request, $this->unitContext);
 
-        $linesQuery = $account->journalLines();
+        // Direct lines
+        $directQuery = $account->journalLines();
         if ($unitId) {
-            $linesQuery->where('operating_unit_id', $unitId);
+            $directQuery->where('operating_unit_id', $unitId);
         }
+        $directDebit = round((float) (clone $directQuery)->sum('debit'), 4);
+        $directCredit = round((float) (clone $directQuery)->sum('credit'), 4);
+        $directBalance = in_array($account->type, ['asset', 'expense'], true)
+            ? round($directDebit - $directCredit, 4)
+            : round($directCredit - $directDebit, 4);
+        $directTransactionCount = (clone $directQuery)->count();
 
-        $debit = round((float) (clone $linesQuery)->sum('debit'), 4);
-        $credit = round((float) (clone $linesQuery)->sum('credit'), 4);
+        // Rolled-up lines (self + all descendants)
+        $rolledQuery = JournalLine::whereIn('account_id', $allAccountIds);
+        if ($unitId) {
+            $rolledQuery->where('operating_unit_id', $unitId);
+        }
+        $totalDebit = round((float) (clone $rolledQuery)->sum('debit'), 4);
+        $totalCredit = round((float) (clone $rolledQuery)->sum('credit'), 4);
         $balance = in_array($account->type, ['asset', 'expense'], true)
-            ? round($debit - $credit, 4)
-            : round($credit - $debit, 4);
-        $transactionCount = (clone $linesQuery)->count();
+            ? round($totalDebit - $totalCredit, 4)
+            : round($totalCredit - $totalDebit, 4);
+        $transactionCount = (clone $rolledQuery)->count();
 
         return response()->json([
             'data' => [
@@ -90,10 +163,15 @@ final class AccountController extends Controller
                 'parent_account_id' => $account->parent_account_id,
                 'is_main' => $account->parent_account_id === null,
                 'parent' => $account->parent,
-                'total_debit' => $debit,
-                'total_credit' => $credit,
+                'total_debit' => $totalDebit,
+                'total_credit' => $totalCredit,
                 'balance' => $balance,
+                'direct_debit' => $directDebit,
+                'direct_credit' => $directCredit,
+                'direct_balance' => $directBalance,
+                'has_children' => count($descendantIds) > 0,
                 'transaction_count' => $transactionCount,
+                'direct_transaction_count' => $directTransactionCount,
                 'created_at' => $account->created_at?->toISOString(),
             ],
         ]);
@@ -104,13 +182,19 @@ final class AccountController extends Controller
         $account = Account::findOrFail($id);
 
         $query = JournalLine::query()
-            ->with(['journalEntry:id,reference,entry_date,description,is_manual', 'operatingUnit:id,name'])
+            ->with(['journalEntry:id,reference,entry_date,description,is_manual', 'operatingUnit:id,name', 'account:id,account_code,name'])
             ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
-            ->where('journal_lines.account_id', $account->id)
             ->whereNull('journal_entries.deleted_at')
             ->orderByDesc('journal_entries.entry_date')
             ->orderByDesc('journal_entries.created_at')
             ->select('journal_lines.*');
+
+        if ($request->boolean('include_children')) {
+            $allAccountIds = array_merge([$account->id], $this->getDescendantAccountIds($account->id));
+            $query->whereIn('journal_lines.account_id', $allAccountIds);
+        } else {
+            $query->where('journal_lines.account_id', $account->id);
+        }
 
         // Optional filter by unit dimension on the transaction lines
         $unitId = $this->resolveReportUnitId($request, $this->unitContext);
@@ -136,6 +220,23 @@ final class AccountController extends Controller
         }
 
         return response()->json($query->paginate($request->integer('per_page', 25)));
+    }
+
+    /**
+     * Recursively collect all descendant account IDs for an account.
+     *
+     * @return list<string>
+     */
+    private function getDescendantAccountIds(string $accountId): array
+    {
+        $childIds = Account::where('parent_account_id', $accountId)->pluck('id')->all();
+        $descendants = $childIds;
+
+        foreach ($childIds as $childId) {
+            $descendants = array_merge($descendants, $this->getDescendantAccountIds($childId));
+        }
+
+        return $descendants;
     }
 
     public function store(Request $request): JsonResponse

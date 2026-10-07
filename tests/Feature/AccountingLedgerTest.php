@@ -389,3 +389,76 @@ test('chart of accounts seeds accounts 6 and 7 without a parent account', functi
     expect($account6->fresh()->parent_account_id)->toBeNull()
         ->and($account7->fresh()->parent_account_id)->toBeNull();
 });
+
+test('chart of accounts rolls up child balances to parent accounts in index and show and supports ledger include_children', function () {
+    $parent1211 = Account::where('account_code', '1211')->firstOrFail();
+    $child121101 = Account::where('account_code', '121101')->firstOrFail();
+    $child121102 = Account::where('account_code', '121102')->firstOrFail();
+    $parent121 = Account::where('account_code', '121')->firstOrFail();
+    $parent12 = Account::where('account_code', '12')->firstOrFail();
+    $root1 = Account::where('account_code', '1')->firstOrFail();
+
+    // Post transactions on two leaf child accounts
+    $this->accounting->postJournal('Cash receipt unit 1', [
+        ['account_code' => '121101', 'debit' => 600.0, 'operating_unit_id' => $this->unit->id, 'memo' => 'Foam receipt'],
+        ['account_code' => '40201', 'credit' => 600.0, 'operating_unit_id' => $this->unit->id],
+    ]);
+
+    $this->accounting->postJournal('Cash receipt unit 2', [
+        ['account_code' => '121102', 'debit' => 400.0, 'operating_unit_id' => $this->unit->id, 'memo' => 'Cutter receipt'],
+        ['account_code' => '40202', 'credit' => 400.0, 'operating_unit_id' => $this->unit->id],
+    ]);
+
+    // 1. Verify index API response has hierarchical rollups
+    $resIndex = ($this->api)()->getJson('/api/v1/accounts')->assertStatus(200);
+    $accounts = collect($resIndex->json('data'));
+
+    $acc121101 = $accounts->firstWhere('account_code', '121101');
+    $acc121102 = $accounts->firstWhere('account_code', '121102');
+    $acc1211 = $accounts->firstWhere('account_code', '1211');
+    $acc121 = $accounts->firstWhere('account_code', '121');
+    $acc12 = $accounts->firstWhere('account_code', '12');
+    $acc1 = $accounts->firstWhere('account_code', '1');
+
+    // Child accounts: direct equals total
+    expect($acc121101['has_children'])->toBeFalse()
+        ->and((float) $acc121101['direct_balance'])->toEqual(600.0)
+        ->and((float) $acc121101['balance'])->toEqual(600.0);
+
+    expect($acc121102['has_children'])->toBeFalse()
+        ->and((float) $acc121102['direct_balance'])->toEqual(400.0)
+        ->and((float) $acc121102['balance'])->toEqual(400.0);
+
+    // Parent account 1211: direct balance is 0, rolled-up balance is 1000
+    expect($acc1211['has_children'])->toBeTrue()
+        ->and((float) $acc1211['direct_balance'])->toEqual(0.0)
+        ->and((float) $acc1211['balance'])->toEqual(1000.0)
+        ->and((float) $acc1211['total_debit'])->toEqual(1000.0);
+
+    // Ancestor accounts roll up all descendants
+    expect($acc121['has_children'])->toBeTrue()
+        ->and((float) $acc121['balance'])->toEqual(1000.0);
+
+    expect($acc12['has_children'])->toBeTrue()
+        ->and((float) $acc12['balance'])->toEqual(1000.0);
+
+    expect($acc1['has_children'])->toBeTrue()
+        ->and((float) $acc1['balance'])->toEqual(1000.0);
+
+    // 2. Verify show API response
+    $resShow = ($this->api)()->getJson("/api/v1/accounts/{$parent1211->id}")->assertStatus(200);
+    expect($resShow->json('data.has_children'))->toBeTrue()
+        ->and((float) $resShow->json('data.direct_balance'))->toEqual(0.0)
+        ->and((float) $resShow->json('data.balance'))->toEqual(1000.0)
+        ->and($resShow->json('data.direct_transaction_count'))->toBe(0)
+        ->and($resShow->json('data.transaction_count'))->toBe(2);
+
+    // 3. Verify ledger API response without include_children (default) returns only direct lines (0)
+    $resLedgerDirect = ($this->api)()->getJson("/api/v1/accounts/{$parent1211->id}/ledger")->assertStatus(200);
+    expect($resLedgerDirect->json('total'))->toBe(0);
+
+    // 4. Verify ledger API response with include_children=1 returns descendant lines (2)
+    $resLedgerAll = ($this->api)()->getJson("/api/v1/accounts/{$parent1211->id}/ledger?include_children=1")->assertStatus(200);
+    expect($resLedgerAll->json('total'))->toBe(2);
+});
+

@@ -31,7 +31,10 @@ final class InventoryItem extends Model
         'width_m',
         'height_m',
         'volume_m3',
+        'cost_price',
+        'purchase_price',
         'selling_price',
+        'wholesale_price',
         'price_basis',
     ];
 
@@ -42,7 +45,10 @@ final class InventoryItem extends Model
         'width_m' => 'decimal:3',
         'height_m' => 'decimal:3',
         'volume_m3' => 'decimal:4',
+        'cost_price' => 'decimal:4',
+        'purchase_price' => 'decimal:4',
         'selling_price' => 'decimal:4',
+        'wholesale_price' => 'decimal:4',
     ];
 
     protected $attributes = [
@@ -90,6 +96,32 @@ final class InventoryItem extends Model
         }
 
         $rate = (float) $this->selling_price;
+
+        if ($this->price_basis !== 'm3') {
+            return round($rate * $quantity, 4);
+        }
+
+        $volume = ($lengthM !== null && $widthM !== null && $heightM !== null)
+            ? $lengthM * $widthM * $heightM
+            : ($this->volume_m3 !== null ? (float) $this->volume_m3 : null);
+
+        if ($volume === null) {
+            return null;
+        }
+
+        return round($rate * $volume * $quantity, 4);
+    }
+
+    /**
+     * The suggested wholesale selling price for a quantity of this item.
+     */
+    public function wholesalePriceFor(float $quantity, ?float $lengthM = null, ?float $widthM = null, ?float $heightM = null): ?float
+    {
+        if ($this->wholesale_price === null) {
+            return null;
+        }
+
+        $rate = (float) $this->wholesale_price;
 
         if ($this->price_basis !== 'm3') {
             return round($rate * $quantity, 4);

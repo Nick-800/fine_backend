@@ -68,8 +68,11 @@ class InventoryItemController extends Controller
             'length_m' => ['nullable', 'numeric', 'min:0'],
             'width_m' => ['nullable', 'numeric', 'min:0'],
             'height_m' => ['nullable', 'numeric', 'min:0'],
-            // POS starting price: per piece, or per m³ for sized pieces.
+            // Product price tiers
+            'cost_price' => ['nullable', 'numeric', 'min:0'],
+            'purchase_price' => ['nullable', 'numeric', 'min:0'],
             'selling_price' => ['nullable', 'numeric', 'min:0'],
+            'wholesale_price' => ['nullable', 'numeric', 'min:0'],
             'price_basis' => ['sometimes', 'string', 'in:unit,m3'],
         ]);
 
@@ -105,7 +108,10 @@ class InventoryItemController extends Controller
             'length_m' => ['nullable', 'numeric', 'min:0'],
             'width_m' => ['nullable', 'numeric', 'min:0'],
             'height_m' => ['nullable', 'numeric', 'min:0'],
+            'cost_price' => ['nullable', 'numeric', 'min:0'],
+            'purchase_price' => ['nullable', 'numeric', 'min:0'],
             'selling_price' => ['nullable', 'numeric', 'min:0'],
+            'wholesale_price' => ['nullable', 'numeric', 'min:0'],
             'price_basis' => ['sometimes', 'string', 'in:unit,m3'],
         ]);
 
