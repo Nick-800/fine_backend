@@ -227,7 +227,7 @@ final class SaleCheckoutService
                 "Collection on sale {$locked->order_number}",
                 [
                     ['account_code' => SalesAccounts::treasuryFor($cashAccount), 'debit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
-                    ['account_code' => SalesAccounts::receivableFor($client), 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
+                    ['account_code' => SalesAccounts::receivableFor($client), 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id, 'client_id' => $client?->id],
                 ],
                 'SalesOrder',
                 $locked->id,
@@ -343,7 +343,13 @@ final class SaleCheckoutService
         // Money (or the promise of it) against revenue, cost out of stock —
         // one balanced entry (SALE-07).
         $journalLines = [
-            ['account_code' => $debitAccount, 'debit' => $total, 'operating_unit_id' => $order->operating_unit_id],
+            [
+                'account_code' => $debitAccount,
+                'debit' => $total,
+                'operating_unit_id' => $order->operating_unit_id,
+                // Only the receivable is a client's account; a cash sale debits the treasury.
+                'client_id' => $order->isReceivable() ? $client?->id : null,
+            ],
             ['account_code' => SalesAccounts::revenueFor($order->operatingUnit()->with('revenueAccount')->first()), 'credit' => $total, 'operating_unit_id' => $order->operating_unit_id],
         ];
 

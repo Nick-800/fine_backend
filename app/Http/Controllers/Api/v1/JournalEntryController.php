@@ -72,6 +72,7 @@ class JournalEntryController extends Controller
             'lines.*.debit' => 'sometimes|numeric|min:0',
             'lines.*.credit' => 'sometimes|numeric|min:0',
             'lines.*.operating_unit_id' => 'sometimes|nullable|uuid|exists:operating_units,id',
+            'lines.*.client_id' => 'sometimes|nullable|uuid|exists:clients,id',
             'lines.*.memo' => 'sometimes|nullable|string|max:500',
         ]);
 
