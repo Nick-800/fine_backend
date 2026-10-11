@@ -10,6 +10,7 @@ use App\Enums\SalesOrderStatus;
 use App\Exceptions\InvalidStateTransitionException;
 use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Exceptions\SalesRuleException;
+use App\Models\Account;
 use App\Models\Bundle;
 use App\Models\CashAccount;
 use App\Models\Client;
@@ -20,6 +21,7 @@ use App\Models\SalePayment;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderLine;
 use App\Models\User;
+use App\Support\ReceivableAccounts;
 use App\Support\SalesAccounts;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -223,11 +225,13 @@ final class SaleCheckoutService
                 $client->save();
             }
 
+            $receivableCode = SalesAccounts::receivableFor($client);
+
             $entry = $this->accountingService->postJournal(
                 "Collection on sale {$locked->order_number}",
                 [
                     ['account_code' => SalesAccounts::treasuryFor($cashAccount), 'debit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
-                    ['account_code' => SalesAccounts::receivableFor($client), 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id, 'client_id' => $client?->id],
+                    ['account_code' => $receivableCode, 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id, 'client_id' => $this->partyFor($client, $receivableCode)],
                 ],
                 'SalesOrder',
                 $locked->id,
@@ -348,7 +352,7 @@ final class SaleCheckoutService
                 'debit' => $total,
                 'operating_unit_id' => $order->operating_unit_id,
                 // Only the receivable is a client's account; a cash sale debits the treasury.
-                'client_id' => $order->isReceivable() ? $client?->id : null,
+                'client_id' => $order->isReceivable() ? $this->partyFor($client, $debitAccount) : null,
             ],
             ['account_code' => SalesAccounts::revenueFor($order->operatingUnit()->with('revenueAccount')->first()), 'credit' => $total, 'operating_unit_id' => $order->operating_unit_id],
         ];
@@ -515,6 +519,22 @@ final class SaleCheckoutService
      * The treasury money goes into: one of this unit's, of the matching kind,
      * and linked to the ledger.
      */
+    /**
+     * The client id to tag a receivable line with, or null when the client's
+     * linked account sits outside the receivables subtree (such a line stays
+     * untagged rather than being refused).
+     */
+    private function partyFor(?Client $client, string $accountCode): ?string
+    {
+        if ($client === null) {
+            return null;
+        }
+
+        $accountId = Account::where('account_code', $accountCode)->value('id');
+
+        return $accountId !== null && ReceivableAccounts::contains($accountId) ? $client->id : null;
+    }
+
     private function resolveTreasury(?string $cashAccountId, string $method): CashAccount
     {
         $cashAccount = $cashAccountId !== null

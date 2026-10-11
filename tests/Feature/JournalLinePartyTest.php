@@ -204,3 +204,20 @@ test('manual entry with client_id on 41 returns 422 PARTY_ON_NON_RECEIVABLE', fu
 
     expect(JournalEntry::count())->toBe(0);
 });
+
+test('credit sale and collection for a client linked to a non-receivable account still post, untagged', function () {
+    seedUnitAccounts($this->unit);
+    $other = Account::where('account_code', '1215')->firstOrFail();
+    $this->client->update(['account_id' => $other->id]);
+    $cash = CashAccount::create([
+        'operating_unit_id' => $this->unit->id, 'name' => 'Drawer', 'kind' => 'cash',
+        'account_id' => Account::where('account_code', '121102')->value('id'),
+    ]);
+
+    $order = sellOnTerms('receivable');
+    app(SaleCheckoutService::class)->collectPayment($order, 50.0, 'cash', $cash->id, User::factory()->create(['must_change_password' => false]));
+
+    $lines = JournalLine::where('account_id', $other->id)->get();
+    expect($lines)->toHaveCount(2)
+        ->and($lines->pluck('client_id')->filter()->count())->toBe(0);
+});
