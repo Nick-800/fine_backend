@@ -354,8 +354,24 @@ test('balances returns all-time totals and aging per client as of a date', funct
             'total_credit' => 4000.0,
             'net_balance' => 9000.0,
             'aging' => ['current' => 3000.0, 'days_31_60' => 0.0, 'days_61_90' => 0.0, 'over_90' => 6000.0],
+            'overdue_amount' => 6000.0,
         ]);
 
     expect(array_keys($this->service->balances('2026-09-30', $this->unit->id)))->toBe([])
         ->and(array_keys($this->service->balances('2026-09-30', null, [$other->id])))->toBe([$other->id]);
+});
+
+test('balances overdue honours each client payment terms', function () {
+    $this->client->update(['payment_terms_days' => 60]);
+    $defaultTerms = ledgerClient('عميل بشروط افتراضية', $this->unit->id);
+    foreach ([$this->client->id, $defaultTerms->id] as $clientId) {
+        ledgerPost('2026-08-16', $clientId, debit: 5000); // 45 days before asOf
+        ledgerPost('2026-06-27', $clientId, debit: 1000); // 95 days
+    }
+
+    $balances = $this->service->balances('2026-09-30', null);
+
+    expect($balances[$this->client->id]['overdue_amount'])->toBe(1000.0)
+        ->and($balances[$defaultTerms->id]['overdue_amount'])->toBe(6000.0)
+        ->and($balances[$this->client->id]['aging'])->toBe($balances[$defaultTerms->id]['aging']);
 });

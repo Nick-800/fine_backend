@@ -157,11 +157,12 @@ final class ReceivablesLedgerService
     }
 
     /**
-     * All-time receivable totals and aging per client as of a date.
+     * All-time receivable totals, aging and overdue per client as of a date.
+     * Overdue uses each client's payment terms, as in debtorStatements.
      * Untagged lines (no client_id) are not included.
      *
      * @param  list<string>|null  $clientIds  null means every client
-     * @return array<string, array{total_debit: float, total_credit: float, net_balance: float, aging: array{current: float, days_31_60: float, days_61_90: float, over_90: float}}>
+     * @return array<string, array{total_debit: float, total_credit: float, net_balance: float, aging: array{current: float, days_31_60: float, days_61_90: float, over_90: float}, overdue_amount: float}>
      */
     public function balances(string $asOf, ?string $operatingUnitId, ?array $clientIds = null): array
     {
@@ -189,22 +190,42 @@ final class ReceivablesLedgerService
         $partyFilter($debitQuery);
         $debits = $debitQuery->get()->groupBy('client_id');
 
+        $totals = $totalsQuery->get();
+
+        $paymentTerms = $totals->isEmpty() ? collect() : Client::withoutGlobalScopes()
+            ->whereIn('id', $totals->pluck('client_id')->all())
+            ->pluck('payment_terms_days', 'id');
+
         $balances = [];
 
-        foreach ($totalsQuery->get() as $row) {
+        foreach ($totals as $row) {
             $totalDebit = round((float) $row->debit, 4);
             $totalCredit = round((float) $row->credit, 4);
-            [$aging] = $this->age($debits->get($row->client_id, collect()), $totalCredit, $asOfDate, self::DEFAULT_PAYMENT_TERMS_DAYS);
+            $terms = (int) ($paymentTerms->get($row->client_id) ?? self::DEFAULT_PAYMENT_TERMS_DAYS);
+            [$aging, $overdue] = $this->age($debits->get($row->client_id, collect()), $totalCredit, $asOfDate, $terms);
 
             $balances[$row->client_id] = [
                 'total_debit' => $totalDebit,
                 'total_credit' => $totalCredit,
                 'net_balance' => round($totalDebit - $totalCredit, 4),
                 'aging' => $aging,
+                'overdue_amount' => $overdue,
             ];
         }
 
         return $balances;
+    }
+
+    /**
+     * Date (Y-m-d) of a client's earliest receivable line, or null when it has none.
+     */
+    public function firstEntryDate(string $clientId, ?string $operatingUnitId): ?string
+    {
+        $date = $this->receivableLines(ReceivableAccounts::subtreeIds(), $operatingUnitId)
+            ->where('journal_lines.client_id', $clientId)
+            ->min('journal_entries.entry_date');
+
+        return $date === null ? null : substr((string) $date, 0, 10);
     }
 
     /**

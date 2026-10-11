@@ -2,15 +2,21 @@
 
 declare(strict_types=1);
 
+use App\Models\Account;
+use App\Models\CashAccount;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Entity;
+use App\Models\InventoryItem;
 use App\Models\OperatingUnit;
 use App\Models\Role;
+use App\Models\StockLot;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
+use App\Models\Warehouse;
 use App\Services\AccountingService;
+use App\Services\SaleCheckoutService;
 use Carbon\Carbon;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -153,4 +159,44 @@ test('client_ids forces include_unassigned off', function () {
         ->getJson(DEBTOR_URL.'?from=2026-09-01&to=2026-09-30&include_unassigned=1&client_ids[]='.$this->client->id);
     $with->assertOk();
     expect($with->json('unassigned'))->toBeNull();
+});
+
+test('cash sale to a named client leaves no balance and no debtor', function () {
+    seedUnitAccounts($this->unitA);
+    $cash = CashAccount::create([
+        'operating_unit_id' => $this->unitA->id, 'name' => 'Drawer', 'kind' => 'cash',
+        'account_id' => Account::where('account_code', '121102')->value('id'),
+    ]);
+    $warehouse = Warehouse::create(['operating_unit_id' => $this->unitA->id, 'name' => 'WH', 'code' => 'WH-1']);
+    $item = InventoryItem::create([
+        'name' => 'Foam', 'code' => 'F-1', 'item_type' => 'cut_template_piece',
+        'unit_of_measure' => 'each', 'selling_price' => 100,
+    ]);
+    StockLot::create([
+        'inventory_item_id' => $item->id, 'warehouse_id' => $warehouse->id,
+        'lot_number' => 'L-1', 'quantity' => 10, 'unit_cost' => 40, 'status' => 'available',
+    ]);
+    $seller = User::factory()->create(['must_change_password' => false]);
+
+    app(SaleCheckoutService::class)->checkout($this->unitA, [
+        'client_id' => $this->client->id,
+        'payment_method' => 'cash',
+        'cash_account_id' => $cash->id,
+        'lines' => [['inventory_item_id' => $item->id, 'quantity' => 2, 'unit_price' => 100]],
+    ], $seller);
+
+    $owner = ($this->makeUser)('owner', null);
+    $headers = ['X-Operating-Unit-ID' => $this->unitA->id];
+
+    $rows = collect($this->actingAs($owner)->withHeaders($headers)
+        ->getJson('/api/v1/reports/partner-balances?type=clients&as_of=2026-10-05')
+        ->assertOk()
+        ->json('rows'));
+    expect($rows->firstWhere('id', $this->client->id)['net_balance'])->toEqual(0.0);
+
+    $debtors = $this->actingAs($owner)->withHeaders($headers)
+        ->getJson(DEBTOR_URL.'?from=2026-10-01&to=2026-10-31')
+        ->assertOk()
+        ->json('debtors');
+    expect(collect($debtors)->pluck('client.id')->all())->not->toContain($this->client->id);
 });

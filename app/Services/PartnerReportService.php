@@ -7,36 +7,38 @@ namespace App\Services;
 use App\Enums\PaymentRequestStatus;
 use App\Enums\PurchaseOrderKind;
 use App\Enums\PurchaseOrderStatus;
-use App\Enums\SalesOrderStatus;
 use App\Models\Client;
+use App\Models\EntityContact;
 use App\Models\PayableSettlement;
-use App\Models\PaymentRequest;
 use App\Models\PurchaseOrder;
-use App\Models\SalePayment;
-use App\Models\SalesOrder;
 use App\Models\Supplier;
+use App\Support\DebtorStatementFilters;
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
 
 final class PartnerReportService
 {
+    public function __construct(private readonly ReceivablesLedgerService $receivables) {}
+
     /**
-     * Cross-client balances and aging summary.
+     * Cross-client balances and aging summary, read from the receivables ledger.
+     * Every client in scope is listed, including clients with no ledger lines.
      *
      * @return array<string, mixed>
      */
     public function clientBalances(?string $asOf = null, ?string $operatingUnitId = null): array
     {
         $asOf ??= now()->toDateString();
-        $asOfEnd = Carbon::parse($asOf)->endOfDay();
 
-        $query = Client::query()->with(['entity', 'operatingUnit']);
+        $query = Client::query()->with([
+            'entity.contacts' => fn ($contacts) => $contacts->orderBy('created_at')->orderBy('id'),
+            'operatingUnit',
+        ]);
         if ($operatingUnitId !== null) {
             $query->where('operating_unit_id', $operatingUnitId);
         }
 
         $clients = $query->get();
+        $balances = $this->receivables->balances($asOf, $operatingUnitId, $clients->modelKeys());
 
         $rows = [];
         $totalReceivables = 0.0;
@@ -44,67 +46,19 @@ final class PartnerReportService
         $overdueTotal = 0.0;
 
         foreach ($clients as $client) {
-            $salesOrders = SalesOrder::query()
-                ->where('client_id', $client->id)
-                ->where('payment_method', 'receivable')
-                ->where('status', '!=', SalesOrderStatus::Rejected)
-                ->where('created_at', '<=', $asOfEnd)
-                ->get();
-
-            $payments = SalePayment::query()
-                ->where('client_id', $client->id)
-                ->where('created_at', '<=', $asOfEnd)
-                ->get();
-
-            $totalDebit = round((float) $salesOrders->sum('total_amount'), 4);
-            $totalCredit = round((float) $payments->sum('amount'), 4);
-            $netBalance = round($totalDebit - $totalCredit, 4);
-
-            $aging = [
-                'current' => 0.0,
-                'days_31_60' => 0.0,
-                'days_61_90' => 0.0,
-                'over_90' => 0.0,
+            $balance = $balances[$client->id] ?? [
+                'total_debit' => 0.0,
+                'total_credit' => 0.0,
+                'net_balance' => 0.0,
+                'aging' => ['current' => 0.0, 'days_31_60' => 0.0, 'days_61_90' => 0.0, 'over_90' => 0.0],
+                'overdue_amount' => 0.0,
             ];
-
-            // FIFO allocation of payments across chronological credit orders to calculate remaining aging
-            $remainingCredit = $totalCredit;
-            $sortedOrders = $salesOrders->sortBy('created_at');
-
-            foreach ($sortedOrders as $order) {
-                $orderTotal = (float) $order->total_amount;
-                if ($remainingCredit >= $orderTotal) {
-                    $remainingCredit -= $orderTotal;
-                    continue;
-                }
-
-                $unpaid = $orderTotal - $remainingCredit;
-                $remainingCredit = 0.0;
-
-                $orderDate = Carbon::parse($order->created_at);
-                $days = $orderDate->diffInDays(Carbon::parse($asOf), false);
-
-                if ($days <= 30) {
-                    $aging['current'] += $unpaid;
-                } elseif ($days <= 60) {
-                    $aging['days_31_60'] += $unpaid;
-                } elseif ($days <= 90) {
-                    $aging['days_61_90'] += $unpaid;
-                } else {
-                    $aging['over_90'] += $unpaid;
-                }
-            }
-
-            foreach ($aging as $key => $val) {
-                $aging[$key] = round($val, 4);
-            }
-
-            $clientOverdue = round($aging['days_31_60'] + $aging['days_61_90'] + $aging['over_90'], 4);
+            $netBalance = $balance['net_balance'];
 
             if ($netBalance > 0.0001) {
                 $position = 'debit';
                 $totalReceivables += $netBalance;
-                $overdueTotal += $clientOverdue;
+                $overdueTotal += $balance['overdue_amount'];
             } elseif ($netBalance < -0.0001) {
                 $position = 'credit';
                 $totalCreditsOrAdvances += abs($netBalance);
@@ -112,21 +66,23 @@ final class PartnerReportService
                 $position = 'settled';
             }
 
+            $contact = $this->primaryContact($client);
+
             $rows[] = [
                 'id' => $client->id,
                 'name' => $client->entity?->name ?? 'عميل غير مسمى',
-                'phone' => $client->entity?->phone ?? $client->entity?->primary_contact?->phone ?? '',
-                'city' => $client->entity?->city ?? '',
+                'phone' => $contact?->phone ?? '',
+                'city' => $contact?->city ?? '',
                 'operating_unit_id' => $client->operating_unit_id,
                 'operating_unit_name' => $client->operatingUnit?->name ?? '—',
                 'credit_limit' => round((float) ($client->credit_limit ?? 0), 4),
                 'payment_terms_days' => (int) ($client->payment_terms_days ?? 30),
-                'total_debit' => $totalDebit,
-                'total_credit' => $totalCredit,
+                'total_debit' => $balance['total_debit'],
+                'total_credit' => $balance['total_credit'],
                 'net_balance' => $netBalance,
                 'balance_type' => $position,
-                'aging' => $aging,
-                'overdue_amount' => $clientOverdue,
+                'aging' => $balance['aging'],
+                'overdue_amount' => $balance['overdue_amount'],
                 'status' => $client->status?->value ?? 'active',
             ];
         }
@@ -223,6 +179,7 @@ final class PartnerReportService
                 $poCost = (float) $po->totalCost();
                 if ($remainingPayments >= $poCost) {
                     $remainingPayments -= $poCost;
+
                     continue;
                 }
 
@@ -295,116 +252,55 @@ final class PartnerReportService
     }
 
     /**
-     * Itemized Statement of Account for a single Client.
+     * Itemized Statement of Account for a single Client, read from the receivables ledger.
+     * A missing `from` starts at the client's first ledger line (or today); a missing `to` is today.
      *
      * @return array<string, mixed>
      */
     public function clientStatement(string $clientId, ?string $from = null, ?string $to = null, ?string $operatingUnitId = null): array
     {
-        $clientQuery = Client::query()->with(['entity', 'operatingUnit'])->whereKey($clientId);
+        $clientQuery = Client::query()->with([
+            'entity.contacts' => fn ($contacts) => $contacts->orderBy('created_at')->orderBy('id'),
+            'operatingUnit',
+        ])->whereKey($clientId);
         if ($operatingUnitId !== null) {
             $clientQuery->where('operating_unit_id', $operatingUnitId);
         }
 
         $client = $clientQuery->firstOrFail();
 
-        $fromCarbon = $from !== null ? Carbon::parse($from)->startOfDay() : null;
-        $toCarbon = $to !== null ? Carbon::parse($to)->endOfDay() : null;
+        $today = now()->toDateString();
+        $periodFrom = $from !== null
+            ? Carbon::parse($from)->toDateString()
+            : ($this->receivables->firstEntryDate($client->id, $operatingUnitId) ?? $today);
+        $periodTo = $to !== null ? Carbon::parse($to)->toDateString() : $today;
 
-        // Opening balance calculation: all credit sales minus payments strictly before $from
-        $openingDebit = 0.0;
-        $openingCredit = 0.0;
+        $report = $this->receivables->debtorStatements(new DebtorStatementFilters(
+            from: $periodFrom,
+            to: $periodTo,
+            operatingUnitId: $operatingUnitId,
+            clientIds: [$client->id],
+            includeUnassigned: false,
+        ));
 
-        if ($fromCarbon !== null) {
-            $openingDebit = (float) SalesOrder::query()
-                ->where('client_id', $client->id)
-                ->where('payment_method', 'receivable')
-                ->where('status', '!=', SalesOrderStatus::Rejected)
-                ->where('created_at', '<', $fromCarbon)
-                ->sum('total_amount');
+        $section = $report['debtors'][0] ?? null;
 
-            $openingCredit = (float) SalePayment::query()
-                ->where('client_id', $client->id)
-                ->where('created_at', '<', $fromCarbon)
-                ->sum('amount');
+        if ($section === null) {
+            // No movement in the period and no positive balance: the balance carried
+            // through the period (zero, or an overpayment) is both opening and closing.
+            $carried = $this->receivables->balances($periodTo, $operatingUnitId, [$client->id])[$client->id]['net_balance'] ?? 0.0;
+            $section = ['opening_balance' => $carried, 'closing_balance' => $carried, 'total_debit' => 0.0, 'total_credit' => 0.0, 'lines' => []];
         }
 
-        $openingBalance = round($openingDebit - $openingCredit, 4);
-
-        // Period transactions
-        $salesQuery = SalesOrder::query()
-            ->where('client_id', $client->id)
-            ->where('payment_method', 'receivable')
-            ->where('status', '!=', SalesOrderStatus::Rejected);
-
-        $paymentsQuery = SalePayment::query()
-            ->where('client_id', $client->id)
-            ->with(['salesOrder']);
-
-        if ($fromCarbon !== null) {
-            $salesQuery->where('created_at', '>=', $fromCarbon);
-            $paymentsQuery->where('created_at', '>=', $fromCarbon);
-        }
-
-        if ($toCarbon !== null) {
-            $salesQuery->where('created_at', '<=', $toCarbon);
-            $paymentsQuery->where('created_at', '<=', $toCarbon);
-        }
-
-        $transactions = [];
-
-        foreach ($salesQuery->get() as $order) {
-            $transactions[] = [
-                'id' => $order->id,
-                'date' => Carbon::parse($order->created_at)->toDateTimeString(),
-                'timestamp' => Carbon::parse($order->created_at)->timestamp,
-                'document_type' => 'sale_order',
-                'document_type_label' => 'طلب مبيعات آجل',
-                'document_number' => $order->order_number,
-                'memo' => $order->notes ?? 'مبيعات آجلة',
-                'debit' => round((float) $order->total_amount, 4),
-                'credit' => 0.0,
-            ];
-        }
-
-        foreach ($paymentsQuery->get() as $payment) {
-            $docNum = $payment->salesOrder?->order_number ? "سداد لطلب {$payment->salesOrder->order_number}" : 'سداد دفعة';
-            $methodStr = is_string($payment->method) ? $payment->method : ($payment->method?->value ?? 'cash');
-            $transactions[] = [
-                'id' => $payment->id,
-                'date' => Carbon::parse($payment->created_at)->toDateTimeString(),
-                'timestamp' => Carbon::parse($payment->created_at)->timestamp,
-                'document_type' => 'sale_payment',
-                'document_type_label' => 'سداد دفعة',
-                'document_number' => $payment->salesOrder?->order_number ?? 'سداد نقدي',
-                'memo' => "طريقة الدفع: {$methodStr} — {$docNum}",
-                'debit' => 0.0,
-                'credit' => round((float) $payment->amount, 4),
-            ];
-        }
-
-        // Sort chronologically
-        usort($transactions, fn (array $a, array $b) => $a['timestamp'] <=> $b['timestamp']);
-
-        $running = $openingBalance;
-        $totalDebit = 0.0;
-        $totalCredit = 0.0;
-
-        foreach ($transactions as &$tx) {
-            $totalDebit += $tx['debit'];
-            $totalCredit += $tx['credit'];
-            $running = round($running + $tx['debit'] - $tx['credit'], 4);
-            $tx['running_balance'] = $running;
-            unset($tx['timestamp']);
-        }
-        unset($tx);
+        $transactions = array_map(fn (array $line): array => $this->statementTransaction($line), $section['lines']);
+        $contact = $this->primaryContact($client);
 
         return [
             'party' => [
                 'id' => $client->id,
                 'name' => $client->entity?->name ?? 'عميل غير مسمى',
-                'phone' => $client->entity?->phone ?? '',
-                'address' => $client->entity?->address ?? '',
+                'phone' => $contact?->phone ?? '',
+                'address' => $contact?->address ?? '',
                 'type' => 'client',
                 'currency' => 'LYD',
                 'operating_unit_id' => $client->operating_unit_id,
@@ -415,13 +311,52 @@ final class PartnerReportService
                 'from' => $from,
                 'to' => $to,
             ],
-            'opening_balance' => $openingBalance,
-            'closing_balance' => $running,
-            'total_debit' => round($totalDebit, 4),
-            'total_credit' => round($totalCredit, 4),
-            'net_change' => round($totalDebit - $totalCredit, 4),
+            'opening_balance' => $section['opening_balance'],
+            'closing_balance' => $section['closing_balance'],
+            'total_debit' => $section['total_debit'],
+            'total_credit' => $section['total_credit'],
+            'net_change' => round($section['total_debit'] - $section['total_credit'], 4),
             'transactions' => $transactions,
         ];
+    }
+
+    /**
+     * Maps a receivables ledger line to the partner statement transaction shape.
+     *
+     * @param  array<string, mixed>  $line
+     * @return array{id: string, date: string, document_type: string, document_type_label: string, document_number: string|null, memo: string|null, debit: float, credit: float, running_balance: float}
+     */
+    private function statementTransaction(array $line): array
+    {
+        $fromSale = $line['source_type'] === 'SalesOrder';
+
+        [$type, $label] = match (true) {
+            $fromSale && $line['debit'] > 0 => ['sale_order', 'طلب مبيعات آجل'],
+            $fromSale && $line['credit'] > 0 => ['sale_payment', 'سداد دفعة'],
+            default => ['journal_entry', 'قيد يومية'],
+        };
+
+        return [
+            'id' => $line['journal_entry_id'],
+            'date' => $line['date'],
+            'document_type' => $type,
+            'document_type_label' => $label,
+            'document_number' => $line['reference'],
+            'memo' => $line['description'],
+            'debit' => $line['debit'],
+            'credit' => $line['credit'],
+            'running_balance' => $line['running_balance'],
+        ];
+    }
+
+    /**
+     * The client's primary contact, else its oldest one (same source as the receivables ledger).
+     */
+    private function primaryContact(Client $client): ?EntityContact
+    {
+        $contacts = $client->entity?->contacts ?? collect();
+
+        return $contacts->firstWhere('is_primary', true) ?? $contacts->first();
     }
 
     /**

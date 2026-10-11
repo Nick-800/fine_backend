@@ -2,27 +2,24 @@
 
 declare(strict_types=1);
 
-use App\Enums\PaymentRequestStatus;
-use App\Enums\PaymentRoute;
 use App\Enums\PurchaseOrderKind;
 use App\Enums\PurchaseOrderStatus;
-use App\Enums\SalesOrderStatus;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Entity;
+use App\Models\JournalEntry;
 use App\Models\OperatingUnit;
-use App\Models\PaymentRequest;
 use App\Models\PurchaseOrder;
 use App\Models\Role;
-use App\Models\SalePayment;
-use App\Models\SalesOrder;
 use App\Models\Supplier;
 use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
+use App\Services\AccountingService;
 use Carbon\Carbon;
 use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -62,6 +59,14 @@ beforeEach(function () {
         'current_balance' => 0.0,
     ]);
 
+    /** Posts one receivable line for the client in unit A against revenue (41). */
+    $this->postClientLine = function (string $date, float $debit = 0, float $credit = 0, ?string $sourceType = null): void {
+        app(AccountingService::class)->postJournal('Client entry', [
+            ['account_code' => '122', 'debit' => $debit, 'credit' => $credit, 'client_id' => $this->client->id, 'operating_unit_id' => $this->unitA->id],
+            ['account_code' => '41', 'debit' => $credit, 'credit' => $debit, 'operating_unit_id' => $this->unitA->id],
+        ], $sourceType, $sourceType !== null ? (string) Str::uuid() : null, entryDate: $date);
+    };
+
     $this->supplier = Supplier::create([
         'name' => 'مورد الأخشاب الدولي',
         'operating_unit_id' => $this->unitA->id,
@@ -72,61 +77,11 @@ beforeEach(function () {
 test('client balances calculates total debit, credit, net balance, and aging brackets correctly', function () {
     Carbon::setTestNow('2026-10-05 12:00:00');
 
-    // Order 1: 95 days ago -> 10,000 LYD
-    $order1 = SalesOrder::create([
-        'operating_unit_id' => $this->unitA->id,
-        'order_number' => 'SO-001',
-        'buyer_type' => 'client',
-        'client_id' => $this->client->id,
-        'channel' => 'pos',
-        'status' => SalesOrderStatus::Open,
-        'payment_method' => 'receivable',
-        'sold_by_user_id' => $this->owner->id,
-    ]);
-    $order1->total_amount = 10000.0;
-    $order1->created_at = Carbon::parse('2026-10-05')->subDays(95);
-    $order1->save();
-
-    // Order 2: 45 days ago -> 5,000 LYD
-    $order2 = SalesOrder::create([
-        'operating_unit_id' => $this->unitA->id,
-        'order_number' => 'SO-002',
-        'buyer_type' => 'client',
-        'client_id' => $this->client->id,
-        'channel' => 'pos',
-        'status' => SalesOrderStatus::Open,
-        'payment_method' => 'receivable',
-        'sold_by_user_id' => $this->owner->id,
-    ]);
-    $order2->total_amount = 5000.0;
-    $order2->created_at = Carbon::parse('2026-10-05')->subDays(45);
-    $order2->save();
-
-    // Order 3: 10 days ago -> 3,000 LYD
-    $order3 = SalesOrder::create([
-        'operating_unit_id' => $this->unitA->id,
-        'order_number' => 'SO-003',
-        'buyer_type' => 'client',
-        'client_id' => $this->client->id,
-        'channel' => 'pos',
-        'status' => SalesOrderStatus::Open,
-        'payment_method' => 'receivable',
-        'sold_by_user_id' => $this->owner->id,
-    ]);
-    $order3->total_amount = 3000.0;
-    $order3->created_at = Carbon::parse('2026-10-05')->subDays(10);
-    $order3->save();
-
-    // Payment: 12,000 LYD (pays off Order 1 completely and 2,000 of Order 2)
-    $payment = SalePayment::create([
-        'operating_unit_id' => $this->unitA->id,
-        'sales_order_id' => $order1->id,
-        'client_id' => $this->client->id,
-        'amount' => 12000.0,
-        'method' => 'cash',
-        'received_at' => now(),
-        'received_by_user_id' => $this->owner->id,
-    ]);
+    ($this->postClientLine)('2026-07-02', debit: 10000); // 95 days before as_of
+    ($this->postClientLine)('2026-08-21', debit: 5000);  // 45 days
+    ($this->postClientLine)('2026-09-25', debit: 3000);  // 10 days
+    // Payment of 12,000 pays off the first debit and 2,000 of the second.
+    ($this->postClientLine)('2026-10-05', credit: 12000);
 
     $response = $this->actingAs($this->owner)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
@@ -138,67 +93,56 @@ test('client balances calculates total debit, credit, net balance, and aging bra
     expect($data['type'])->toBe('clients')
         ->and($data['summary']['total_receivables'])->toEqual(6000.0)
         ->and($data['summary']['net_exposure'])->toEqual(6000.0)
+        ->and($data['summary']['overdue_total'])->toEqual(3000.0)
         ->and(count($data['rows']))->toBe(1);
 
     $row = $data['rows'][0];
-    expect($row['total_debit'])->toEqual(18000.0)
+    expect(array_keys($row))->toBe([
+        'id', 'name', 'phone', 'city', 'operating_unit_id', 'operating_unit_name', 'credit_limit', 'payment_terms_days',
+        'total_debit', 'total_credit', 'net_balance', 'balance_type', 'aging', 'overdue_amount', 'status',
+    ])
+        ->and(array_keys($data['summary']))->toBe(['total_receivables', 'total_credits_or_advances', 'net_exposure', 'overdue_total', 'total_count'])
+        ->and($row['total_debit'])->toEqual(18000.0)
         ->and($row['total_credit'])->toEqual(12000.0)
         ->and($row['net_balance'])->toEqual(6000.0)
         ->and($row['balance_type'])->toBe('debit')
-        // Order 1 (10,000) is fully paid by 12,000 credit.
-        // Order 2 (5,000) has 2,000 paid -> 3,000 unpaid in 31_60 bracket.
-        // Order 3 (3,000) is 0 paid -> 3,000 unpaid in current bracket.
+        // The 5,000 debit has 2,000 paid -> 3,000 unpaid in the 31_60 bracket.
+        // The 3,000 debit is unpaid -> 3,000 in the current bracket.
         ->and($row['aging']['current'])->toEqual(3000.0)
         ->and($row['aging']['days_31_60'])->toEqual(3000.0)
         ->and($row['aging']['over_90'])->toEqual(0.0)
         ->and($row['overdue_amount'])->toEqual(3000.0);
 });
 
+test('client balances lists idle clients in scope with zero figures', function () {
+    Carbon::setTestNow('2026-10-05 12:00:00');
+
+    $idleEntity = Entity::create(['name' => 'عميل بلا حركة', 'entity_type' => 'organization']);
+    $idle = Client::create(['entity_id' => $idleEntity->id, 'operating_unit_id' => $this->unitA->id, 'credit_limit' => 0, 'current_balance' => 0]);
+    ($this->postClientLine)('2026-09-25', debit: 3000);
+
+    $rows = collect($this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
+        ->getJson('/api/v1/reports/partner-balances?type=clients&as_of=2026-10-05')
+        ->assertOk()
+        ->json('rows'));
+
+    expect($rows->pluck('id')->all())->toBe([$this->client->id, $idle->id]);
+
+    $idleRow = $rows->firstWhere('id', $idle->id);
+    expect($idleRow['net_balance'])->toEqual(0.0)
+        ->and($idleRow['balance_type'])->toBe('settled')
+        ->and($idleRow['overdue_amount'])->toEqual(0.0)
+        ->and($idleRow['aging'])->toEqual(['current' => 0.0, 'days_31_60' => 0.0, 'days_61_90' => 0.0, 'over_90' => 0.0]);
+});
+
 test('client statement calculates opening balance and chronological running balance', function () {
     Carbon::setTestNow('2026-10-05 12:00:00');
 
-    // Pre-period order (2026-08-01): 4,000 LYD
-    $preOrder = SalesOrder::create([
-        'operating_unit_id' => $this->unitA->id,
-        'order_number' => 'SO-PRE',
-        'buyer_type' => 'client',
-        'client_id' => $this->client->id,
-        'channel' => 'pos',
-        'status' => SalesOrderStatus::Open,
-        'payment_method' => 'receivable',
-        'sold_by_user_id' => $this->owner->id,
-    ]);
-    $preOrder->total_amount = 4000.0;
-    $preOrder->created_at = Carbon::parse('2026-08-01 10:00:00');
-    $preOrder->save();
-
-    // Period order (2026-09-10): 2,500 LYD
-    $periodOrder = SalesOrder::create([
-        'operating_unit_id' => $this->unitA->id,
-        'order_number' => 'SO-CURR',
-        'buyer_type' => 'client',
-        'client_id' => $this->client->id,
-        'channel' => 'pos',
-        'status' => SalesOrderStatus::Open,
-        'payment_method' => 'receivable',
-        'sold_by_user_id' => $this->owner->id,
-    ]);
-    $periodOrder->total_amount = 2500.0;
-    $periodOrder->created_at = Carbon::parse('2026-09-10 11:00:00');
-    $periodOrder->save();
-
-    // Period payment (2026-09-20): 1,500 LYD
-    $periodPay = SalePayment::create([
-        'operating_unit_id' => $this->unitA->id,
-        'sales_order_id' => $periodOrder->id,
-        'client_id' => $this->client->id,
-        'amount' => 1500.0,
-        'method' => 'cash',
-        'received_at' => Carbon::parse('2026-09-20 12:00:00'),
-        'received_by_user_id' => $this->owner->id,
-    ]);
-    $periodPay->created_at = Carbon::parse('2026-09-20 12:00:00');
-    $periodPay->save();
+    ($this->postClientLine)('2026-08-01', debit: 4000, sourceType: 'SalesOrder');  // before the period
+    ($this->postClientLine)('2026-09-10', debit: 2500, sourceType: 'SalesOrder');  // sale on terms
+    ($this->postClientLine)('2026-09-20', credit: 1500, sourceType: 'SalesOrder'); // collection
+    ($this->postClientLine)('2026-09-25', debit: 0.5);                              // manual adjustment
 
     $response = $this->actingAs($this->owner)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
@@ -207,15 +151,82 @@ test('client statement calculates opening balance and chronological running bala
     $response->assertOk();
     $data = $response->json();
 
-    expect($data['opening_balance'])->toEqual(4000.0)
-        ->and($data['total_debit'])->toEqual(2500.0)
+    expect(array_keys($data))->toBe(['party', 'period', 'opening_balance', 'closing_balance', 'total_debit', 'total_credit', 'net_change', 'transactions'])
+        ->and(array_keys($data['party']))->toBe(['id', 'name', 'phone', 'address', 'type', 'currency', 'operating_unit_id', 'operating_unit_name', 'credit_limit'])
+        ->and($data['period'])->toBe(['from' => '2026-09-01', 'to' => '2026-09-30'])
+        ->and($data['opening_balance'])->toEqual(4000.0)
+        ->and($data['total_debit'])->toEqual(2500.5)
         ->and($data['total_credit'])->toEqual(1500.0)
-        ->and($data['closing_balance'])->toEqual(5000.0)
-        ->and(count($data['transactions']))->toBe(2)
+        ->and($data['net_change'])->toEqual(1000.5)
+        ->and($data['closing_balance'])->toEqual(5000.5)
+        ->and(count($data['transactions']))->toBe(3)
+        ->and(array_keys($data['transactions'][0]))->toBe([
+            'id', 'date', 'document_type', 'document_type_label', 'document_number', 'memo', 'debit', 'credit', 'running_balance',
+        ])
+        ->and($data['transactions'][0]['date'])->toBe('2026-09-10')
         ->and($data['transactions'][0]['document_type'])->toBe('sale_order')
+        ->and($data['transactions'][0]['document_type_label'])->toBe('طلب مبيعات آجل')
         ->and($data['transactions'][0]['running_balance'])->toEqual(6500.0)
         ->and($data['transactions'][1]['document_type'])->toBe('sale_payment')
-        ->and($data['transactions'][1]['running_balance'])->toEqual(5000.0);
+        ->and($data['transactions'][1]['document_type_label'])->toBe('سداد دفعة')
+        ->and($data['transactions'][1]['running_balance'])->toEqual(5000.0)
+        ->and($data['transactions'][2]['document_type'])->toBe('journal_entry')
+        ->and($data['transactions'][2]['document_type_label'])->toBe('قيد يومية')
+        ->and($data['transactions'][2]['running_balance'])->toEqual(5000.5);
+
+    $entry = JournalEntry::findOrFail($data['transactions'][0]['id']);
+    expect($data['transactions'][0]['document_number'])->toBe($entry->reference);
+});
+
+test('client statement without dates covers the whole history up to today', function () {
+    Carbon::setTestNow('2026-10-05 12:00:00');
+
+    ($this->postClientLine)('2026-08-01', debit: 4000, sourceType: 'SalesOrder');
+    ($this->postClientLine)('2026-10-05', credit: 1000, sourceType: 'SalesOrder');
+    ($this->postClientLine)('2026-10-06', debit: 999); // after today
+
+    $data = $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
+        ->getJson("/api/v1/reports/partner-statement?party_type=client&party_id={$this->client->id}")
+        ->assertOk()
+        ->json();
+
+    expect($data['period'])->toBe(['from' => null, 'to' => null])
+        ->and($data['opening_balance'])->toEqual(0.0)
+        ->and(count($data['transactions']))->toBe(2)
+        ->and($data['closing_balance'])->toEqual(3000.0);
+});
+
+test('client statement returns an idle client with zero balances', function () {
+    Carbon::setTestNow('2026-10-05 12:00:00');
+
+    $data = $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
+        ->getJson("/api/v1/reports/partner-statement?party_type=client&party_id={$this->client->id}&from=2026-09-01&to=2026-09-30")
+        ->assertOk()
+        ->json();
+
+    expect($data['party']['id'])->toBe($this->client->id)
+        ->and($data['party']['name'])->toBe('شركة البناء الراقي')
+        ->and($data['opening_balance'])->toEqual(0.0)
+        ->and($data['closing_balance'])->toEqual(0.0)
+        ->and($data['transactions'])->toBe([]);
+});
+
+test('client statement keeps an idle overpaid balance', function () {
+    Carbon::setTestNow('2026-10-05 12:00:00');
+
+    ($this->postClientLine)('2026-08-01', credit: 500);
+
+    $data = $this->actingAs($this->owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
+        ->getJson("/api/v1/reports/partner-statement?party_type=client&party_id={$this->client->id}&from=2026-09-01&to=2026-09-30")
+        ->assertOk()
+        ->json();
+
+    expect($data['opening_balance'])->toEqual(-500.0)
+        ->and($data['closing_balance'])->toEqual(-500.0)
+        ->and($data['transactions'])->toBe([]);
 });
 
 test('supplier balances summary and statement calculates purchases and payments', function () {
