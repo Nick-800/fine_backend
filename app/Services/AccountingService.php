@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\MissingAccountException;
+use App\Exceptions\SalesRuleException;
 use App\Exceptions\UnbalancedJournalException;
 use App\Models\Account;
+use App\Models\Client;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Support\ReceivableAccounts;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -33,7 +36,7 @@ class AccountingService
      * than a rejected one, because it silently breaks the trial balance and
      * nothing downstream would notice.
      *
-     * @param  array<int, array{account_code: string, debit?: float, credit?: float, operating_unit_id?: string|null, memo?: string|null}>  $lines
+     * @param  array<int, array{account_code: string, debit?: float, credit?: float, operating_unit_id?: string|null, memo?: string|null, client_id?: string|null}>  $lines
      */
     public function postJournal(
         string $description,
@@ -87,6 +90,8 @@ class AccountingService
             throw new InvalidArgumentException('A journal entry with no value has nothing to record.');
         }
 
+        $this->validatePartyLines($lines);
+
         $entryDate ??= now()->toDateString();
 
         return DB::transaction(function () use ($description, $lines, $sourceType, $sourceId, $companyId, $isManual, $userId, $entryDate): JournalEntry {
@@ -110,6 +115,7 @@ class AccountingService
                     'operating_unit_id' => $line['operating_unit_id'] ?? null,
                     'debit' => round((float) ($line['debit'] ?? 0), 4),
                     'credit' => round((float) ($line['credit'] ?? 0), 4),
+                    'client_id' => $line['client_id'] ?? null,
                     'memo' => $line['memo'] ?? null,
                 ]);
             }
@@ -158,6 +164,42 @@ class AccountingService
             'total_credit' => $totalCredit,
             'balanced' => abs($totalDebit - $totalCredit) < self::BALANCE_TOLERANCE,
         ];
+    }
+
+    /**
+     * A client party may only sit on the receivables subtree, and on the
+     * sub-account the client is bound to (when it has one). Checked before any
+     * write so a bad party never leaves a half-posted entry.
+     *
+     * @param  array<int, array<string, mixed>>  $lines
+     */
+    private function validatePartyLines(array $lines): void
+    {
+        foreach ($lines as $line) {
+            $clientId = $line['client_id'] ?? null;
+
+            if ($clientId === null) {
+                continue;
+            }
+
+            $account = $this->resolveAccount($line['account_code']);
+
+            if (! ReceivableAccounts::contains($account->id)) {
+                throw new SalesRuleException(
+                    "Account {$account->account_code} is not a receivable account, so it cannot carry a client.",
+                    'PARTY_ON_NON_RECEIVABLE',
+                );
+            }
+
+            $clientAccountId = Client::query()->whereKey($clientId)->value('account_id');
+
+            if ($clientAccountId !== null && $clientAccountId !== $account->id) {
+                throw new SalesRuleException(
+                    "The client is bound to a different receivable sub-account than {$account->account_code}.",
+                    'PARTY_ACCOUNT_MISMATCH',
+                );
+            }
+        }
     }
 
     private function resolveAccount(string $code): Account
