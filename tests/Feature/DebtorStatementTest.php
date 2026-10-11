@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\Company;
 use App\Models\Entity;
 use App\Models\InventoryItem;
+use App\Models\JournalLine;
 use App\Models\OperatingUnit;
 use App\Models\Role;
 use App\Models\StockLot;
@@ -199,4 +200,28 @@ test('cash sale to a named client leaves no balance and no debtor', function () 
         ->assertOk()
         ->json('debtors');
     expect(collect($debtors)->pluck('client.id')->all())->not->toContain($this->client->id);
+});
+
+test('manual client line without a unit takes the client unit and shows in its statement', function () {
+    $owner = ($this->makeUser)('owner', null);
+
+    $this->actingAs($owner)->postJson('/api/v1/journal-entries', [
+        'description' => 'Opening balance',
+        'entry_date' => '2026-09-15',
+        'lines' => [
+            ['account_code' => '122', 'debit' => 400, 'client_id' => $this->client->id],
+            ['account_code' => '41', 'credit' => 400],
+        ],
+    ])->assertCreated();
+
+    expect(JournalLine::whereNotNull('client_id')->value('operating_unit_id'))->toBe($this->unitA->id)
+        ->and(JournalLine::whereNull('client_id')->value('operating_unit_id'))->toBeNull();
+
+    $response = $this->actingAs($owner)
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unitA->id])
+        ->getJson(DEBTOR_URL.'?from=2026-09-01&to=2026-09-30');
+
+    $response->assertOk();
+    expect($response->json('debtors'))->toHaveCount(1)
+        ->and($response->json('debtors.0.closing_balance'))->toBe(400);
 });

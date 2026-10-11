@@ -191,7 +191,8 @@ class AccountingService
                 );
             }
 
-            $clientAccountId = Client::query()->whereKey($clientId)->value('account_id');
+            // A client of another unit must still be checked, so no unit scope here.
+            $clientAccountId = Client::withoutGlobalScopes()->whereKey($clientId)->value('account_id');
 
             if ($clientAccountId !== null && $clientAccountId !== $account->id) {
                 throw new SalesRuleException(

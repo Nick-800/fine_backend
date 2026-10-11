@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Models\Account;
 use App\Models\Client;
 use App\Support\ReceivableAccounts;
 use Illuminate\Console\Command;
@@ -13,9 +14,10 @@ use Illuminate\Support\Facades\DB;
  * Fills journal_lines.client_id on historical receivable lines (account 122
  * and descendants) that predate party tagging.
  *
- * Pass 1 uses the client's dedicated sub-account (clients.account_id), skipping
- * accounts shared by several clients. Pass 2 uses the source SalesOrder's
- * client for lines still untagged. Idempotent; only touches NULL client_id.
+ * Pass 1 uses the client's dedicated sub-account (clients.account_id), only on
+ * leaf accounts of the subtree (never the root 122 or a grouping account) and
+ * skipping accounts shared by several clients. Pass 2 uses the source
+ * SalesOrder's client for lines still untagged. Idempotent; only touches NULL client_id.
  */
 final class BackfillJournalLineClients extends Command
 {
@@ -55,8 +57,14 @@ final class BackfillJournalLineClients extends Command
             return 0;
         }
 
+        $leafIds = $this->leafAccountIds($subtree);
+
+        if ($leafIds === []) {
+            return 0;
+        }
+
         $clientByAccount = Client::query()
-            ->whereIn('account_id', $subtree)
+            ->whereIn('account_id', $leafIds)
             ->get(['id', 'account_id'])
             ->groupBy('account_id')
             ->filter(fn ($clients) => $clients->count() === 1)
@@ -84,6 +92,24 @@ final class BackfillJournalLineClients extends Command
         }
 
         return $count;
+    }
+
+    /**
+     * Leaf accounts of the subtree: never the root 122 or a grouping account,
+     * whose lines may belong to many clients even when only one is linked.
+     *
+     * @param  array<int, string>  $subtree
+     * @return array<int, string>
+     */
+    private function leafAccountIds(array $subtree): array
+    {
+        $parentIds = Account::query()
+            ->whereIn('parent_account_id', $subtree)
+            ->distinct()
+            ->pluck('parent_account_id')
+            ->all();
+
+        return array_values(array_diff(array_slice($subtree, 1), $parentIds));
     }
 
     /**

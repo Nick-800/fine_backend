@@ -221,3 +221,27 @@ test('credit sale and collection for a client linked to a non-receivable account
     expect($lines)->toHaveCount(2)
         ->and($lines->pluck('client_id')->filter()->count())->toBe(0);
 });
+
+test('manual entry checks the sub-account of a client from another unit', function () {
+    $otherUnit = OperatingUnit::create([
+        'company_id' => $this->company->id, 'blueprint_id' => $this->unit->blueprint_id,
+        'name' => 'Foam Unit', 'code' => 'FOAM-01', 'unit_type' => 'manufactory',
+    ]);
+    $entity = Entity::create(['name' => 'Foam client', 'entity_type' => 'organization', 'phone' => '0910000009']);
+    $foreign = Client::create([
+        'entity_id' => $entity->id, 'operating_unit_id' => $otherUnit->id,
+        'credit_limit' => 1.0, 'current_balance' => 0.0, 'account_id' => $this->child->id,
+    ]);
+
+    $this->actingAs(ownerUser())
+        ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
+        ->postJson('/api/v1/journal-entries', [
+            'description' => 'Wrong account',
+            'lines' => [
+                ['account_code' => '122', 'debit' => 100, 'client_id' => $foreign->id],
+                ['account_code' => '41', 'credit' => 100],
+            ],
+        ])->assertStatus(422)->assertJsonPath('code', 'PARTY_ACCOUNT_MISMATCH');
+
+    expect(JournalEntry::count())->toBe(0);
+});

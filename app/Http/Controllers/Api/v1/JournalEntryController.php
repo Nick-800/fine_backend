@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
+use App\Models\Client;
 use App\Models\JournalEntry;
 use App\Services\AccountingService;
 use App\Support\CurrentUnitContext;
@@ -79,7 +80,7 @@ class JournalEntryController extends Controller
         try {
             $entry = $this->accountingService->postJournal(
                 $validated['description'],
-                $validated['lines'],
+                $this->defaultClientUnits($validated['lines']),
                 isManual: true,
                 userId: $user->id,
                 entryDate: $validated['entry_date'] ?? null,
@@ -92,6 +93,39 @@ class JournalEntryController extends Controller
         }
 
         return response()->json($entry->load('createdBy'), 201);
+    }
+
+    /**
+     * A client-tagged line with no unit takes the client's unit, so it stays
+     * visible to unit-scoped receivables reports. The client may belong to
+     * another unit than the current context, hence no global scopes.
+     *
+     * @param  array<int, array<string, mixed>>  $lines
+     * @return array<int, array<string, mixed>>
+     */
+    private function defaultClientUnits(array $lines): array
+    {
+        $clientIds = collect($lines)
+            ->filter(fn (array $line) => ($line['client_id'] ?? null) !== null && ($line['operating_unit_id'] ?? null) === null)
+            ->pluck('client_id')
+            ->unique()
+            ->all();
+
+        if ($clientIds === []) {
+            return $lines;
+        }
+
+        $unitByClient = Client::withoutGlobalScopes()
+            ->whereKey($clientIds)
+            ->pluck('operating_unit_id', 'id');
+
+        return array_map(function (array $line) use ($unitByClient): array {
+            if (($line['client_id'] ?? null) !== null && ($line['operating_unit_id'] ?? null) === null) {
+                $line['operating_unit_id'] = $unitByClient[$line['client_id']] ?? null;
+            }
+
+            return $line;
+        }, $lines);
     }
 
     public function show(string $id): JsonResponse

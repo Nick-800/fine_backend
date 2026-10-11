@@ -38,7 +38,12 @@ final class PartnerReportService
         }
 
         $clients = $query->get();
-        $balances = $this->receivables->balances($asOf, $operatingUnitId, $clients->modelKeys());
+        // Company-wide reads every client, so skip the (possibly huge) id list.
+        $balances = $this->receivables->balances(
+            $asOf,
+            $operatingUnitId,
+            $operatingUnitId === null ? null : $clients->modelKeys(),
+        );
 
         $rows = [];
         $totalReceivables = 0.0;

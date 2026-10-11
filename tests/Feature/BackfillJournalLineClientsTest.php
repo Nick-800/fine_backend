@@ -171,3 +171,23 @@ test('ignores non-receivable lines', function () {
         ->where('account_id', Account::where('account_code', '41')->value('id'))->firstOrFail();
     expect($revenue->client_id)->toBeNull();
 });
+
+test('pass 1 ignores a client linked to the bare root account', function () {
+    $this->client->update(['account_id' => $this->parent->id]);
+
+    $entity = Entity::create(['name' => 'Other', 'entity_type' => 'organization', 'phone' => '0910000003']);
+    $other = Client::create([
+        'entity_id' => $entity->id, 'operating_unit_id' => $this->unit->id,
+        'credit_limit' => 1.0, 'current_balance' => 0.0,
+    ]);
+    $line = historyLine('122', salesOrderFor($other->id)->id);
+
+    $this->artisan('ledger:backfill-clients')
+        ->expectsOutputToContain('By sub-account: 0')
+        ->expectsOutputToContain('By sales order: 1')
+        ->expectsOutputToContain('Still unassigned: 0')
+        ->assertExitCode(0);
+
+    expect($line->fresh()->client_id)->toBe($other->id)
+        ->and(JournalLine::where('client_id', $this->client->id)->count())->toBe(0);
+});

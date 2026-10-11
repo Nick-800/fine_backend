@@ -516,10 +516,6 @@ final class SaleCheckoutService
     }
 
     /**
-     * The treasury money goes into: one of this unit's, of the matching kind,
-     * and linked to the ledger.
-     */
-    /**
      * The client id to tag a receivable line with, or null when the client's
      * linked account sits outside the receivables subtree (such a line stays
      * untagged rather than being refused).
@@ -535,6 +531,10 @@ final class SaleCheckoutService
         return $accountId !== null && ReceivableAccounts::contains($accountId) ? $client->id : null;
     }
 
+    /**
+     * The treasury money goes into: one of this unit's, of the matching kind,
+     * and linked to the ledger.
+     */
     private function resolveTreasury(?string $cashAccountId, string $method): CashAccount
     {
         $cashAccount = $cashAccountId !== null
