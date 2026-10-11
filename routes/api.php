@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\v1\ConsumptionReportController;
 use App\Http\Controllers\Api\v1\CreditApprovalController;
 use App\Http\Controllers\Api\v1\CutterWorkOrderController;
 use App\Http\Controllers\Api\v1\DashboardController;
+use App\Http\Controllers\Api\v1\DebtorStatementController;
 use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityLookupController;
 use App\Http\Controllers\Api\v1\FinancialReportController;
@@ -171,6 +172,11 @@ Route::prefix('v1')->group(function () {
                 Route::get('/fixed-assets', [FixedAssetController::class, 'index']);
                 Route::get('/fixed-assets/{id}', [FixedAssetController::class, 'show']);
                 Route::get('/fixed-assets/{id}/depreciation-schedule', [FixedAssetController::class, 'depreciationSchedule']);
+            });
+
+            // Debtor statements (كشف حساب المدينين)
+            Route::middleware('require.role:owner,accounting-manager,manager,unit_manager,treasury-officer')->group(function () {
+                Route::get('/reports/debtor-statements', [DebtorStatementController::class, 'index']);
             });
 
             // Payable settlement is guarded inside PayableSettlementController (returns SETTLEMENT_FORBIDDEN)
