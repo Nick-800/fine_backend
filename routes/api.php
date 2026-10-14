@@ -52,6 +52,7 @@ use App\Http\Controllers\Api\v1\ReferenceLookupController;
 use App\Http\Controllers\Api\v1\RoleController;
 use App\Http\Controllers\Api\v1\SaleBundleController;
 use App\Http\Controllers\Api\v1\SaleController;
+use App\Http\Controllers\Api\v1\SalesMarginReportController;
 use App\Http\Controllers\Api\v1\StockAdjustmentRequestController;
 use App\Http\Controllers\Api\v1\StockLotController;
 use App\Http\Controllers\Api\v1\SupplierController;
@@ -168,6 +169,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('/reports/bundle-sales', [BundleController::class, 'salesReport']);
                 Route::get('/reports/partner-balances', [PartnerReportController::class, 'balances']);
                 Route::get('/reports/partner-statement', [PartnerReportController::class, 'statement']);
+                Route::get('/reports/sales-margin', [SalesMarginReportController::class, 'index']);
                 Route::get('/overhead-expenses', [OverheadExpenseController::class, 'index']);
                 Route::get('/fixed-assets', [FixedAssetController::class, 'index']);
                 Route::get('/fixed-assets/{id}', [FixedAssetController::class, 'show']);
