@@ -55,6 +55,7 @@ use App\Http\Controllers\Api\v1\SaleController;
 use App\Http\Controllers\Api\v1\SalesMarginReportController;
 use App\Http\Controllers\Api\v1\StockAdjustmentRequestController;
 use App\Http\Controllers\Api\v1\StockLotController;
+use App\Http\Controllers\Api\v1\StockMovementCardController;
 use App\Http\Controllers\Api\v1\SupplierController;
 use App\Http\Controllers\Api\v1\SystemVersionController;
 use App\Http\Controllers\Api\v1\TankStockController;
@@ -377,6 +378,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('/inventory-movements/{id}', [InventoryMovementController::class, 'show']);
                 Route::get('/inventory/stock/{sku}', [InventoryMovementController::class, 'stock']);
                 Route::get('/inventory/ledger/{warehouseId}', [InventoryMovementController::class, 'ledger']);
+                Route::get('/inventory/items/{id}/movement-card', [StockMovementCardController::class, 'show']);
                 Route::get('/internal-restock-requests', [InternalRestockController::class, 'index']);
                 Route::post('/internal-restock-requests', [InternalRestockController::class, 'store']);
                 Route::put('/internal-restock-requests/{id}/approve', [InternalRestockController::class, 'approve']);
