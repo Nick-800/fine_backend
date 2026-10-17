@@ -77,7 +77,7 @@ final class PayrollService
 
             foreach ($employees as $employee) {
                 $basePay = $employee->pay_type === PayType::Monthly
-                    ? round((float) ($employee->monthly_salary ?? 0), 4)
+                    ? $this->monthlyBasePay($employee, $start, $end)
                     : 0.0;
 
                 $attendancePay = $employee->pay_type === PayType::Hourly
@@ -114,6 +114,29 @@ final class PayrollService
 
             return $run->refresh()->load('payslips.employee.entity');
         });
+    }
+
+    /**
+     * BR-PAY-004: a salaried employee hired inside the period is paid only for
+     * the calendar days they were employed (the hire day counts as worked);
+     * one hired after the period has not earned anything yet.
+     */
+    private function monthlyBasePay(Employee $employee, Carbon $start, Carbon $end): float
+    {
+        $salary = (float) ($employee->monthly_salary ?? 0);
+        $hireDate = $employee->hire_date;
+
+        if ($hireDate === null || $hireDate->lte($start)) {
+            return round($salary, 4);
+        }
+
+        if ($hireDate->gt($end)) {
+            return 0.0;
+        }
+
+        $daysEmployed = $end->day - $hireDate->day + 1;
+
+        return round($salary * $daysEmployed / $start->daysInMonth, 4);
     }
 
     /**

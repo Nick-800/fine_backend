@@ -109,6 +109,32 @@ test('calculation builds payslips from salary and attendance', function () {
         ->and((float) $slips[$this->hourly->id]['attendance_pay'])->toBe(160.0);
 });
 
+test('a salaried employee hired mid-period is paid only for the days employed', function () {
+    $this->salaried->update(['hire_date' => '2026-08-16']);
+
+    $run = ($this->openAndCalculate)();
+    $slips = collect($run['payslips'])->keyBy('employee_id');
+
+    // August has 31 days; employed 16th-31st = 16 days.
+    expect((float) $slips[$this->salaried->id]['base_pay'])->toBe(round(3000 * 16 / 31, 4));
+});
+
+test('a salaried employee hired on the first of the period gets the full salary', function () {
+    $this->salaried->update(['hire_date' => '2026-08-01']);
+
+    $slips = collect(($this->openAndCalculate)()['payslips'])->keyBy('employee_id');
+
+    expect((float) $slips[$this->salaried->id]['base_pay'])->toBe(3000.0);
+});
+
+test('a salaried employee hired after the period gets no payslip', function () {
+    $this->salaried->update(['hire_date' => '2026-09-02']);
+
+    $slips = collect(($this->openAndCalculate)()['payslips'])->keyBy('employee_id');
+
+    expect($slips->has($this->salaried->id))->toBeFalse();
+});
+
 test('recalculating regenerates the payslips instead of duplicating them', function () {
     $run = ($this->openAndCalculate)();
 
