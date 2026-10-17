@@ -7,7 +7,10 @@ namespace Database\Seeders;
 use App\Models\Account;
 use App\Models\ChartOfAccounts;
 use App\Models\Company;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Unified company Chart of Accounts seeder.
@@ -18,10 +21,21 @@ use Illuminate\Database\Seeder;
  *     ...01: مصنع الإسفنج (Foam Factory)
  *     ...02: مقص فاين (Cutter Factory)
  * - Excludes individual customer/vendor sub-accounts (control accounts only).
+ *
+ * This catalog is the single source of truth: the account codes hardcoded in
+ * the domain services (SalesAccounts, InventoryAccounts, PayrollService, …)
+ * mean exactly what is defined here. The old database/data/chart_of_accounts.json
+ * overlay was retired on 2026-10-17 because it gave the same codes different
+ * meanings. A file is read only when one is passed explicitly (coa:post --db).
  */
 class ChartOfAccountsSeeder extends Seeder
 {
-    public function run(?string $customJsonPath = null): void
+    /**
+     * Seed the catalog below. An explicit $importPath (used by `coa:post --db`)
+     * overlays a chart exported from another server on top of it; the default
+     * seed reads no file.
+     */
+    public function run(?string $importPath = null): void
     {
         $company = Company::first() ?? Company::firstOrCreate(
             ['name' => 'Fine'],
@@ -67,12 +81,12 @@ class ChartOfAccountsSeeder extends Seeder
             ['15', 'دفعات مقدمة للموردين', 'asset', '12'],
 
             ['13', 'المخزون وبضاعة آخر المدة', 'asset', '1'],
-            ['111', 'مخزون المواد الخام والكيماويات', 'asset', '11'],
-            ['112', 'إنتاج تحت التشغيل', 'asset', '11'],
+            ['111', 'مخزون المواد الخام والكيماويات', 'asset', '13'],
+            ['112', 'إنتاج تحت التشغيل', 'asset', '13'],
             ['1121', 'إنتاج تحت التشغيل — مصنع الإسفنج', 'asset', '112'],
             ['1122', 'إنتاج تحت التشغيل — قسم القص', 'asset', '112'],
             ['1123', 'إنتاج تحت التشغيل — قسم الأثاث', 'asset', '112'],
-            ['113', 'مخزون الإنتاج التام', 'asset', '11'],
+            ['113', 'مخزون الإنتاج التام', 'asset', '13'],
             ['1131', 'إنتاج تام — قوالب الإسفنج', 'asset', '113'],
             ['1132', 'إنتاج تام — القطع المقصوصة', 'asset', '113'],
             ['1133', 'إنتاج تام — حشوات وبقايا الإنتاج', 'asset', '113'],
@@ -173,27 +187,23 @@ class ChartOfAccountsSeeder extends Seeder
             $catalogByCode[(string) $row[0]] = [$row[0], $row[1], $row[2], $row[3], $row[4] ?? 'LYD', null];
         }
 
-        $jsonPath = $customJsonPath ?? database_path('data/chart_of_accounts.json');
-        if (file_exists($jsonPath)) {
-            $raw = json_decode((string) file_get_contents($jsonPath), true);
-            if (is_array($raw) && ! empty($raw)) {
-                foreach ($raw as $item) {
-                    $code = (string) ($item['account_code'] ?? $item[0]);
-                    $name = (string) ($item['name'] ?? $item[1]);
-                    $type = (string) ($item['type'] ?? $item[2]);
-                    $parentCode = isset($item['parent_code'])
-                        ? ($item['parent_code'] !== null ? (string) $item['parent_code'] : null)
-                        : ($item[3] ?? null);
-                    $currency = (string) ($item['currency'] ?? $item[4] ?? $company->default_currency ?? 'LYD');
-                    $section = isset($item['section']) ? (string) $item['section'] : null;
+        if ($importPath !== null && file_exists($importPath)) {
+            $raw = json_decode((string) file_get_contents($importPath), true);
 
-                    // Ensure accounts 6 and 7 remain parentless root accounts
-                    if (in_array($code, ['6', '7'], true)) {
-                        $parentCode = null;
-                    }
+            foreach (is_array($raw) ? $raw : [] as $item) {
+                $code = (string) ($item['account_code'] ?? $item[0]);
+                $parentCode = array_key_exists('parent_code', $item)
+                    ? ($item['parent_code'] !== null ? (string) $item['parent_code'] : null)
+                    : ($item[3] ?? null);
 
-                    $catalogByCode[$code] = [$code, $name, $type, $parentCode, $currency, $section];
-                }
+                $catalogByCode[$code] = [
+                    $code,
+                    (string) ($item['name'] ?? $item[1]),
+                    (string) ($item['type'] ?? $item[2]),
+                    in_array($code, ['6', '7'], true) ? null : $parentCode,
+                    (string) ($item['currency'] ?? $item[4] ?? $company->default_currency ?? 'LYD'),
+                    isset($item['section']) ? (string) $item['section'] : null,
+                ];
             }
         }
 
@@ -201,14 +211,16 @@ class ChartOfAccountsSeeder extends Seeder
 
         $targetCodes = array_column($catalog, 0);
 
-        // Remove any legacy unlisted sub-accounts that have zero journal lines
-        Account::whereNotIn('account_code', $targetCodes)
-            ->whereDoesntHave('journalLines')
-            ->update(['parent_account_id' => null]);
+        // Remove legacy unlisted accounts that nothing uses: no journal lines and
+        // no client, supplier, treasury, item, unit or asset pointing at them.
+        // Auto-created sub-accounts (a client's own receivable, say) are linked,
+        // so they survive a reseed.
+        $unused = fn () => $this->withoutReferences(
+            Account::whereNotIn('account_code', $targetCodes)->whereDoesntHave('journalLines')
+        );
 
-        $deletedCount = Account::whereNotIn('account_code', $targetCodes)
-            ->whereDoesntHave('journalLines')
-            ->delete();
+        $unused()->update(['parent_account_id' => null]);
+        $deletedCount = $unused()->delete();
 
         if ($deletedCount > 0) {
             $this->command?->info("Removed {$deletedCount} unused legacy sub-accounts.");
@@ -270,5 +282,33 @@ class ChartOfAccountsSeeder extends Seeder
 
         $count = count($catalog);
         $this->command?->info("Unified chart of accounts seeded successfully with {$count} master and operational accounts.");
+    }
+
+    /**
+     * Exclude accounts that any other table still references.
+     *
+     * @param  Builder<Account>  $query
+     * @return Builder<Account>
+     */
+    private function withoutReferences(Builder $query): Builder
+    {
+        $references = [
+            'clients' => 'account_id',
+            'suppliers' => 'account_id',
+            'cash_accounts' => 'account_id',
+            'inventory_item_accounts' => 'account_id',
+            'operating_unit_accounts' => 'account_id',
+            'fixed_assets' => 'account_id',
+            'operating_units' => 'revenue_account_id',
+            'purchase_orders' => 'payment_source_account_id',
+        ];
+
+        foreach ($references as $table => $column) {
+            if (Schema::hasTable($table) && Schema::hasColumn($table, $column)) {
+                $query->whereNotIn('id', DB::table($table)->whereNotNull($column)->select($column));
+            }
+        }
+
+        return $query;
     }
 }

@@ -223,14 +223,21 @@ test('coa:post creates new accounts and updates modified ones over HTTP', functi
     File::delete($testInputPath);
 });
 
-test('chart of accounts seeder loads catalog from JSON when present', function () {
+test('the default seed uses only the inline catalog, never a JSON file', function () {
     $seeder = new ChartOfAccountsSeeder;
     $seeder->run();
 
-    // Accounts seeded from JSON include custom remote accounts like 110432
-    $acc11432 = Account::where('account_code', '11432')->first();
-    expect($acc11432)->not->toBeNull()
-        ->and($acc11432->name)->toBe('سلف الموظفين المقص');
+    // The retired JSON overlay used to add accounts like 11432 and give shared
+    // codes different meanings; the inline catalog is now the only source.
+    expect(Account::where('account_code', '11432')->exists())->toBeFalse()
+        ->and(Account::where('account_code', '12')->value('name'))->toBe('الأصول المتداولة')
+        ->and(Account::where('account_code', '122')->value('name'))->toBe('الزبائن والعملاء')
+        ->and(Account::where('account_code', '221')->value('name'))->toBe('الموردين');
+
+    // Inventory groups sit under 13 (inventory), not 11 (fixed assets).
+    $inventory = Account::where('account_code', '13')->value('id');
+    expect(Account::where('account_code', '111')->value('parent_account_id'))->toBe($inventory)
+        ->and(Account::where('account_code', '113')->value('parent_account_id'))->toBe($inventory);
 
     // Accounts 6 and 7 are root accounts
     $acc6 = Account::where('account_code', '6')->firstOrFail();

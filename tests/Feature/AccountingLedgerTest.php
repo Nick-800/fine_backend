@@ -180,7 +180,8 @@ test('the chart of accounts lists every account with signed balances', function 
     // Both sides carry a positive balance in their natural sign.
     expect((float) $byCode['111']['balance'])->toBe(800.0)
         ->and((float) $byCode['21']['balance'])->toBe(800.0)
-        ->and($byCode['111']['parent_account_id'])->toBe($byCode['11']['id']);
+        // 111 (raw materials) is inventory, so it sits under 13, not 11 (fixed assets).
+        ->and($byCode['111']['parent_account_id'])->toBe($byCode['13']['id']);
 });
 
 test('an account ledger lists its lines newest first with entry context', function () {
