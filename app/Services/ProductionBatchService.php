@@ -211,6 +211,12 @@ class ProductionBatchService
      */
     private function guardTransition(ProductionBatch $batch, ProductionBatchStatus $target): void
     {
+        if ($target === ProductionBatchStatus::Closed && (float) $batch->material_cost <= 0) {
+            throw new InvalidStateTransitionException(
+                "Operation {$batch->operation_number} cannot close without a material cost — enter it first so its blocks carry value."
+            );
+        }
+
         // FOAM-05: a batch cannot be declared graded while blocks are missing
         // their measured pressure, and cannot close with no output at all.
         if ($target === ProductionBatchStatus::Graded) {

@@ -13,6 +13,7 @@ use App\Services\ProductionBatchService;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class ProductionBatchController extends Controller
@@ -133,7 +134,23 @@ class ProductionBatchController extends Controller
             ], 422);
         }
 
-        $batch->update($validated);
+        // A status change must go through the lifecycle (cost apportionment and
+        // the closing journal live there), never a plain column write. Both run
+        // in one transaction so a rejected transition leaves no half-saved edit.
+        $targetStatus = array_key_exists('status', $validated)
+            ? ProductionBatchStatus::from($validated['status'])
+            : null;
+        unset($validated['status']);
+
+        $batch = DB::transaction(function () use ($batch, $validated, $targetStatus): ProductionBatch {
+            $batch->update($validated);
+
+            if ($targetStatus !== null && $targetStatus !== $batch->status) {
+                return $this->productionBatchService->transition($batch, $targetStatus);
+            }
+
+            return $batch;
+        });
 
         return response()->json($batch->load(['operatingUnit', 'requestedByClient'])->loadCount(['blocks', 'scrapLots']));
     }

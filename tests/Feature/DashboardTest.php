@@ -114,6 +114,7 @@ test('the operational pipeline counts by status', function () {
     ProductionBatch::create([
         'operating_unit_id' => $this->unitA->id, 'operation_number' => 501,
         'bun_width_m' => 2.0, 'status' => 'closed',
+        'material_cost' => 1000.0,
     ]);
 
     $pipeline = ($this->asOwner)()->getJson('/api/v1/dashboard/operational-pipeline')

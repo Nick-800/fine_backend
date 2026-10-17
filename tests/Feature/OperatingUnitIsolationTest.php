@@ -86,6 +86,7 @@ beforeEach(function () {
         'operation_number' => 500,
         'bun_width_m' => 2.4,
         'status' => 'graded',
+        'material_cost' => 1000.0,
     ]);
 
     $this->category = ItemCategory::create(['name' => 'Universal Category', 'code' => 'CAT-U']);

@@ -12,12 +12,14 @@ use App\Models\UnitBlueprint;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Warehouse;
+use Database\Seeders\ChartOfAccountsTestSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->company = Company::create(['name' => 'Fine Foam Mfg']);
+    $this->seed(ChartOfAccountsTestSeeder::class);
     $this->blueprint = UnitBlueprint::create([
         'name' => 'Blueprint', 'workflow_set' => [], 'default_role_template' => [], 'default_inventory_config' => [],
     ]);
@@ -39,11 +41,12 @@ beforeEach(function () {
     $this->api = fn () => $this->actingAs($this->user)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id]);
 
-    $this->batch = fn (string $status = 'planned') => ProductionBatch::create([
+    $this->batch = fn (string $status = 'planned', float $materialCost = 1000.0) => ProductionBatch::create([
         'operating_unit_id' => $this->unit->id,
         'operation_number' => 191,
         'bun_width_m' => 2.4,
         'status' => $status,
+        'material_cost' => $materialCost,
     ]);
 
     $this->moveTo = function (ProductionBatch $batch, string $status) {
@@ -153,4 +156,109 @@ test('registering blocks posts a production output movement per block', function
 
     expect($movements)->toHaveCount(3)
         ->and(collect($movements)->pluck('movement_type')->unique()->all())->toBe(['production_output']);
+});
+
+test('closing with material_cost 0 is rejected and status stays graded', function () {
+    $batch = ($this->batch)('ready_for_grading', 0.0);
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [[
+            'kind' => 'block', 'count' => 1, 'length_m' => 2.0, 'height_m' => 0.8, 'pressure' => 35,
+            'inventory_item_id' => $this->blockItem->id, 'warehouse_id' => $this->warehouse->id,
+        ]],
+    ])->assertStatus(201);
+
+    ($this->moveTo)($batch, 'graded')->assertStatus(200);
+
+    ($this->moveTo)($batch, 'closed')
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'INVALID_STATE_TRANSITION')
+        ->assertJsonPath('message', "Operation {$batch->operation_number} cannot close without a material cost — enter it first so its blocks carry value.");
+
+    expect($batch->fresh()->status->value)->toBe('graded');
+});
+
+test('closing with material_cost 1000 sets non-zero unit_cost on blocks summing to 1000 and posts one journal entry', function () {
+    $batch = ($this->batch)('ready_for_grading', 1000.0);
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [
+            [
+                'kind' => 'block', 'count' => 2, 'length_m' => 2.0, 'height_m' => 0.8, 'pressure' => 35,
+                'inventory_item_id' => $this->blockItem->id, 'warehouse_id' => $this->warehouse->id,
+            ],
+        ],
+    ])->assertStatus(201);
+
+    ($this->moveTo)($batch, 'graded')->assertStatus(200);
+    ($this->moveTo)($batch, 'closed')->assertStatus(200)->assertJsonPath('status', 'closed');
+
+    $blocks = $batch->fresh()->blocks;
+    expect($blocks)->toHaveCount(2)
+        ->and((float) $blocks[0]->unit_cost)->toBeGreaterThan(0)
+        ->and((float) $blocks[1]->unit_cost)->toBeGreaterThan(0)
+        ->and((float) $blocks->sum('unit_cost'))->toBe(1000.0);
+
+    $entries = ($this->api)()
+        ->getJson("/api/v1/journal-entries/for-document/ProductionBatch/{$batch->id}")
+        ->assertStatus(200)
+        ->json();
+
+    expect($entries)->toHaveCount(1);
+});
+
+test('PUT with status closed goes through the same rules', function () {
+    $batch = ($this->batch)('ready_for_grading', 0.0);
+
+    ($this->api)()->postJson("/api/v1/production-batches/{$batch->id}/blocks", [
+        'groups' => [[
+            'kind' => 'block', 'count' => 1, 'length_m' => 2.0, 'height_m' => 0.8, 'pressure' => 35,
+            'inventory_item_id' => $this->blockItem->id, 'warehouse_id' => $this->warehouse->id,
+        ]],
+    ])->assertStatus(201);
+
+    ($this->moveTo)($batch, 'graded')->assertStatus(200);
+
+    // Rejected at zero cost
+    ($this->api)()->putJson("/api/v1/production-batches/{$batch->id}", [
+        'status' => 'closed',
+        'record_version' => $batch->fresh()->record_version,
+    ])
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'INVALID_STATE_TRANSITION')
+        ->assertJsonPath('message', "Operation {$batch->operation_number} cannot close without a material cost — enter it first so its blocks carry value.");
+
+    expect($batch->fresh()->status->value)->toBe('graded');
+
+    // At positive cost the journal is posted and status closes
+    ($this->api)()->putJson("/api/v1/production-batches/{$batch->id}", [
+        'status' => 'closed',
+        'material_cost' => 1000.0,
+        'record_version' => $batch->fresh()->record_version,
+    ])
+        ->assertStatus(200)
+        ->assertJsonPath('status', 'closed');
+
+    expect($batch->fresh()->status->value)->toBe('closed');
+
+    $entries = ($this->api)()
+        ->getJson("/api/v1/journal-entries/for-document/ProductionBatch/{$batch->id}")
+        ->assertStatus(200)
+        ->json();
+
+    expect($entries)->toHaveCount(1);
+});
+
+test('PUT with only material_cost still works', function () {
+    $batch = ($this->batch)('graded', 0.0);
+
+    ($this->api)()->putJson("/api/v1/production-batches/{$batch->id}", [
+        'material_cost' => 1500.0,
+        'record_version' => $batch->record_version,
+    ])
+        ->assertStatus(200)
+        ->assertJsonPath('material_cost', '1500.0000');
+
+    expect((float) $batch->fresh()->material_cost)->toBe(1500.0)
+        ->and($batch->fresh()->status->value)->toBe('graded');
 });

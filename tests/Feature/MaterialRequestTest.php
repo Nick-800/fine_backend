@@ -120,6 +120,7 @@ it('fulfills a material request via markFulfilled with a production batch', func
         'bun_width_m' => 2.4,
         'formula_params' => [],
         'status' => ProductionBatchStatus::Closed,
+        'material_cost' => 1000.0,
     ]);
 
     app(MaterialResolutionService::class)->markFulfilled($request, $batch);

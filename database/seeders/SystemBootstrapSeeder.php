@@ -770,6 +770,8 @@ class SystemBootstrapSeeder extends Seeder
                 'chemical_formula' => 'standard-white',
             ],
             'status' => ProductionBatchStatus::Planned->value,
+            // A batch cannot close without a material cost, so the demo run carries one.
+            'material_cost' => 12000,
         ]);
 
         $batchService->transition($batch, ProductionBatchStatus::Configured);
