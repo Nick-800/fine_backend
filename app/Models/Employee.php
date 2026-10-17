@@ -65,11 +65,6 @@ final class Employee extends Model
         return $this->hasMany(Payslip::class);
     }
 
-    public function laborLogs(): HasMany
-    {
-        return $this->hasMany(LaborLog::class);
-    }
-
     public function leaveRequests(): HasMany
     {
         return $this->hasMany(LeaveRequest::class);

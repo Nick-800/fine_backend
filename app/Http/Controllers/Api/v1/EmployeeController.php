@@ -126,17 +126,6 @@ final class EmployeeController extends Controller
         );
     }
 
-    public function laborLogs(Request $request, string $id): JsonResponse
-    {
-        $employee = Employee::findOrFail($id);
-
-        return response()->json(
-            $employee->load(['laborLogs' => fn ($q) => $q->with('productionOrder:id,order_number')->latest('logged_at')])
-                ->laborLogs
-                ->paginate($request->integer('per_page', 24))
-        );
-    }
-
     public function update(Request $request, string $id): EmployeeResource
     {
         $employee = Employee::findOrFail($id);
