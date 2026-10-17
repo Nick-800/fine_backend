@@ -12,6 +12,7 @@ use App\Exceptions\SerializedQuantityException;
 use App\Exceptions\UnbalancedJournalException;
 use App\Http\Middleware\EnforceDesktopAppVersion;
 use App\Http\Middleware\EnsurePasswordIsUpdated;
+use App\Http\Middleware\RequireModulePermission;
 use App\Http\Middleware\RequirePermission;
 use App\Http\Middleware\RequireRole;
 use App\Http\Middleware\ScopeOperatingUnit;
@@ -37,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'ensure.password.updated' => EnsurePasswordIsUpdated::class,
             'require.role' => RequireRole::class,
             'require.permission' => RequirePermission::class,
+            'require.module' => RequireModulePermission::class,
             'enforce.desktop.version' => EnforceDesktopAppVersion::class,
         ]);
     })

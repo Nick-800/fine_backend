@@ -80,7 +80,7 @@ Route::prefix('v1')->group(function () {
             // Reference Lookups (Data Settings)
             Route::get('/reference-lookups/{category}', [ReferenceLookupController::class, 'index']);
             Route::get('/reference-lookups/{category}/{id}', [ReferenceLookupController::class, 'show']);
-            Route::middleware('require.role:owner,admin')->group(function () {
+            Route::middleware(['require.role:owner,admin', 'require.module:manage-settings,manage-settings'])->group(function () {
                 Route::post('/reference-lookups/{category}', [ReferenceLookupController::class, 'store']);
                 Route::put('/reference-lookups/{category}/{id}', [ReferenceLookupController::class, 'update']);
                 Route::delete('/reference-lookups/{category}/{id}', [ReferenceLookupController::class, 'destroy']);
@@ -124,7 +124,7 @@ Route::prefix('v1')->group(function () {
             });
 
             // Finance: Mutations (Strictly Accounting Manager & Owner)
-            Route::middleware('require.role:owner,accounting-manager')->group(function () {
+            Route::middleware(['require.role:owner,accounting-manager', 'require.module:manage-accounting'])->group(function () {
                 Route::post('/overhead-expenses', [OverheadExpenseController::class, 'store']);
                 Route::post('/overhead-expenses/{id}/allocate', [OverheadExpenseController::class, 'allocate']);
                 Route::get('/overhead-allocation-rules', [OverheadExpenseController::class, 'rules']);
@@ -150,7 +150,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/journal-entries', [JournalEntryController::class, 'store']);
 
             // Financial Ledger & Reports: Ledger queries, statements and reports (scoped by unit)
-            Route::middleware('require.role:owner,accounting-manager,unit_manager,manager,inventory-manager,foam-manager,foam-operator,cutter-manager,cutter-operator,furniture-manager,assembler,store-manager,pos-cashier,procurement-manager,treasury-officer')->group(function () {
+            Route::middleware(['require.role:owner,accounting-manager,unit_manager,manager,inventory-manager,foam-manager,foam-operator,cutter-manager,cutter-operator,furniture-manager,assembler,store-manager,pos-cashier,procurement-manager,treasury-officer', 'require.module:view-accounting'])->group(function () {
                 Route::get('/accounts', [AccountController::class, 'index']);
                 Route::get('/accounts/{id}', [AccountController::class, 'show']);
                 Route::get('/accounts/{id}/ledger', [AccountController::class, 'ledger']);
@@ -172,7 +172,7 @@ Route::prefix('v1')->group(function () {
             });
 
             // Debtor statements (كشف حساب المدينين)
-            Route::middleware('require.role:owner,accounting-manager,manager,unit_manager,treasury-officer')->group(function () {
+            Route::middleware(['require.role:owner,accounting-manager,manager,unit_manager,treasury-officer', 'require.module:view-debtor-statements,settle-payables'])->group(function () {
                 Route::get('/reports/debtor-statements', [DebtorStatementController::class, 'index']);
             });
 
@@ -180,7 +180,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/payable-settlements', [PayableSettlementController::class, 'store']);
 
             // Treasury & Payables
-            Route::middleware('require.role:owner,treasury-officer,accounting-manager,procurement-manager,hr-manager,inventory-manager,foam-manager,cutter-manager,furniture-manager,store-manager,unit_manager,manager')->group(function () {
+            Route::middleware(['require.role:owner,treasury-officer,accounting-manager,procurement-manager,hr-manager,inventory-manager,foam-manager,cutter-manager,furniture-manager,store-manager,unit_manager,manager', 'require.module:view-treasury,create-treasury'])->group(function () {
                 Route::get('/payment-requests', [PaymentRequestController::class, 'all']);
                 Route::get('/purchase-orders/{id}/payment-requests', [PaymentRequestController::class, 'index']);
                 Route::post('/purchase-orders/{id}/payment-requests/{requestId}/process', [PaymentRequestController::class, 'process']);
@@ -197,7 +197,7 @@ Route::prefix('v1')->group(function () {
             });
 
             // Procurement
-            Route::middleware('require.role:owner,procurement-manager,treasury-officer,accounting-manager,hr-manager,inventory-manager,foam-manager,cutter-manager,furniture-manager,store-manager,unit_manager,manager')->group(function () {
+            Route::middleware(['require.role:owner,procurement-manager,treasury-officer,accounting-manager,hr-manager,inventory-manager,foam-manager,cutter-manager,furniture-manager,store-manager,unit_manager,manager', 'require.module:view-procurement,edit-procurement'])->group(function () {
                 Route::apiResource('suppliers', SupplierController::class);
                 Route::apiResource('purchase-orders', PurchaseOrderController::class)->only(['index', 'store', 'show', 'update']);
                 Route::post('/purchase-orders/{id}/transition', [PurchaseOrderController::class, 'transition']);
@@ -213,7 +213,7 @@ Route::prefix('v1')->group(function () {
             });
 
             // HR & Payroll & Employees
-            Route::middleware('require.role:owner,hr-manager,accounting-manager,unit_manager,manager,foam-manager,cutter-manager,furniture-manager,store-manager,procurement-manager')->group(function () {
+            Route::middleware(['require.role:owner,hr-manager,accounting-manager,unit_manager,manager,foam-manager,cutter-manager,furniture-manager,store-manager,procurement-manager', 'require.module:view-hr,manage-hr'])->group(function () {
                 Route::get('/employees/{id}/attendance', [EmployeeController::class, 'attendance']);
                 Route::get('/employees/{id}/payslips', [EmployeeController::class, 'payslips']);
                 Route::apiResource('employees', EmployeeController::class);
@@ -242,14 +242,14 @@ Route::prefix('v1')->group(function () {
             });
 
             // Foam Manufacturing
-            Route::middleware('require.role:owner,foam-manager,foam-operator,unit_manager,manager')->group(function () {
+            Route::middleware(['require.role:owner,foam-manager,foam-operator,unit_manager,manager', 'require.module:view-foam,edit-foam'])->group(function () {
                 Route::post('/production-batches/{id}/blocks', [ProductionBatchController::class, 'registerBlocks']);
                 Route::post('/production-batches/{id}/transition', [ProductionBatchController::class, 'transition']);
                 Route::apiResource('production-batches', ProductionBatchController::class);
             });
 
             // Cutter Manufacturing
-            Route::middleware('require.role:owner,cutter-manager,cutter-operator,unit_manager,manager')->group(function () {
+            Route::middleware(['require.role:owner,cutter-manager,cutter-operator,unit_manager,manager', 'require.module:view-cutting,edit-cutting'])->group(function () {
                 Route::get('/cutter-work-orders', [CutterWorkOrderController::class, 'index']);
                 Route::post('/cutter-work-orders', [CutterWorkOrderController::class, 'store']);
                 // Registered before /{id}: the literal path must not be read as an order id.
@@ -269,7 +269,7 @@ Route::prefix('v1')->group(function () {
 
             // Cross-module material requests — visible to furniture/cutter/foam
             // teams so they can see what's blocking assembly.
-            Route::middleware('require.role:owner,admin,furniture-manager,cutter-manager,foam-manager,unit_manager,manager')->group(function () {
+            Route::middleware(['require.role:owner,admin,furniture-manager,cutter-manager,foam-manager,unit_manager,manager', 'require.module:view-material-requests,manage-material-requests'])->group(function () {
                 Route::get('/material-requests', [MaterialRequestController::class, 'index']);
                 Route::get('/material-requests/{id}', [MaterialRequestController::class, 'show']);
                 Route::post('/material-requests/{id}/start', [MaterialRequestController::class, 'start']);
@@ -278,7 +278,7 @@ Route::prefix('v1')->group(function () {
             });
 
             // Sales & POS — the POS is the one place every sale happens.
-            Route::middleware('require.role:owner,store-manager,pos-cashier,cutter-manager,unit_manager,manager')->group(function () {
+            Route::middleware(['require.role:owner,store-manager,pos-cashier,cutter-manager,unit_manager,manager', 'require.module:view-sales,create-sales'])->group(function () {
                 Route::get('/sales', [SaleController::class, 'index']);
                 Route::post('/sales', [SaleController::class, 'store']);
                 Route::get('/sales/payment-accounts', [SaleController::class, 'paymentAccounts']);
@@ -304,14 +304,14 @@ Route::prefix('v1')->group(function () {
             });
 
             // Credit decisions — managers only; a cashier cannot approve their own over-limit sale.
-            Route::middleware('require.role:owner,store-manager,unit_manager,manager,accounting-manager')->group(function () {
+            Route::middleware(['require.role:owner,store-manager,unit_manager,manager,accounting-manager', 'require.module:approve-credit'])->group(function () {
                 Route::get('/credit-approval-requests', [CreditApprovalController::class, 'index']);
                 Route::put('/credit-approval-requests/{id}/approve', [CreditApprovalController::class, 'approve']);
                 Route::put('/credit-approval-requests/{id}/reject', [CreditApprovalController::class, 'reject']);
             });
 
             // Inventory, Stock Lots, Tanks & Work Orders
-            Route::middleware('require.role:owner,foam-manager,foam-operator,cutter-manager,cutter-operator,furniture-manager,assembler,store-manager,pos-cashier,procurement-manager,treasury-officer,accounting-manager,unit_manager,manager,inventory-manager')->group(function () {
+            Route::middleware(['require.role:owner,foam-manager,foam-operator,cutter-manager,cutter-operator,furniture-manager,assembler,store-manager,pos-cashier,procurement-manager,treasury-officer,accounting-manager,unit_manager,manager,inventory-manager', 'require.module:view-inventory,edit-inventory'])->group(function () {
                 Route::apiResource('item-categories', ItemCategoryController::class);
                 Route::apiResource('bundles', BundleController::class);
                 Route::apiResource('inventory-items', InventoryItemController::class);
@@ -346,7 +346,7 @@ Route::prefix('v1')->group(function () {
 
             // Clients
             Route::middleware('require.role:owner,store-manager,pos-cashier,procurement-manager,accounting-manager,unit_manager,manager')->group(function () {
-                Route::apiResource('clients', ClientController::class);
+                Route::apiResource('clients', ClientController::class)->middleware('require.module:view-clients,edit-clients');
             });
 
             // Owner Dashboard (guarded internally by ResolvesReportScope)

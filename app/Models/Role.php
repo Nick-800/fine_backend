@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Models\Traits\Auditable;
+use App\Support\RolePermissions;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -20,6 +21,15 @@ final class Role extends Model
         'slug',
         'description',
     ];
+
+    /**
+     * A role created under a known slug (seeder, admin screen or a test
+     * fixture) starts with that slug's default permissions.
+     */
+    protected static function booted(): void
+    {
+        self::created(fn (Role $role) => RolePermissions::grantDefaults($role));
+    }
 
     public function permissions(): BelongsToMany
     {
