@@ -95,7 +95,8 @@ class PosController extends Controller
 
         [$date, $start, $end] = $this->dayWindow($validated['date'] ?? null);
 
-        if (PosDailyClose::whereDate('close_date', $date)->exists()) {
+        // Scoped to this unit: closing one register must not block the others.
+        if (PosDailyClose::where('operating_unit_id', $unitId)->whereDate('close_date', $date)->exists()) {
             return response()->json([
                 'message' => 'This register day is already closed.',
                 'code' => 'POS_DAY_ALREADY_CLOSED',

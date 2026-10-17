@@ -48,6 +48,7 @@ final class SaleCheckoutService
         private readonly AccountingService $accountingService,
         private readonly StockIssueService $stockIssueService,
         private readonly DocumentNumberService $documentNumbers,
+        private readonly PosDayGuard $posDayGuard,
     ) {}
 
     /**
@@ -81,6 +82,8 @@ final class SaleCheckoutService
         if ($requestId !== null && ($existing = $this->findByRequestId($requestId)) !== null) {
             return $existing;
         }
+
+        $this->posDayGuard->ensureOpen($unit);
 
         [$client, $buyerUnit] = $this->resolveBuyer($unit, $data);
         $method = $client !== null ? $this->resolveMethod($client, $data['payment_method'] ?? null) : null;
@@ -197,6 +200,8 @@ final class SaleCheckoutService
         if (! in_array($method, ['cash', 'bank'], true)) {
             throw new SalesRuleException('A collection is received in cash or by bank.', 'PAYMENT_METHOD_REQUIRED');
         }
+
+        $this->posDayGuard->ensureOpen($order->operatingUnit()->firstOrFail());
 
         $cashAccount = $this->resolveTreasury($cashAccountId, $method);
 
