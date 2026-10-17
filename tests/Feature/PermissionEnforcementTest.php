@@ -69,8 +69,11 @@ test('the role check still bounds who reaches a module', function () {
         ->assertStatus(403);
 });
 
-test('the seeder creates the manager role with its permissions', function () {
+test('the seeder creates the manager, unit manager and inventory manager roles', function () {
     $this->seed(RoleSeeder::class);
+
+    expect(Role::where('slug', 'unit_manager')->sole()->permissions()->pluck('slug'))->toContain('view-sales', 'manage-hr')
+        ->and(Role::where('slug', 'inventory-manager')->sole()->permissions()->pluck('slug'))->toContain('view-inventory', 'edit-inventory');
 
     $manager = Role::where('slug', 'manager')->sole();
 

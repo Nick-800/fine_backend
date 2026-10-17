@@ -13,9 +13,8 @@ declare(strict_types=1);
 | group allows starts with both of that group's permissions, so access is
 | unchanged on day one and admins can narrow a role from the Roles screen.
 |
-| `roles` are created by the seeder. `role_permissions` also covers slugs
-| the routes reference but the seeder does not create (unit_manager,
-| inventory-manager), so such a role gets its defaults when created.
+| `roles` are created by the seeder; `role_permissions` gives each role
+| (and any role later created under the same slug) its defaults.
 | owner bypasses every permission check; admin holds every permission.
 */
 
@@ -65,6 +64,8 @@ return [
         'owner' => ['name' => 'المالك', 'description' => 'مالك النظام العام بتحكم كامل.'],
         'admin' => ['name' => 'المدير العام', 'description' => 'مدير عام بوصول إداري كامل.'],
         'manager' => ['name' => 'مدير الوحدة', 'description' => 'مدير وحدة تشغيلية بصلاحيات تشغيلية ومالية واسعة.'],
+        'unit_manager' => ['name' => 'مدير وحدة تشغيلية', 'description' => 'مدير وحدة تشغيلية محددة بنفس صلاحيات المدير ضمن وحدته.'],
+        'inventory-manager' => ['name' => 'مدير المخزون', 'description' => 'إدارة المخازن والأصناف وحركة المخزون.'],
         'accounting-manager' => ['name' => 'مدير المحاسبة', 'description' => 'إدارة الشؤون المالية والمحاسبية.'],
         'hr-manager' => ['name' => 'مدير الموارد البشرية', 'description' => 'إدارة الموارد البشرية وكشوف الرواتب.'],
         'procurement-manager' => ['name' => 'مدير المشتريات', 'description' => 'إدارة المشتريات وعمليات الشراء.'],
