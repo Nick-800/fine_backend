@@ -28,6 +28,8 @@ class AccountingService
      */
     private const BALANCE_TOLERANCE = 0.0001;
 
+    public function __construct(private readonly DocumentNumberService $documentNumbers) {}
+
     /**
      * Post a balanced double-entry journal.
      *
@@ -223,9 +225,9 @@ class AccountingService
      */
     private function nextReference(string $entryDate): string
     {
-        $year = Carbon::parse($entryDate)->format('Y');
-        $sequence = JournalEntry::withTrashed()->whereYear('entry_date', $year)->count() + 1;
-
-        return sprintf('JE-%s-%05d', $year, $sequence);
+        return $this->documentNumbers->next(
+            DocumentNumberService::JOURNAL_ENTRY,
+            (int) Carbon::parse($entryDate)->format('Y'),
+        );
     }
 }

@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Server-issued document numbers — sales (S), quotations (Q) and cutter work
- * orders (CWO). One counter per type and year serves every unit, and it is
+ * Server-issued document numbers — sales (S), quotations (Q), cutter work
+ * orders (CWO) and journal entries (JE). One counter per type and year serves every unit, and it is
  * locked while it moves, so two tills can never hand out the same number.
  */
 final class DocumentNumberService
@@ -21,12 +21,17 @@ final class DocumentNumberService
 
     public const CUTTER_WORK_ORDER = 'CWO';
 
+    public const JOURNAL_ENTRY = 'JE';
+
     /**
      * The next number for a document type, e.g. S-2026-00042.
+     *
+     * The year defaults to today. Journal entries pass their entry date's year:
+     * a backdated correction counts against its own year's sequence.
      */
-    public function next(string $documentType): string
+    public function next(string $documentType, ?int $year = null): string
     {
-        $year = (int) now()->format('Y');
+        $year ??= (int) now()->format('Y');
 
         return DB::transaction(function () use ($documentType, $year): string {
             // Seed the year's row without racing a concurrent first request.
