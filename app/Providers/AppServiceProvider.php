@@ -4,19 +4,30 @@ namespace App\Providers;
 
 use App\Models\Account;
 use App\Models\Bundle;
+use App\Models\BundleItem;
+use App\Models\Client;
+use App\Models\CutterWorkOrder;
+use App\Models\Employee;
+use App\Models\Entity;
 use App\Models\FixedAsset;
+use App\Models\InternalRestockRequest;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
+use App\Models\JournalEntry;
+use App\Models\MaterialRequest;
 use App\Models\OperatingUnit;
 use App\Models\OverheadExpense;
 use App\Models\PayrollRun;
 use App\Models\ProductionBatch;
+use App\Models\PurchaseOrderItem;
 use App\Models\Quotation;
 use App\Models\Role;
+use App\Models\SalesOrder;
 use App\Models\StockLot;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Models\WarehouseTransfer;
+use App\Models\WarehouseTransferLine;
 use App\Observers\AuditObserver;
 use App\Support\CurrentUnitContext;
 use Illuminate\Support\ServiceProvider;
@@ -85,5 +96,21 @@ class AppServiceProvider extends ServiceProvider
         // COA: every create / update / reparent / delete on an account is
         // audit-logged so the edit-detail page can show a full timeline.
         Account::observe(AuditObserver::class);
+
+        // Parties, sales, the ledger and the cutter: these carry the Auditable
+        // marker too, and every one of them moves money, stock or a promise.
+        Employee::observe(AuditObserver::class);
+        Client::observe(AuditObserver::class);
+        Entity::observe(AuditObserver::class);
+        SalesOrder::observe(AuditObserver::class);
+        JournalEntry::observe(AuditObserver::class);
+        CutterWorkOrder::observe(AuditObserver::class);
+
+        // Lines and requests under documents already audited above.
+        InternalRestockRequest::observe(AuditObserver::class);
+        MaterialRequest::observe(AuditObserver::class);
+        BundleItem::observe(AuditObserver::class);
+        WarehouseTransferLine::observe(AuditObserver::class);
+        PurchaseOrderItem::observe(AuditObserver::class);
     }
 }

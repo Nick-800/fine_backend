@@ -16,11 +16,37 @@ final class AuditLogController extends Controller
     private const VALID_ACTIONS = ['created', 'updated', 'deleted', 'restored'];
 
     /**
-     * Display a listing of audit logs.
+     * Display a paginated listing of audit logs, newest first, with optional
+     * filters on table, user, action and date range.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return AuditLogResource::collection(AuditLog::latest()->get());
+        $validated = $request->validate([
+            'table_name' => ['sometimes', 'string', 'max:100'],
+            'user_id' => ['sometimes', 'uuid'],
+            'action' => ['sometimes', 'string', Rule::in(self::VALID_ACTIONS)],
+            'from' => ['sometimes', 'date'],
+            'to' => ['sometimes', 'date', 'after_or_equal:from'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
+        ]);
+
+        $query = AuditLog::latest();
+
+        foreach (['table_name', 'user_id', 'action'] as $filter) {
+            if (isset($validated[$filter])) {
+                $query->where($filter, $validated[$filter]);
+            }
+        }
+
+        if (isset($validated['from'])) {
+            $query->whereDate('created_at', '>=', $validated['from']);
+        }
+
+        if (isset($validated['to'])) {
+            $query->whereDate('created_at', '<=', $validated['to']);
+        }
+
+        return AuditLogResource::collection($query->paginate($validated['per_page'] ?? 50));
     }
 
     /**

@@ -50,6 +50,14 @@ final class AuditObserver
     }
 
     /**
+     * Handle the Model "restored" event (soft-delete undone).
+     */
+    public function restored(Model $model): void
+    {
+        $this->log($model, 'restored', null, $model->getAttributes());
+    }
+
+    /**
      * Persist the audit log entry.
      */
     private function log(Model $model, string $action, ?array $old, ?array $new): void
