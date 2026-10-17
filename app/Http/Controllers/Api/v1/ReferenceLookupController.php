@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\ReferenceLookup;
+use App\Support\ReferenceGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -96,9 +98,51 @@ final class ReferenceLookupController extends Controller
             ->where('category', $category)
             ->findOrFail($id);
 
+        if ($category === 'currencies' && ($refusal = $this->currencyDeleteRefusal($item)) !== null) {
+            return $refusal;
+        }
+
         $item->delete();
 
         return response()->json(['message' => 'Deleted successfully']);
+    }
+
+    /**
+     * BR-CUR-002: the base currency, and any currency already used on accounts,
+     * treasuries or documents, cannot be deleted.
+     */
+    private function currencyDeleteRefusal(ReferenceLookup $currency): ?JsonResponse
+    {
+        $code = strtoupper((string) ($currency->code ?: $currency->name));
+        $baseCurrency = strtoupper((string) (Company::query()->value('default_currency') ?? 'LYD'));
+
+        if ($code === $baseCurrency) {
+            return response()->json([
+                'message' => "{$code} is the base currency and cannot be deleted.",
+                'code' => 'BASE_CURRENCY',
+            ], 422);
+        }
+
+        $inUse = ReferenceGuard::firstReference([
+            'accounts' => 'currency',
+            'cash_accounts' => 'currency',
+            'operating_units' => 'currency',
+            'purchase_orders' => 'currency',
+            'purchase_order_items' => 'currency',
+            'landed_cost_lines' => 'currency',
+            'overhead_expenses' => 'currency',
+            'fx_rates' => ['from_currency', 'to_currency'],
+        ], $code);
+
+        if ($inUse === null) {
+            return null;
+        }
+
+        return response()->json([
+            'message' => "Currency {$code} is in use ({$inUse}) and cannot be deleted. Deactivate it instead.",
+            'code' => 'CURRENCY_IN_USE',
+            'referenced_by' => $inUse,
+        ], 422);
     }
 
     public function toggleActive(string $category, int|string $id): JsonResponse

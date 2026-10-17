@@ -16,6 +16,7 @@ use App\Models\Scopes\OperatingUnitScope;
 use App\Services\CoaLinkService;
 use App\Services\EntityService;
 use App\Support\CurrentUnitContext;
+use App\Support\ReferenceGuard;
 use App\Support\SalesAccounts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -194,7 +195,7 @@ final class ClientController extends Controller
                 if ($request->has('tax_number')) {
                     $entityData['tax_number'] = $request->input('tax_number');
                 }
-                if (!empty($entityData)) {
+                if (! empty($entityData)) {
                     $client->entity->update($entityData);
                 }
 
@@ -228,7 +229,34 @@ final class ClientController extends Controller
     public function destroy(string $id): JsonResponse
     {
         $client = Client::findOrFail($id);
-        $client->delete();
+
+        // BR-CUS-007: clients are hard-deleted, and their foreign keys would null
+        // out sales, payments and ledger lines (and cascade-delete quotations).
+        // A client with any history is therefore kept; suspend it instead.
+        $inUse = ReferenceGuard::firstReference([
+            'sales_orders' => 'client_id',
+            'sale_payments' => 'client_id',
+            'journal_lines' => 'client_id',
+            'quotations' => 'client_id',
+            'cutter_work_orders' => 'client_id',
+            'credit_approval_requests' => 'client_id',
+            'production_batches' => 'requested_by_client_id',
+        ], $client->id);
+
+        if ($inUse !== null) {
+            return response()->json([
+                'message' => "This client has transactions ({$inUse}) and cannot be deleted. Suspend it instead.",
+                'code' => 'CLIENT_HAS_TRANSACTIONS',
+                'referenced_by' => $inUse,
+            ], 422);
+        }
+
+        DB::transaction(function () use ($client): void {
+            // The entity may also be an employee or supplier; drop only its
+            // client role so it does not keep listing as a client.
+            $client->entity?->roles()->where('role_type', EntityRoleType::Client->value)->delete();
+            $client->delete();
+        });
 
         return response()->json([
             'message' => 'Client deleted successfully.',

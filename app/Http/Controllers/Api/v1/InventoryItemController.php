@@ -7,8 +7,10 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\ItemCategory;
+use App\Support\ReferenceGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class InventoryItemController extends Controller
@@ -123,6 +125,28 @@ class InventoryItemController extends Controller
     public function destroy(string $id): JsonResponse
     {
         $item = InventoryItem::findOrFail($id);
+
+        // BR-ITM-005: an item still held in stock or named on a document cannot
+        // be deleted — the stock and the paperwork would point at nothing.
+        $inUse = DB::table('stock_lots')->where('inventory_item_id', $item->id)->where('quantity', '>', 0)->exists()
+            ? 'stock_lots'
+            : ReferenceGuard::firstReference([
+                'sales_order_lines' => 'inventory_item_id',
+                'quotation_lines' => 'inventory_item_id',
+                'purchase_order_items' => 'inventory_item_id',
+                'bundle_items' => 'inventory_item_id',
+                'warehouse_transfer_lines' => 'inventory_item_id',
+                'internal_restock_request_lines' => 'inventory_item_id',
+            ], $item->id);
+
+        if ($inUse !== null) {
+            return response()->json([
+                'message' => "Item {$item->code} is still in use ({$inUse}) and cannot be deleted. Deactivate it instead.",
+                'code' => 'ITEM_IN_USE',
+                'referenced_by' => $inUse,
+            ], 422);
+        }
+
         $item->delete();
 
         return response()->json(['message' => 'Inventory item soft deleted.']);
