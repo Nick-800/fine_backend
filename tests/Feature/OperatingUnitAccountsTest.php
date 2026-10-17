@@ -91,6 +91,11 @@ test('upsert creates a per-event account link', function () {
 });
 
 test('upsert updates an existing per-event link in place', function () {
+    ($this->api)()->postJson("/api/v1/operating-units/{$this->unit->id}/accounts", [
+        'event_type' => 'purchases',
+        'account_id' => $this->inventoryAccount->id,
+    ])->assertOk();
+
     $alt = Account::create([
         'chart_of_accounts_id' => $this->inventoryAccount->chart_of_accounts_id,
         'parent_account_id' => $this->inventoryAccount->id,
@@ -100,11 +105,6 @@ test('upsert updates an existing per-event link in place', function () {
         'section' => 'current_assets',
         'currency' => 'LYD',
     ]);
-
-    ($this->api)()->postJson("/api/v1/operating-units/{$this->unit->id}/accounts", [
-        'event_type' => 'purchases',
-        'account_id' => $this->inventoryAccount->id,
-    ])->assertOk();
 
     ($this->api)()->postJson("/api/v1/operating-units/{$this->unit->id}/accounts", [
         'event_type' => 'purchases',

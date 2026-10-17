@@ -232,7 +232,7 @@ test('payLocal: received → paid → closed (auto-close on full receipt + paid)
     $order->save();
     makeLocalItem($order, 10, 10);
 
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
     $result = $this->stateService->payLocal($order, $source->id);
 
     expect($result->status)->toBe(PurchaseOrderStatus::Closed);
@@ -244,7 +244,7 @@ test('payLocal: does not auto-close when items not fully received', function () 
     $order->save();
     makeLocalItem($order, 10, 5);
 
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
     $result = $this->stateService->payLocal($order, $source->id);
 
     expect($result->status)->toBe(PurchaseOrderStatus::Paid);
@@ -259,7 +259,7 @@ test('payLocal: refuses non-local POs', function () {
     ]);
     expect($order->kind)->toBe(PurchaseOrderKind::Foreign);
 
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
     $this->expectException(InvalidArgumentException::class);
     $this->stateService->payLocal($order, $source->id);
 });
@@ -268,7 +268,7 @@ test('payLocal: refuses non-received state', function () {
     $order = makeLocalOrder();
     // status is Draft, not Received
 
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
     $this->expectException(InvalidStateTransitionException::class);
     $this->stateService->payLocal($order, $source->id);
 });
@@ -400,7 +400,7 @@ test('payLocal endpoint: transitions received → paid → closed (full receipt)
     $order->status = PurchaseOrderStatus::Received;
     $order->save();
     makeLocalItem($order, 10, 10);
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
 
     $response = $this->actingAs($this->globalUser)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
@@ -433,7 +433,7 @@ test('payLocal: posts DR supplier advance / CR chosen source journal and persist
     $order->status = PurchaseOrderStatus::Received;
     $order->save();
     makeLocalItem($order, 10, 10);
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
 
     $updated = $this->stateService->payLocal($order, $source->id);
 

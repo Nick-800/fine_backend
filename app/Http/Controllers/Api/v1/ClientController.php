@@ -13,6 +13,7 @@ use App\Http\Resources\v1\ClientResource;
 use App\Models\Client;
 use App\Models\Entity;
 use App\Models\Scopes\OperatingUnitScope;
+use App\Rules\LeafAccount;
 use App\Services\CoaLinkService;
 use App\Services\EntityService;
 use App\Support\CurrentUnitContext;
@@ -151,7 +152,7 @@ final class ClientController extends Controller
             'operating_unit_id' => 'sometimes|required|uuid|exists:operating_units,id',
             'credit_limit' => 'sometimes|numeric|min:0',
             'payment_terms_days' => 'sometimes|integer|min:0',
-            'account_id' => 'nullable|uuid|exists:accounts,id',
+            'account_id' => ['nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
             'coa_action' => 'nullable|string|in:create_new,link_existing,none',
             'new_account' => 'nullable|array',
             'new_account.parent_account_id' => 'required_if:coa_action,create_new|nullable|uuid|exists:accounts,id',

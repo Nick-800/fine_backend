@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\v1\PaymentRequestResource;
 use App\Models\PaymentRequest;
+use App\Rules\LeafAccount;
 use App\Services\PurchaseOrderStateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -122,7 +123,7 @@ final class PaymentRequestController extends Controller
             'exact_amount_used_lyd' => 'required_without:fx_rate_used|nullable|numeric|min:0',
             'bank_reference' => 'nullable|string',
             'extra_allocation_note' => 'nullable|string|max:500',
-            'payment_source_account_id' => 'required|uuid|exists:accounts,id',
+            'payment_source_account_id' => ['required', 'uuid', 'exists:accounts,id', new LeafAccount],
         ]);
 
         // FX-04 / FX-24: variance is measured in LYD against the booked

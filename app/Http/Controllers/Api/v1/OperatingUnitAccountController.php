@@ -8,6 +8,7 @@ use App\Enums\InventoryEventType;
 use App\Http\Controllers\Controller;
 use App\Models\OperatingUnit;
 use App\Models\OperatingUnitAccount;
+use App\Rules\LeafAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -61,7 +62,7 @@ class OperatingUnitAccountController extends Controller
 
         $validated = $request->validate([
             'event_type' => ['required', 'string', 'in:'.implode(',', array_column(InventoryEventType::cases(), 'value'))],
-            'account_id' => ['required', 'uuid', 'exists:accounts,id'],
+            'account_id' => ['required', 'uuid', 'exists:accounts,id', new LeafAccount],
         ]);
 
         $event = InventoryEventType::from($validated['event_type']);

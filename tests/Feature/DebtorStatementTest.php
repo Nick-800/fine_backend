@@ -210,7 +210,7 @@ test('manual client line without a unit takes the client unit and shows in its s
         'entry_date' => '2026-09-15',
         'lines' => [
             ['account_code' => '122', 'debit' => 400, 'client_id' => $this->client->id],
-            ['account_code' => '41', 'credit' => 400],
+            ['account_code' => '40201', 'credit' => 400],
         ],
     ])->assertCreated();
 

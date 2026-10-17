@@ -8,8 +8,10 @@ use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\JournalEntry;
+use App\Rules\LeafAccount;
 use App\Services\AccountingService;
 use App\Support\CurrentUnitContext;
+use App\Support\SalesAccounts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
@@ -69,7 +71,7 @@ class JournalEntryController extends Controller
             'description' => 'required|string|max:500',
             'entry_date' => 'sometimes|nullable|date|before_or_equal:today',
             'lines' => 'required|array|min:2',
-            'lines.*.account_code' => 'required|string',
+            'lines.*.account_code' => ['required', 'string', new LeafAccount('account_code', [SalesAccounts::RECEIVABLE_FALLBACK])],
             'lines.*.debit' => 'sometimes|numeric|min:0',
             'lines.*.credit' => 'sometimes|numeric|min:0',
             'lines.*.operating_unit_id' => 'sometimes|nullable|uuid|exists:operating_units,id',

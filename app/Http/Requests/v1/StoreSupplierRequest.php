@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\v1;
 
+use App\Rules\LeafAccount;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class StoreSupplierRequest extends FormRequest
@@ -21,7 +22,7 @@ final class StoreSupplierRequest extends FormRequest
             'contact' => 'nullable|string|max:255',
             'default_currency' => 'sometimes|string|size:3',
             'address' => 'nullable|string',
-            'account_id' => 'nullable|uuid|exists:accounts,id',
+            'account_id' => ['nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
             'coa_action' => 'nullable|string|in:create_new,link_existing,none',
             'new_account' => 'nullable|array',
             'new_account.parent_account_id' => 'required_if:coa_action,create_new|nullable|uuid|exists:accounts,id',

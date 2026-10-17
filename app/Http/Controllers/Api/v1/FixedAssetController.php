@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\FixedAsset;
 use App\Models\Scopes\OperatingUnitOrSharedScope;
+use App\Rules\LeafAccount;
 use App\Services\CoaLinkService;
 use App\Services\FixedAssetService;
 use App\Support\CurrentUnitContext;
@@ -69,7 +70,7 @@ final class FixedAssetController extends Controller
             // omitted, the asset is recorded against the universal "14"
             // Fixed Assets account, same as before this feature landed.
             'coa_action' => 'sometimes|string|in:create_new,link_existing,none',
-            'account_id' => 'required_if:coa_action,link_existing|nullable|uuid|exists:accounts,id',
+            'account_id' => ['required_if:coa_action,link_existing', 'nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
             'new_account' => 'required_if:coa_action,create_new|nullable|array',
             'new_account.parent_account_id' => 'required_if:coa_action,create_new|nullable|uuid|exists:accounts,id',
             'new_account.account_code' => 'required_if:coa_action,create_new|nullable|string|max:50|unique:accounts,account_code',

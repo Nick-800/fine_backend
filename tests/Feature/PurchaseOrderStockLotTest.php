@@ -109,7 +109,7 @@ test('local: payLocal creates one StockLot per line item in the destination ware
     $i1 = addItem($order, $this->itemA, qty: 10, unitPrice: 50, received: 10);
     $i2 = addItem($order, $this->itemB, qty: 6, unitPrice: 30, received: 6);
 
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
     $this->stateService->payLocal($order, $source->id);
 
     $lots = StockLot::query()->whereIn('inventory_item_id', [$this->itemA->id, $this->itemB->id])->get();
@@ -125,7 +125,7 @@ test('local: partial receipt only stocks the received quantity, not the ordered 
     $order = makeLocalRoutingOrder($this, $this->destinationWarehouse->id);
     addItem($order, $this->itemA, qty: 10, unitPrice: 50, received: 4);
 
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
     $this->stateService->payLocal($order, $source->id);
 
     $lot = StockLot::where('inventory_item_id', $this->itemA->id)->sole();
@@ -136,7 +136,7 @@ test('local: payLocal throws when destination_warehouse_id is not set', function
     $order = makeLocalRoutingOrder($this, null);
     addItem($order, $this->itemA, qty: 10, unitPrice: 50, received: 10);
 
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
 
     expect(fn () => $this->stateService->payLocal($order, $source->id))
         ->toThrow(InvalidArgumentException::class, 'Destination warehouse must be set');
@@ -146,7 +146,7 @@ test('local: payLocal throws when destination warehouse belongs to a different o
     $order = makeLocalRoutingOrder($this, $this->foreignWarehouse->id);
     addItem($order, $this->itemA, qty: 10, unitPrice: 50, received: 10);
 
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
 
     expect(fn () => $this->stateService->payLocal($order, $source->id))
         ->toThrow(InvalidArgumentException::class, 'does not belong');
@@ -156,7 +156,7 @@ test('local: payLocal rolls back if no line items have received_quantity > 0', f
     $order = makeLocalRoutingOrder($this, $this->destinationWarehouse->id);
     addItem($order, $this->itemA, qty: 10, unitPrice: 50, received: 0);
 
-    $source = Account::where('account_code', '1211')->firstOrFail();
+    $source = Account::where('account_code', '121102')->firstOrFail();
     $this->stateService->payLocal($order, $source->id);
 
     expect(StockLot::query()->count())->toBe(0)

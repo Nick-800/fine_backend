@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\v1\OperatingUnitResource;
 use App\Models\OperatingUnit;
 use App\Models\UnitBlueprint;
+use App\Rules\LeafAccount;
 use App\Services\OperatingUnitService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -96,7 +97,7 @@ final class OperatingUnitController extends Controller
             'name' => 'sometimes|required|string|max:255',
             'status' => 'sometimes|required|string|in:provisioning,active,inactive',
             'manager_user_id' => 'sometimes|nullable|uuid|exists:users,id',
-            'revenue_account_id' => 'sometimes|nullable|uuid|exists:accounts,id',
+            'revenue_account_id' => ['sometimes', 'nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
         ]);
 
         $unit = OperatingUnit::findOrFail($id);

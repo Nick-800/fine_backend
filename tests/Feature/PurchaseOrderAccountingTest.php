@@ -312,7 +312,7 @@ test('payments execute over both routes and refuse to execute twice', function (
     // The flat route the desktop treasury screen calls.
     ($this->api)()->postJson("/api/v1/payment-requests/{$requestId}/execute", [
         'fx_rate_used' => 5.0,
-        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+        'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
     ])->assertStatus(200);
 
     expect($order->fresh()->status->value)->toBe('paid');
@@ -320,14 +320,14 @@ test('payments execute over both routes and refuse to execute twice', function (
     // Executing an already-paid request is a state refusal.
     ($this->api)()->postJson("/api/v1/purchase-orders/{$order->id}/payment-requests/{$requestId}/process", [
         'fx_rate_used' => 5.0,
-        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+        'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
     ])->assertStatus(422)->assertJsonPath('code', 'INVALID_STATE_TRANSITION');
 
     // And the nested route rejects a request id that belongs to another order.
     $other = ($this->orderReadyToComplete)();
     ($this->api)()->postJson("/api/v1/purchase-orders/{$other->id}/payment-requests/{$requestId}/process", [
         'fx_rate_used' => 5.0,
-        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+        'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
     ])->assertStatus(404);
 });
 
@@ -419,14 +419,14 @@ test('executing a market payment with non-zero extra allocation requires a note'
 
     ($this->api)()->postJson("/api/v1/payment-requests/{$requestId}/execute", [
         'fx_rate_used' => 5.2,
-        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+        'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
     ])->assertStatus(422)
         ->assertJsonValidationErrors(['extra_allocation_note']);
 
     ($this->api)()->postJson("/api/v1/payment-requests/{$requestId}/execute", [
         'fx_rate_used' => 5.2,
         'extra_allocation_note' => 'تم الشراء من الصرّاف بسبب تأخر الاعتماد البنكي.',
-        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+        'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
     ])->assertStatus(200);
 
     $pr = PaymentRequest::find($requestId);
@@ -451,7 +451,7 @@ test('executing a payment with zero extra allocation accepts an empty note', fun
 
     ($this->api)()->postJson("/api/v1/payment-requests/{$requestId}/execute", [
         'fx_rate_used' => 5.0,
-        'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+        'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
     ])->assertStatus(200);
 
     $pr = PaymentRequest::find($requestId);

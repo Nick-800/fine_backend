@@ -296,7 +296,7 @@ test('managers can execute payment in step 3 directly via payment request or tra
             'fx_rate_used' => 5.20,
             'bank_reference' => 'TXN-STORE-01',
             'extra_allocation_note' => 'Approved by store manager',
-            'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+            'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
         ])
         ->assertStatus(200);
 
@@ -330,7 +330,7 @@ test('finance user can execute payment in step 3 directly via payment request or
             'fx_rate_used' => 5.20,
             'bank_reference' => 'TXN-9988',
             'extra_allocation_note' => 'Market rate variation',
-            'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+            'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
         ])
         ->assertStatus(200)
         ->assertJsonPath('data.status', 'paid');

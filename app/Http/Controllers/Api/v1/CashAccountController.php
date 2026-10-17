@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\v1\CashAccountResource;
 use App\Models\CashAccount;
+use App\Rules\LeafAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -34,7 +35,7 @@ final class CashAccountController extends Controller
             'operating_unit_id' => 'required|uuid|exists:operating_units,id',
             'name' => 'required|string|max:255',
             'kind' => 'sometimes|string|in:cash,bank',
-            'account_id' => 'nullable|uuid|exists:accounts,id',
+            'account_id' => ['nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
             'currency' => 'sometimes|string|size:3',
             'balance' => 'sometimes|numeric',
         ]);
@@ -61,7 +62,7 @@ final class CashAccountController extends Controller
         $validated = $request->validate([
             'name' => 'sometimes|required|string|max:255',
             'kind' => 'sometimes|string|in:cash,bank',
-            'account_id' => 'sometimes|nullable|uuid|exists:accounts,id',
+            'account_id' => ['sometimes', 'nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
         ]);
 
         $account = CashAccount::findOrFail($id);

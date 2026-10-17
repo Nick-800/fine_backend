@@ -186,7 +186,7 @@ test('manual entry accepts client_id on 122', function () {
         'description' => 'Opening balance',
         'lines' => [
             ['account_code' => '122', 'debit' => 100, 'client_id' => $this->client->id],
-            ['account_code' => '41', 'credit' => 100],
+            ['account_code' => '40201', 'credit' => 100],
         ],
     ])->assertCreated();
 
@@ -198,7 +198,7 @@ test('manual entry with client_id on 41 returns 422 PARTY_ON_NON_RECEIVABLE', fu
         'description' => 'Bad party',
         'lines' => [
             ['account_code' => '122', 'debit' => 100],
-            ['account_code' => '41', 'credit' => 100, 'client_id' => $this->client->id],
+            ['account_code' => '40201', 'credit' => 100, 'client_id' => $this->client->id],
         ],
     ])->assertStatus(422)->assertJsonPath('code', 'PARTY_ON_NON_RECEIVABLE');
 
@@ -239,7 +239,7 @@ test('manual entry checks the sub-account of a client from another unit', functi
             'description' => 'Wrong account',
             'lines' => [
                 ['account_code' => '122', 'debit' => 100, 'client_id' => $foreign->id],
-                ['account_code' => '41', 'credit' => 100],
+                ['account_code' => '40201', 'credit' => 100],
             ],
         ])->assertStatus(422)->assertJsonPath('code', 'PARTY_ACCOUNT_MISMATCH');
 

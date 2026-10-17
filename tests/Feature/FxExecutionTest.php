@@ -357,7 +357,7 @@ test('the API requires a note when settled LYD deviates from booked by more than
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->postJson("/api/v1/payment-requests/{$requestId}/execute", [
             'fx_rate_used' => 5.2,
-            'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+            'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
         ])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['extra_allocation_note']);
@@ -381,7 +381,7 @@ test('the API does not require a note when variance is within tolerance', functi
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->postJson("/api/v1/payment-requests/{$requestId}/execute", [
             'fx_rate_used' => 5.000001,
-            'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+            'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
         ])
         ->assertStatus(200);
 });
@@ -408,7 +408,7 @@ test('the API requires a note when exact_amount_used_lyd deviates even at the bo
         ->postJson("/api/v1/payment-requests/{$requestId}/execute", [
             'fx_rate_used' => 5.0,
             'exact_amount_used_lyd' => 5100,
-            'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+            'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
         ])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['extra_allocation_note']);
@@ -420,7 +420,7 @@ test('the API requires a note when exact_amount_used_lyd deviates even at the bo
             'fx_rate_used' => 5.0,
             'exact_amount_used_lyd' => 5100,
             'extra_allocation_note' => 'فرق سعر بسبب العمولة البنكية.',
-            'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+            'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
         ])
         ->assertStatus(200);
 });
@@ -445,7 +445,7 @@ test('the API allows Market route execution with only LYD input', function () {
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->postJson("/api/v1/payment-requests/{$requestId}/execute", [
             'exact_amount_used_lyd' => 5000.005,
-            'payment_source_account_id' => Account::where('account_code', '1211')->firstOrFail()->id,
+            'payment_source_account_id' => Account::where('account_code', '121102')->firstOrFail()->id,
         ])
         ->assertStatus(200);
 

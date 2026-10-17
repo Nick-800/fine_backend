@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\v1\StoreSupplierRequest;
 use App\Http\Resources\v1\SupplierResource;
 use App\Models\Supplier;
+use App\Rules\LeafAccount;
 use App\Services\CoaLinkService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -63,7 +64,7 @@ final class SupplierController extends Controller
             'contact' => 'nullable|string|max:255',
             'default_currency' => 'sometimes|string|size:3',
             'address' => 'nullable|string',
-            'account_id' => 'nullable|uuid|exists:accounts,id',
+            'account_id' => ['nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
             'coa_action' => 'nullable|string|in:create_new,link_existing,none',
             'new_account' => 'nullable|array',
             'new_account.parent_account_id' => 'required_if:coa_action,create_new|nullable|uuid|exists:accounts,id',
