@@ -373,7 +373,10 @@ test('a batch with registered blocks cannot be deleted', function () {
         ->assertJsonPath('code', 'BATCH_HAS_BLOCKS');
 });
 
-test('a stock lot cannot reference a non existent production batch', function () {
+test('a stock lot cannot be created without the intake movement', function () {
+    // The bare POST /stock-lots (which could also point a lot at any batch)
+    // is gone: stock enters only through /stock-lots/intake, which records the
+    // INV-06 movement, or through block registration on a batch.
     ($this->api)()->postJson('/api/v1/stock-lots', [
         'inventory_item_id' => $this->blockItem->id,
         'warehouse_id' => $this->warehouse->id,
@@ -381,7 +384,9 @@ test('a stock lot cannot reference a non existent production batch', function ()
         'quantity' => 1,
         'unit_cost' => 10,
         'production_batch_id' => '00000000-0000-4000-8000-000000000000',
-    ])->assertStatus(422)->assertJsonValidationErrors('production_batch_id');
+    ])->assertStatus(405);
+
+    expect(StockLot::where('lot_number', 'MANUAL-001')->exists())->toBeFalse();
 });
 
 test('duplicate sequences within a batch are rejected by the database', function () {
@@ -419,12 +424,13 @@ test('a bun wider than the machine limit is rejected', function () {
 });
 
 test('a foam block lot cannot carry a quantity other than one', function () {
-    ($this->api)()->postJson('/api/v1/stock-lots', [
+    ($this->api)()->postJson('/api/v1/stock-lots/intake', [
         'inventory_item_id' => $this->blockItem->id,
         'warehouse_id' => $this->warehouse->id,
         'lot_number' => 'BULK-BLOCKS',
         'quantity' => 25,
         'unit_cost' => 100,
+        'source' => 'opening_balance',
     ])->assertStatus(422)->assertJsonPath('code', 'SERIALIZED_QUANTITY_INVALID');
 });
 
@@ -433,13 +439,16 @@ test('a non-serialized item may carry any quantity', function () {
         'name' => 'Polyol', 'code' => 'CHEM-POLY', 'item_type' => 'raw_material', 'unit_of_measure' => 'kg',
     ]);
 
-    ($this->api)()->postJson('/api/v1/stock-lots', [
+    // The serialized-quantity rule lives on the model, so exercise it there.
+    $lot = StockLot::create([
         'inventory_item_id' => $bulk->id,
         'warehouse_id' => $this->warehouse->id,
         'lot_number' => 'BULK-POLY-1',
         'quantity' => 899,
         'unit_cost' => 10,
-    ])->assertStatus(201);
+    ]);
+
+    expect((float) $lot->fresh()->quantity)->toBe(899.0);
 });
 
 test('a block lot drawn down to zero is still allowed', function () {

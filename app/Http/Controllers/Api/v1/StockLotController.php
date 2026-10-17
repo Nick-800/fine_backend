@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
-use App\Models\ProductionBatch;
 use App\Models\StockLot;
 use App\Models\Warehouse;
 use App\Rules\ExistsInCurrentUnit;
@@ -65,9 +64,9 @@ class StockLotController extends Controller
     }
 
     /**
-     * Goods intake — the manual path by which quantities enter stock.
-     * Unlike the bare store(), this records the INV-06 movement and posts
-     * the value to the ledger according to its source.
+     * Goods intake — the only manual path by which quantities enter stock.
+     * It records the INV-06 movement and posts the value to the ledger
+     * according to its source.
      */
     public function intake(Request $request): JsonResponse
     {
@@ -90,30 +89,6 @@ class StockLotController extends Controller
         $lot = $this->stockLotService->intake($validated);
 
         return response()->json($lot, 201);
-    }
-
-    public function store(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'inventory_item_id' => ['required', 'uuid', 'exists:inventory_items,id'],
-            'warehouse_id' => ['required', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
-            'lot_number' => ['required', 'string', 'unique:stock_lots,lot_number'],
-            'quantity' => ['required', 'numeric', 'min:0.0001'],
-            'container_quantity' => ['nullable', 'numeric', 'min:0'],
-            'length_m' => ['nullable', 'numeric', 'min:0'],
-            'width_m' => ['nullable', 'numeric', 'min:0'],
-            'height_m' => ['nullable', 'numeric', 'min:0'],
-            'weight_kg' => ['nullable', 'numeric', 'min:0'],
-            'unit_cost' => ['required', 'numeric', 'min:0'],
-            'grade' => ['nullable', 'string', 'in:standard,acceptable_variant,defective_usable,reject'],
-            'status' => ['nullable', 'string', 'in:available,reserved,consumed,quarantined'],
-            'attribute_values' => ['nullable', 'array'],
-            'production_batch_id' => ['nullable', 'uuid', new ExistsInCurrentUnit(ProductionBatch::class, 'production batch')],
-        ]);
-
-        $stockLot = StockLot::create($validated);
-
-        return response()->json($stockLot->load(['inventoryItem.category', 'warehouse']), 201);
     }
 
     public function show(string $id): JsonResponse

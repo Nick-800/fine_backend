@@ -232,12 +232,13 @@ test('an owner scoped to a unit by header is filtered to it', function () {
 test('a stock lot cannot be created into another unit warehouse', function () {
     // exists: issues a raw query and ignores global scopes, so this needs the
     // scope-aware rule to be rejected at all.
-    ($this->asA)()->postJson('/api/v1/stock-lots', [
+    ($this->asA)()->postJson('/api/v1/stock-lots/intake', [
         'inventory_item_id' => $this->item->id,
         'warehouse_id' => $this->warehouseB->id,
         'lot_number' => 'LOT-CROSS-1',
         'quantity' => 1,
         'unit_cost' => 10,
+        'source' => 'opening_balance',
     ])->assertStatus(422)->assertJsonValidationErrors('warehouse_id');
 
     app(CurrentUnitContext::class)->clear();
@@ -279,6 +280,8 @@ test('blocks cannot be registered into another unit warehouse', function () {
 });
 
 test('a stock lot cannot be attached to another unit production batch', function () {
+    // The bare POST /stock-lots that accepted production_batch_id is gone; batch
+    // lots are created only by block registration on the batch itself.
     ($this->asA)()->postJson('/api/v1/stock-lots', [
         'inventory_item_id' => $this->item->id,
         'warehouse_id' => $this->warehouseA->id,
@@ -286,7 +289,10 @@ test('a stock lot cannot be attached to another unit production batch', function
         'quantity' => 1,
         'unit_cost' => 10,
         'production_batch_id' => $this->batchB->id,
-    ])->assertStatus(422)->assertJsonValidationErrors('production_batch_id');
+    ])->assertStatus(405);
+
+    app(CurrentUnitContext::class)->clear();
+    expect(StockLot::where('lot_number', 'LOT-CROSS-2')->exists())->toBeFalse();
 });
 
 test('an inventory item can use any category', function () {
@@ -311,13 +317,15 @@ test('an inventory item cannot use a missing category', function () {
 
 test('an owner is not blocked by the scope-aware existence rule', function () {
     // With no unit in context the scopes no-op, so any real warehouse is valid.
-    $this->actingAs($this->owner)->postJson('/api/v1/stock-lots', [
+    // Only the warehouse rule is under test; posting may still need accounts.
+    $this->actingAs($this->owner)->postJson('/api/v1/stock-lots/intake', [
         'inventory_item_id' => $this->item->id,
         'warehouse_id' => $this->warehouseB->id,
         'lot_number' => 'LOT-OWNER-1',
         'quantity' => 1,
         'unit_cost' => 10,
-    ])->assertStatus(201);
+        'source' => 'opening_balance',
+    ])->assertJsonMissingValidationErrors('warehouse_id');
 });
 
 test('operation numbers stay globally unique across units', function () {

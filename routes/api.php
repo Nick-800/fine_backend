@@ -319,7 +319,8 @@ Route::prefix('v1')->group(function () {
                 Route::get('/stock-lots/available-foam-blocks', [StockLotController::class, 'availableFoamBlocks']);
                 Route::post('/stock-lots/intake', [StockLotController::class, 'intake']);
                 Route::post('/stock-lots/{id}/process-cut-remnant', [StockLotController::class, 'processCutRemnant']);
-                Route::apiResource('stock-lots', StockLotController::class)->except(['destroy']);
+                // No bare store: stock enters only via /stock-lots/intake, which records the INV-06 movement.
+                Route::apiResource('stock-lots', StockLotController::class)->except(['store', 'destroy']);
                 Route::get('/inventory/valuation', [InventoryValuationController::class, 'index']);
                 Route::get('/inventory/valuation/rollup', [InventoryValuationController::class, 'rollup']);
                 Route::get('/warehouses/{id}/stock-summary', [WarehouseController::class, 'stockSummary']);
