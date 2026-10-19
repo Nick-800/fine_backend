@@ -36,6 +36,8 @@ beforeEach(function () {
     $managerRole = Role::create(['name' => 'Foam Manager', 'slug' => 'foam-manager']);
     UserRole::create(['user_id' => $this->manager->id, 'role_id' => $managerRole->id, 'operating_unit_id' => $this->unit->id]);
 
+    $this->treasury = linkedTreasury($this->unit);
+
     $accounting = app(AccountingService::class);
 
     // Accumulate the three payables the way the flows do: a credit purchase,
@@ -46,7 +48,7 @@ beforeEach(function () {
     ]);
     $accounting->postJournal('Payroll withholdings', [
         ['account_code' => '57', 'debit' => 80.0],
-        ['account_code' => '221', 'credit' => 80.0],
+        ['account_code' => '225', 'credit' => 80.0],
     ]);
     $accounting->postJournal('Landed costs', [
         ['account_code' => '111', 'debit' => 300.0],
@@ -60,6 +62,7 @@ beforeEach(function () {
             'account_code' => '21',
             'amount' => 200,
             'reference' => 'CHK-001',
+            'cash_account_id' => $this->treasury->id,
         ], $overrides));
 });
 
@@ -75,13 +78,13 @@ test('settling a payable pays cash and reduces the outstanding balance', functio
     $lines = $entry->lines()->with('account')->get();
 
     expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '21')->debit)->toBe(200.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(200.0);
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(200.0);
 
     $outstanding = ($this->asOwner)()->getJson('/api/v1/payable-settlements/outstanding')
         ->assertStatus(200)->json('data');
 
     expect((float) collect($outstanding)->firstWhere('account_code', '21')['outstanding'])->toBe(300.0)
-        ->and((float) collect($outstanding)->firstWhere('account_code', '221')['outstanding'])->toBe(80.0)
+        ->and((float) collect($outstanding)->firstWhere('account_code', '225')['outstanding'])->toBe(80.0)
         ->and((float) collect($outstanding)->firstWhere('account_code', '23')['outstanding'])->toBe(300.0);
 });
 
@@ -100,12 +103,12 @@ test('a settlement can never exceed what the ledger says is owed', function () {
 });
 
 test('each payable settles independently and the books stay balanced', function () {
-    ($this->settle)(['account_code' => '221', 'amount' => 80, 'reference' => 'tax remittance'])->assertStatus(201);
+    ($this->settle)(['account_code' => '225', 'amount' => 80, 'reference' => 'tax remittance'])->assertStatus(201);
     ($this->settle)(['account_code' => '23', 'amount' => 300, 'reference' => 'customs broker'])->assertStatus(201);
 
     $outstanding = collect(($this->asOwner)()->getJson('/api/v1/payable-settlements/outstanding')->json('data'));
 
-    expect((float) $outstanding->firstWhere('account_code', '221')['outstanding'])->toBe(0.0)
+    expect((float) $outstanding->firstWhere('account_code', '225')['outstanding'])->toBe(0.0)
         ->and((float) $outstanding->firstWhere('account_code', '23')['outstanding'])->toBe(0.0)
         ->and((float) $outstanding->firstWhere('account_code', '21')['outstanding'])->toBe(500.0);
 

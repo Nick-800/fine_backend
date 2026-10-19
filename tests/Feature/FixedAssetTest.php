@@ -37,6 +37,7 @@ beforeEach(function () {
     UserRole::create(['user_id' => $this->owner->id, 'role_id' => $ownerRole->id, 'operating_unit_id' => null]);
 
     $this->assets = app(FixedAssetService::class);
+    $this->treasury = linkedTreasury($this->unit);
 
     // 13,000 cost, 1,000 salvage, 5 years straight-line → 200/month.
     $this->straightLineAsset = fn (array $overrides = []) => $this->assets->acquire(array_merge([
@@ -50,6 +51,7 @@ beforeEach(function () {
         'useful_life_years' => 5,
         'salvage_value' => 1000.0,
         'payment_source' => 'cash',
+        'cash_account_id' => $this->treasury->id,
     ], $overrides));
 });
 
@@ -65,7 +67,7 @@ test('acquiring an asset capitalises it against cash', function () {
 
     expect($debit->account->account_code)->toBe('14')
         ->and((float) $debit->debit)->toBe(13000.0)
-        ->and($credit->account->account_code)->toBe('12')
+        ->and($credit->account->account_code)->toBe('121101')
         ->and($asset->status)->toBe(FixedAssetStatus::Active)
         ->and($asset->bookValue())->toBe(13000.0);
 });
@@ -157,14 +159,14 @@ test('disposal above book value posts a gain', function () {
     $asset = ($this->straightLineAsset)();
     $this->assets->depreciateForPeriod($asset, '2026-02'); // book 12,800
 
-    $asset = $this->assets->dispose($asset->refresh(), 13500.0);
+    $asset = $this->assets->dispose($asset->refresh(), 13500.0, null, $this->treasury->id);
 
     expect($asset->status)->toBe(FixedAssetStatus::Disposed);
 
     $entry = JournalEntry::where('description', 'like', 'Asset disposed%')->sole();
     $byCode = $entry->lines()->with('account')->get()->groupBy(fn ($l) => $l->account->account_code);
 
-    expect((float) $byCode['12']->sole()->debit)->toBe(13500.0)
+    expect((float) $byCode['121101']->sole()->debit)->toBe(13500.0)
         ->and((float) $byCode['145']->sole()->debit)->toBe(200.0)
         ->and((float) $byCode['14']->sole()->credit)->toBe(13000.0)
         ->and((float) $byCode['43']->sole()->credit)->toBe(700.0)
@@ -174,7 +176,7 @@ test('disposal above book value posts a gain', function () {
 test('disposal below book value posts a loss and a disposed asset stays disposed', function () {
     $asset = ($this->straightLineAsset)();
 
-    $asset = $this->assets->dispose($asset, 11000.0); // book 13,000 → 2,000 loss
+    $asset = $this->assets->dispose($asset, 11000.0, null, $this->treasury->id); // book 13,000 → 2,000 loss
 
     $entry = JournalEntry::where('description', 'like', 'Asset disposed%')->sole();
     $byCode = $entry->lines()->with('account')->get()->groupBy(fn ($l) => $l->account->account_code);
@@ -182,7 +184,7 @@ test('disposal below book value posts a loss and a disposed asset stays disposed
     expect((float) $byCode['56']->sole()->debit)->toBe(2000.0)
         ->and($entry->isBalanced())->toBeTrue();
 
-    expect(fn () => $this->assets->dispose($asset->refresh(), 1.0))
+    expect(fn () => $this->assets->dispose($asset->refresh(), 1.0, null, $this->treasury->id))
         ->toThrow(InvalidStateTransitionException::class);
 
     expect(fn () => $this->assets->depreciateForPeriod($asset->refresh(), '2026-03'))
@@ -273,7 +275,7 @@ test('the trial balance stays balanced through acquire, depreciate and dispose',
     $asset = ($this->straightLineAsset)();
     $this->assets->depreciateForPeriod($asset, '2026-02');
     $this->assets->depreciateForPeriod($asset->refresh(), '2026-03');
-    $this->assets->dispose($asset->refresh(), 9000.0);
+    $this->assets->dispose($asset->refresh(), 9000.0, null, $this->treasury->id);
 
     $tb = $this->actingAs($this->owner)->getJson('/api/v1/reports/trial-balance')
         ->assertStatus(200)->json();
@@ -293,6 +295,7 @@ test('acquiring an asset with coa_action=none posts to the universal 14 account 
             'useful_life_years' => 5,
             'salvage_value' => 500.0,
             'payment_source' => 'cash',
+            'cash_account_id' => $this->treasury->id,
             'operating_unit_id' => $this->unit->id,
             'coa_action' => 'none',
         ])
@@ -332,6 +335,7 @@ test('acquiring an asset with coa_action=link_existing uses the linked account',
             'useful_life_years' => 5,
             'salvage_value' => 500.0,
             'payment_source' => 'cash',
+            'cash_account_id' => $this->treasury->id,
             'operating_unit_id' => $this->unit->id,
             'coa_action' => 'link_existing',
             'account_id' => $subAccount->id,
@@ -363,6 +367,7 @@ test('acquiring an asset with coa_action=create_new provisions a sub-account und
             'useful_life_years' => 5,
             'salvage_value' => 500.0,
             'payment_source' => 'cash',
+            'cash_account_id' => $this->treasury->id,
             'operating_unit_id' => $this->unit->id,
             'coa_action' => 'create_new',
             'new_account' => [
@@ -398,6 +403,7 @@ test('link_existing requires account_id and create_new requires new_account fiel
         'useful_life_years' => 5,
         'salvage_value' => 500.0,
         'payment_source' => 'cash',
+        'cash_account_id' => $this->treasury->id,
         'operating_unit_id' => $this->unit->id,
     ];
 

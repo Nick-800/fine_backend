@@ -42,6 +42,7 @@ beforeEach(function () {
         'currency' => 'LYD',
         'status' => 'active',
     ]);
+    linkRevenueAccount($this->operatingUnit, '40204');
 
     $this->warehouse = Warehouse::create([
         'operating_unit_id' => $this->operatingUnit->id,
@@ -133,7 +134,7 @@ test('a receivable sale and its collection route to the client linked account', 
     // these accounts.
     foreach ([
         [InventoryEventType::Purchases, Account::where('account_code', '1134')->sole()->id],
-        [InventoryEventType::Sales, Account::where('account_code', '41')->sole()->id],
+        [InventoryEventType::Sales, Account::where('account_code', '40204')->sole()->id],
         [InventoryEventType::Cogs, Account::where('account_code', '51')->sole()->id],
     ] as [$event, $accountId]) {
         OperatingUnitAccount::create([

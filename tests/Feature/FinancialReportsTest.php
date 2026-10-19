@@ -42,8 +42,8 @@ beforeEach(function () {
 
     // Old revenue in unit A, before the current period.
     $accounting->postJournal('Old sale', [
-        ['account_code' => '13', 'debit' => 300.0, 'operating_unit_id' => $this->unitA->id],
-        ['account_code' => '41', 'credit' => 300.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '1131', 'debit' => 300.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '40201', 'credit' => 300.0, 'operating_unit_id' => $this->unitA->id],
     ], entryDate: '2026-07-01');
 
     // Old purchase, assets and liabilities only.
@@ -54,8 +54,8 @@ beforeEach(function () {
 
     // Current period: unit A sells on credit and books its cost.
     $accounting->postJournal('Sale A', [
-        ['account_code' => '13', 'debit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
-        ['account_code' => '41', 'credit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '1131', 'debit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '40201', 'credit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
     ]);
     $accounting->postJournal('COGS A', [
         ['account_code' => '51', 'debit' => 600.0, 'operating_unit_id' => $this->unitA->id],
@@ -64,8 +64,8 @@ beforeEach(function () {
 
     // Unit B cash sale.
     $accounting->postJournal('Sale B', [
-        ['account_code' => '12', 'debit' => 500.0, 'operating_unit_id' => $this->unitB->id],
-        ['account_code' => '41', 'credit' => 500.0, 'operating_unit_id' => $this->unitB->id],
+        ['account_code' => '121101', 'debit' => 500.0, 'operating_unit_id' => $this->unitB->id],
+        ['account_code' => '40201', 'credit' => 500.0, 'operating_unit_id' => $this->unitB->id],
     ]);
 
     // Company-level expense carried by no unit.
@@ -86,7 +86,7 @@ test('the income statement aggregates revenue and expenses into net income', fun
         ->and((float) $report['expenses']['total'])->toBe(650.0)
         ->and((float) $report['net_income'])->toBe(1150.0);
 
-    $sales = collect($report['revenue']['rows'])->firstWhere('account_code', '41');
+    $sales = collect($report['revenue']['rows'])->firstWhere('account_code', '40201');
     expect((float) $sales['balance'])->toBe(1800.0);
 });
 

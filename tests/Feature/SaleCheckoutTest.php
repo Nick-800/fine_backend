@@ -40,6 +40,8 @@ beforeEach(function () {
 
     $this->unitA = $makeUnit('Showroom A');
     $this->unitB = $makeUnit('Showroom B');
+    linkRevenueAccount($this->unitA, '40204');
+    linkRevenueAccount($this->unitB, '40203');
 
     $this->user = User::factory()->create(['must_change_password' => false]);
     $role = Role::create(['name' => 'Owner', 'slug' => 'owner']);
@@ -53,7 +55,7 @@ beforeEach(function () {
 
     foreach ([
         [InventoryEventType::Purchases, '1134'],
-        [InventoryEventType::Sales, '41'],
+        [InventoryEventType::Sales, '40204'],
         [InventoryEventType::Cogs, '51'],
     ] as [$event, $code]) {
         OperatingUnitAccount::create([
@@ -103,7 +105,7 @@ test('a cash sale deducts stock, debits the drawer and posts revenue and cost', 
     expect((float) $this->lot->fresh()->quantity)->toBe(8.0)
         ->and((float) $sale['amount_paid'])->toBe(200.0)
         ->and(($this->lineSum)($sale['id'], '121102', 'debit'))->toBe(200.0)
-        ->and(($this->lineSum)($sale['id'], '41', 'credit'))->toBe(200.0)
+        ->and(($this->lineSum)($sale['id'], '40204', 'credit'))->toBe(200.0)
         ->and(($this->lineSum)($sale['id'], '51', 'debit'))->toBe(100.0);
 });
 

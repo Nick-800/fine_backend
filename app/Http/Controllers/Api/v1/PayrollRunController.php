@@ -86,6 +86,12 @@ final class PayrollRunController extends Controller
 
     public function post(Request $request, string $id): JsonResponse
     {
+        $request->validate([
+            // Required to post; the service refuses a missing treasury after the
+            // state check, so a wrong-stage post still reports the stage.
+            'cash_account_id' => ['nullable', 'uuid', 'exists:cash_accounts,id'],
+        ]);
+
         return $this->transition($request, $id, PayrollRunStatus::Posted, requireAccounting: true);
     }
 
@@ -145,7 +151,7 @@ final class PayrollRunController extends Controller
         $run = PayrollRun::findOrFail($id);
 
         try {
-            $run = $this->payrollService->transition($run, $target, $request->user()->id);
+            $run = $this->payrollService->transition($run, $target, $request->user()->id, $request->input('cash_account_id'));
         } catch (InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage(), 'code' => 'INVALID_PAYROLL_TRANSITION'], 422);
         }

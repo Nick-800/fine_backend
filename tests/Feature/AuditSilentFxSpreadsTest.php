@@ -62,6 +62,7 @@ test('fx:audit-silent-spreads lists paid requests where variance exceeded tolera
             null,
             exactAmountUsedLyd: $settled,
             extraAllocationNote: $withNote ? 'spread justified' : null,
+            paymentSourceAccountId: cashLeafId(),
         );
 
         return $pr->id;
@@ -104,7 +105,7 @@ test('fx:audit-silent-spreads emits nothing when all variances are within tolera
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
     $pr = $order->paymentRequests()->sole();
-    $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5000.005);
+    $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5000.005, paymentSourceAccountId: cashLeafId());
 
     $this->artisan('fx:audit-silent-spreads')
         ->expectsOutputToContain('No silent FX spreads found')

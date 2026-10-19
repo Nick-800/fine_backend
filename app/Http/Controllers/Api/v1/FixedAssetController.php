@@ -16,6 +16,7 @@ use App\Services\FixedAssetService;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 
 final class FixedAssetController extends Controller
@@ -64,6 +65,7 @@ final class FixedAssetController extends Controller
             'useful_life_years' => 'required|integer|min:1|max:100',
             'salvage_value' => 'sometimes|numeric|min:0',
             'payment_source' => 'required|string|in:cash,payable',
+            'cash_account_id' => 'nullable|uuid|exists:cash_accounts,id|required_if:payment_source,cash',
             'is_company_wide' => 'sometimes|boolean',
             'operating_unit_id' => 'sometimes|nullable|uuid|exists:operating_units,id',
             // COA link (mirrors client/supplier pattern). Optional — when
@@ -109,6 +111,7 @@ final class FixedAssetController extends Controller
                 'useful_life_years' => (int) $validated['useful_life_years'],
                 'salvage_value' => (float) ($validated['salvage_value'] ?? 0),
                 'payment_source' => $validated['payment_source'],
+                'cash_account_id' => $validated['cash_account_id'] ?? null,
             ]);
         } catch (InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage(), 'code' => 'INVALID_ASSET'], 422);
@@ -152,6 +155,7 @@ final class FixedAssetController extends Controller
         $validated = $request->validate([
             'proceeds' => 'required|numeric|min:0',
             'disposed_at' => 'sometimes|nullable|date|before_or_equal:today',
+            'cash_account_id' => ['nullable', 'uuid', 'exists:cash_accounts,id', Rule::requiredIf(fn (): bool => (float) $request->input('proceeds') > 0)],
         ]);
 
         try {
@@ -159,6 +163,7 @@ final class FixedAssetController extends Controller
                 $asset,
                 (float) $validated['proceeds'],
                 $validated['disposed_at'] ?? null,
+                $validated['cash_account_id'] ?? null,
             );
         } catch (InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage(), 'code' => 'INVALID_DISPOSAL'], 422);

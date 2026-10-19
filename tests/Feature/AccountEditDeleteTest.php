@@ -139,7 +139,7 @@ test('a sub-account with journal lines cannot be deleted', function () {
     $svc->transitionToPendingPayment($order);
     $svc->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
     $pr = $order->paymentRequests()->sole();
-    $svc->executePayment($pr, null, exactAmountUsedLyd: 5000.0);
+    $svc->executePayment($pr, null, exactAmountUsedLyd: 5000.0, paymentSourceAccountId: cashLeafId());
 
     $advance = Account::where('account_code', '15')->sole();
     expect($advance->journalLines()->exists())->toBeTrue();

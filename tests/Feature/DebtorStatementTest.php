@@ -37,6 +37,7 @@ beforeEach(function () {
         'company_id' => $this->company->id, 'blueprint_id' => $blueprint->id,
         'name' => 'Furniture Unit', 'code' => 'FURN-01', 'unit_type' => 'manufactory',
     ]);
+    linkRevenueAccount($this->unitA, '40203');
     $this->unitB = OperatingUnit::create([
         'company_id' => $this->company->id, 'blueprint_id' => $blueprint->id,
         'name' => 'Foam Unit', 'code' => 'FOAM-01', 'unit_type' => 'manufactory',
@@ -59,8 +60,8 @@ beforeEach(function () {
     $this->postLine = function (string $date, float $debit, string $unitId) {
         app(AccountingService::class)->postJournal('Sale '.$unitId, [
             ['account_code' => '122', 'debit' => $debit, 'credit' => 0, 'client_id' => $this->client->id, 'operating_unit_id' => $unitId],
-            ['account_code' => '41', 'debit' => 0, 'credit' => $debit, 'operating_unit_id' => $unitId],
-        ], entryDate: $date);
+            ['account_code' => '40201', 'debit' => 0, 'credit' => $debit, 'operating_unit_id' => $unitId],
+        ], entryDate: $date, isManual: true);
     };
 });
 
@@ -147,8 +148,8 @@ test('client_ids forces include_unassigned off', function () {
     ($this->postLine)('2026-09-10', 2500, $this->unitA->id);
     app(AccountingService::class)->postJournal('Untagged', [
         ['account_code' => '122', 'debit' => 300, 'credit' => 0, 'operating_unit_id' => $this->unitA->id],
-        ['account_code' => '41', 'debit' => 0, 'credit' => 300, 'operating_unit_id' => $this->unitA->id],
-    ], entryDate: '2026-09-12');
+        ['account_code' => '40201', 'debit' => 0, 'credit' => 300, 'operating_unit_id' => $this->unitA->id],
+    ], entryDate: '2026-09-12', isManual: true);
     $owner = ($this->makeUser)('owner', null);
     $headers = ['X-Operating-Unit-ID' => $this->unitA->id];
 

@@ -9,6 +9,7 @@ use App\Enums\PaymentRequestStatus;
 use App\Enums\PaymentRoute;
 use App\Enums\PurchaseOrderKind;
 use App\Enums\PurchaseOrderStatus;
+use App\Models\Account;
 use App\Models\BankHold;
 use App\Models\CashAccount;
 use App\Models\FxRate;
@@ -58,6 +59,7 @@ final class ProcurementTreasurySeeder extends Seeder
             'id' => (string) Str::uuid(),
             'operating_unit_id' => $unit->id,
             'name' => 'Main Operating Cash Treasury',
+            'account_id' => Account::where('account_code', '121104')->value('id'),
             'currency' => 'LYD',
             'balance' => 1500000.00,
         ]);
@@ -66,6 +68,7 @@ final class ProcurementTreasurySeeder extends Seeder
             'id' => (string) Str::uuid(),
             'operating_unit_id' => $unit->id,
             'name' => 'Foreign Exchange Clearing Safe',
+            'account_id' => Account::where('account_code', '121105')->value('id'),
             'currency' => 'USD',
             'balance' => 250000.00,
         ]);
@@ -76,7 +79,8 @@ final class ProcurementTreasurySeeder extends Seeder
         app(AccountingService::class)->postJournal(
             'Opening treasury cash (seed)',
             [
-                ['account_code' => '12', 'debit' => 2800000.00, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury + USD clearing safe at 5.20'],
+                ['account_code' => '121104', 'debit' => 1500000.00, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury'],
+                ['account_code' => '121105', 'debit' => 1300000.00, 'operating_unit_id' => $unit->id, 'memo' => 'USD clearing safe at 5.20'],
                 ['account_code' => '31', 'credit' => 2800000.00, 'operating_unit_id' => $unit->id],
             ],
         );
@@ -130,7 +134,7 @@ final class ProcurementTreasurySeeder extends Seeder
             "Import payment executed — {$supplier->name} (seed)",
             [
                 ['account_code' => '15', 'debit' => 650000.00, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
-                ['account_code' => '12', 'credit' => 650000.00, 'operating_unit_id' => $unit->id],
+                ['account_code' => '121104', 'credit' => 650000.00, 'operating_unit_id' => $unit->id],
             ],
             'PaymentRequest',
             $paymentReq->id,
@@ -188,7 +192,7 @@ final class ProcurementTreasurySeeder extends Seeder
             "Import payment executed — {$supplier->name} (seed)",
             [
                 ['account_code' => '15', 'debit' => 218875.00, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
-                ['account_code' => '12', 'credit' => 218875.00, 'operating_unit_id' => $unit->id],
+                ['account_code' => '121104', 'credit' => 218875.00, 'operating_unit_id' => $unit->id],
             ],
             'PaymentRequest',
             $paymentReq2->id,

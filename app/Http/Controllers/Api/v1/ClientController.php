@@ -17,8 +17,8 @@ use App\Rules\LeafAccount;
 use App\Services\CoaLinkService;
 use App\Services\EntityService;
 use App\Support\CurrentUnitContext;
+use App\Support\ReceivableAccounts;
 use App\Support\ReferenceGuard;
-use App\Support\SalesAccounts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -104,7 +104,7 @@ final class ClientController extends Controller
                 [
                     ...$request->only(['coa_action', 'account_id', 'new_account']),
                     'coa_action' => $request->input('coa_action') ?? ($request->filled('account_id') ? null : 'auto'),
-                    'auto_parent_code' => SalesAccounts::RECEIVABLE_FALLBACK,
+                    'auto_parent_code' => ReceivableAccounts::ROOT_CODE,
                     'auto_name' => 'عميل - '.Entity::find($entityId)?->name,
                 ],
                 $request->user()?->company_id

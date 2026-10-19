@@ -63,8 +63,8 @@ beforeEach(function () {
     $this->postClientLine = function (string $date, float $debit = 0, float $credit = 0, ?string $sourceType = null): void {
         app(AccountingService::class)->postJournal('Client entry', [
             ['account_code' => '122', 'debit' => $debit, 'credit' => $credit, 'client_id' => $this->client->id, 'operating_unit_id' => $this->unitA->id],
-            ['account_code' => '41', 'debit' => $credit, 'credit' => $debit, 'operating_unit_id' => $this->unitA->id],
-        ], $sourceType, $sourceType !== null ? (string) Str::uuid() : null, entryDate: $date);
+            ['account_code' => '40201', 'debit' => $credit, 'credit' => $debit, 'operating_unit_id' => $this->unitA->id],
+        ], $sourceType, $sourceType !== null ? (string) Str::uuid() : null, entryDate: $date, isManual: true);
     };
 
     $this->supplier = Supplier::create([

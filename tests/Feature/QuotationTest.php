@@ -39,6 +39,8 @@ beforeEach(function () {
     $this->otherUnit = OperatingUnit::create([
         'company_id' => $this->company->id, 'blueprint_id' => $blueprint->id, 'name' => 'Cutter', 'unit_type' => 'manufactory',
     ]);
+    linkRevenueAccount($this->store, '40204');
+    linkRevenueAccount($this->otherUnit, '40203');
 
     $warehouse = Warehouse::create(['operating_unit_id' => $this->store->id, 'name' => 'Store WH', 'code' => 'WH-S']);
 

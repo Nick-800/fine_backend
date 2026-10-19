@@ -37,6 +37,7 @@ beforeEach(function () {
         'company_id' => $this->company->id, 'blueprint_id' => $blueprint->id,
         'name' => 'Furniture Unit', 'code' => 'FURN-01', 'unit_type' => 'manufactory',
     ]);
+    linkRevenueAccount($this->unit, '40203');
     $entity = Entity::create(['name' => 'شركة البناء الراقي', 'entity_type' => 'organization', 'phone' => '0910000001']);
     $this->client = Client::create([
         'entity_id' => $entity->id,
@@ -57,12 +58,12 @@ beforeEach(function () {
     ]);
 });
 
-function postSale(string $debitCode, ?string $clientId, string $creditCode = '41', ?string $creditClient = null): JournalEntry
+function postSale(string $debitCode, ?string $clientId, string $creditCode = '40201', ?string $creditClient = null): JournalEntry
 {
     return app(AccountingService::class)->postJournal('Sale', [
         ['account_code' => $debitCode, 'debit' => 100, 'client_id' => $clientId],
         ['account_code' => $creditCode, 'credit' => 100, 'client_id' => $creditClient],
-    ]);
+    ], isManual: true);
 }
 
 test('stores client_id on a receivable line', function () {
@@ -74,7 +75,7 @@ test('stores client_id on a receivable line', function () {
 
 test('refuses client_id on a non-receivable account', function () {
     try {
-        postSale('122', null, '41', $this->client->id);
+        postSale('122', null, '40201', $this->client->id);
         $this->fail('Expected SalesRuleException');
     } catch (SalesRuleException $e) {
         expect($e->errorCode)->toBe('PARTY_ON_NON_RECEIVABLE');
@@ -125,7 +126,7 @@ function sellOnTerms(string $method, ?string $cashAccountId = null): SalesOrder
     ], $seller);
 }
 
-test('credit sale tags receivable line with client', function () {
+test('credit sale tags receivable line with client on its own sub-account', function () {
     seedUnitAccounts($this->unit);
 
     $order = sellOnTerms('receivable');
@@ -134,7 +135,10 @@ test('credit sale tags receivable line with client', function () {
     expect($tagged)->toHaveCount(1)
         ->and($tagged->first()->client_id)->toBe($this->client->id)
         ->and((float) $tagged->first()->debit)->toBe(200.0)
-        ->and($tagged->first()->account_id)->toBe($this->parent->id)
+        // The client had no sub-account, so the sale gave it one instead of
+        // posting to the 122 header.
+        ->and($tagged->first()->account_id)->toBe($this->client->fresh()->account_id)
+        ->and($tagged->first()->account->parent_account_id)->toBe($this->parent->id)
         ->and($order->status->isSold())->toBeTrue();
 });
 

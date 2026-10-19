@@ -77,6 +77,10 @@ Route::prefix('v1')->group(function () {
             // Entity lookups (used by the domain "select existing entity" picker).
             Route::get('/entities', [EntityLookupController::class, 'index']);
 
+            // Treasury picker for every cash operation (payroll, intake, overhead…):
+            // names only, no balances, so any signed-in role may read it.
+            Route::get('/cash-accounts/options', [CashAccountController::class, 'options']);
+
             // Reference Lookups (Data Settings)
             Route::get('/reference-lookups/{category}', [ReferenceLookupController::class, 'index']);
             Route::get('/reference-lookups/{category}/{id}', [ReferenceLookupController::class, 'show']);

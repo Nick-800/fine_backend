@@ -91,7 +91,10 @@ test('intake creates the lot, the movement and the journal in one stroke', funct
 
 test('an opening balance lands against retained earnings and cash purchases against cash', function () {
     $opening = ($this->intake)(['source' => 'opening_balance'])->assertStatus(201);
-    $cash = ($this->intake)(['source' => 'purchase_cash', 'quantity' => 10, 'unit_cost' => 2])->assertStatus(201);
+    ($this->intake)(['source' => 'purchase_cash', 'quantity' => 10, 'unit_cost' => 2])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('cash_account_id');
+    $cash = ($this->intake)(['source' => 'purchase_cash', 'quantity' => 10, 'unit_cost' => 2, 'cash_account_id' => linkedTreasury($this->unit)->id])->assertStatus(201);
 
     $openingEntry = JournalEntry::where('source_document_id', $opening->json('id'))->sole();
     $cashEntry = JournalEntry::where('source_document_id', $cash->json('id'))->sole();
@@ -99,7 +102,7 @@ test('an opening balance lands against retained earnings and cash purchases agai
     expect($openingEntry->lines()->with('account')->get()
         ->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('31')
         ->and($cashEntry->lines()->with('account')->get()
-            ->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('12');
+            ->firstWhere(fn ($l) => (float) $l->credit > 0)->account->account_code)->toBe('121101');
 
     $tb = ($this->api)()->getJson('/api/v1/reports/trial-balance')->assertStatus(200)->json();
     expect($tb['balanced'])->toBeTrue();

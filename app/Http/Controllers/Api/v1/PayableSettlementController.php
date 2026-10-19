@@ -10,6 +10,7 @@ use App\Models\PayableSettlement;
 use App\Services\PayableSettlementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 
 final class PayableSettlementController extends Controller
@@ -36,7 +37,7 @@ final class PayableSettlementController extends Controller
     public function outstanding(): JsonResponse
     {
         return response()->json([
-            'data' => collect(['21', '221', '23'])->map(fn (string $code) => [
+            'data' => collect(PayableSettlementService::SETTLEABLE)->map(fn (string $code) => [
                 'account_code' => $code,
                 'outstanding' => $this->settlementService->outstanding($code),
             ]),
@@ -57,8 +58,9 @@ final class PayableSettlementController extends Controller
         }
 
         $validated = $request->validate([
-            'account_code' => 'required|string|in:21,221,23',
+            'account_code' => ['required', 'string', Rule::in(PayableSettlementService::SETTLEABLE)],
             'amount' => 'required|numeric|min:0.0001',
+            'cash_account_id' => 'required|uuid|exists:cash_accounts,id',
             'reference' => 'nullable|string|max:255',
             'operating_unit_id' => 'sometimes|nullable|uuid|exists:operating_units,id',
         ]);
@@ -74,6 +76,7 @@ final class PayableSettlementController extends Controller
                 'company_id' => $companyId,
                 'account_code' => $validated['account_code'],
                 'amount' => (float) $validated['amount'],
+                'cash_account_id' => $validated['cash_account_id'],
                 'reference' => $validated['reference'] ?? null,
                 'operating_unit_id' => $validated['operating_unit_id'] ?? null,
                 'settled_by_user_id' => $user->id,

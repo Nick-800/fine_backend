@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\HeaderAccountPostingException;
 use App\Exceptions\InsufficientComponentStockException;
 use App\Exceptions\InsufficientTankStockException;
 use App\Exceptions\InvalidOperatingUnitException;
@@ -82,6 +83,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 'event' => $e->event->value,
                 'event_label' => $e->event->arabicLabel(),
                 'inventory_item_id' => $e->item->id,
+            ], 422);
+        });
+
+        $exceptions->render(function (HeaderAccountPostingException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'HEADER_ACCOUNT_POSTING',
+                'account_code' => $e->account->account_code,
             ], 422);
         });
 

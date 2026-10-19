@@ -11,6 +11,7 @@ use App\Exceptions\InvalidStateTransitionException;
 use App\Models\Account;
 use App\Models\DepreciationEntry;
 use App\Models\FixedAsset;
+use App\Support\TreasuryAccounts;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -30,7 +31,7 @@ final class FixedAssetService
      * @param array{company_id: string, operating_unit_id?: string|null, name: string,
      *     asset_code: string, acquisition_cost: float, acquisition_date: string,
      *     depreciation_method: string, useful_life_years: int, salvage_value?: float,
-     *     payment_source: string, account_id?: string|null} $data
+     *     payment_source: string, cash_account_id?: string|null, account_id?: string|null} $data
      */
     public function acquire(array $data): FixedAsset
     {
@@ -50,7 +51,9 @@ final class FixedAssetService
             $debitAccountCode = (string) $linked->account_code;
         }
 
-        return DB::transaction(function () use ($data, $debitAccountCode) {
+        $creditAccountCode = OverheadPaymentSource::from($data['payment_source'])->accountCode($data['cash_account_id'] ?? null);
+
+        return DB::transaction(function () use ($data, $debitAccountCode, $creditAccountCode) {
             $asset = FixedAsset::create([
                 'company_id' => $data['company_id'],
                 'account_id' => $data['account_id'] ?? null,
@@ -65,8 +68,6 @@ final class FixedAssetService
                 'status' => FixedAssetStatus::Active,
             ]);
 
-            $source = OverheadPaymentSource::from($data['payment_source']);
-
             $this->accountingService->postJournal(
                 "Asset acquired: {$asset->name} ({$asset->asset_code})",
                 [
@@ -77,7 +78,7 @@ final class FixedAssetService
                         'memo' => $asset->name,
                     ],
                     [
-                        'account_code' => $source->accountCode(),
+                        'account_code' => $creditAccountCode,
                         'credit' => (float) $asset->acquisition_cost,
                         'operating_unit_id' => $asset->operating_unit_id,
                     ],
@@ -164,15 +165,19 @@ final class FixedAssetService
     }
 
     /**
-     * ACC-08: gain/loss = proceeds - remaining book value.
+     * ACC-08: gain/loss = proceeds - remaining book value. Proceeds go into the
+     * treasury named by $cashAccountId; the cost leaves the account the asset
+     * was capitalised to.
      */
-    public function dispose(FixedAsset $asset, float $proceeds, ?string $disposedAt = null): FixedAsset
+    public function dispose(FixedAsset $asset, float $proceeds, ?string $disposedAt = null, ?string $cashAccountId = null): FixedAsset
     {
         if ($proceeds < 0) {
             throw new InvalidArgumentException('Disposal proceeds cannot be negative.');
         }
 
-        return DB::transaction(function () use ($asset, $proceeds, $disposedAt) {
+        $treasuryCode = $proceeds > 0 ? TreasuryAccounts::codeForId($cashAccountId) : null;
+
+        return DB::transaction(function () use ($asset, $proceeds, $disposedAt, $treasuryCode) {
             $asset = FixedAsset::withoutGlobalScopes()->lockForUpdate()->findOrFail($asset->id);
 
             if (! in_array(FixedAssetStatus::Disposed, $asset->status->allowedNext(), true)) {
@@ -186,7 +191,7 @@ final class FixedAssetService
 
             if ($proceeds > 0) {
                 $lines[] = [
-                    'account_code' => '12', // Cash and Bank
+                    'account_code' => $treasuryCode,
                     'debit' => round($proceeds, 4),
                     'operating_unit_id' => $asset->operating_unit_id,
                     'memo' => 'disposal proceeds',
@@ -211,7 +216,7 @@ final class FixedAssetService
             }
 
             $lines[] = [
-                'account_code' => '14', // Fixed Assets (original cost out)
+                'account_code' => $asset->account?->account_code ?? '14', // original cost out of where it was capitalised
                 'credit' => (float) $asset->acquisition_cost,
                 'operating_unit_id' => $asset->operating_unit_id,
                 'memo' => $asset->name,

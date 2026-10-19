@@ -8,52 +8,71 @@ use App\Exceptions\SalesRuleException;
 use App\Models\CashAccount;
 use App\Models\Client;
 use App\Models\OperatingUnit;
+use App\Services\CoaLinkService;
 
 /**
  * The one place a sale's ledger accounts are chosen. Checkout, receivable
  * collection and delivery must agree, the same way InventoryAccounts keeps
  * intake and issue on one account.
  *
- * The fallbacks are the chart's section headers: 41 revenue, 51 cost of
- * goods sold, 122 customers. Receivables never fall back to 13 — that code is
- * inventory in the unified chart.
+ * Every account returned is a leaf: revenue is the unit's own sales account,
+ * a receivable is the client's own sub-account under 122. Section headers
+ * (41, 122) are never posted to — AccountingService refuses them.
  */
 final class SalesAccounts
 {
-    public const REVENUE_FALLBACK = '41';
-
     public const COGS = '51';
 
-    public const RECEIVABLE_FALLBACK = '122';
-
-    public static function revenueFor(OperatingUnit $unit): string
-    {
-        return $unit->revenueAccount?->account_code ?? self::REVENUE_FALLBACK;
-    }
-
-    public static function receivableFor(?Client $client): string
-    {
-        return $client?->account?->account_code ?? self::RECEIVABLE_FALLBACK;
-    }
-
     /**
-     * The ledger account behind a treasury or bank account. A treasury that is
-     * not linked to the chart cannot take money — posting it to a header
-     * account would hide it from every cash report.
-     *
      * @throws SalesRuleException
      */
-    public static function treasuryFor(CashAccount $cashAccount): string
+    public static function revenueFor(OperatingUnit $unit): string
     {
-        $code = $cashAccount->account?->account_code;
+        $code = $unit->revenueAccount?->account_code;
 
         if ($code === null) {
             throw new SalesRuleException(
-                "Treasury '{$cashAccount->name}' is not linked to a ledger account yet.",
-                'TREASURY_NOT_LINKED',
+                "Operating unit '{$unit->name}' has no sales revenue account linked yet.",
+                'UNIT_REVENUE_NOT_LINKED',
             );
         }
 
         return $code;
+    }
+
+    /**
+     * The client's own receivable sub-account. A client created before every
+     * client got one is given its sub-account here, on first use, so a credit
+     * sale never lands on the 122 header.
+     *
+     * @throws SalesRuleException
+     */
+    public static function receivableFor(?Client $client): string
+    {
+        if ($client === null) {
+            throw new SalesRuleException('A receivable needs the client it is owed by.', 'CLIENT_REQUIRED');
+        }
+
+        $code = $client->account?->account_code;
+
+        if ($code !== null) {
+            return $code;
+        }
+
+        $client->account_id = app(CoaLinkService::class)->provisionNextSubAccount(
+            ReceivableAccounts::ROOT_CODE,
+            'عميل - '.($client->entity?->name ?? $client->id),
+        );
+        $client->save();
+
+        return (string) $client->load('account')->account?->account_code;
+    }
+
+    /**
+     * @throws SalesRuleException
+     */
+    public static function treasuryFor(CashAccount $cashAccount): string
+    {
+        return TreasuryAccounts::codeFor($cashAccount);
     }
 }

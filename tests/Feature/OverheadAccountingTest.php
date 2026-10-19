@@ -39,6 +39,7 @@ beforeEach(function () {
         'company_id' => $this->company->id, 'blueprint_id' => $foamBlueprint->id,
         'name' => 'Foam Plant', 'code' => 'FOAM-01', 'unit_type' => 'manufactory', 'status' => 'active',
     ]);
+    $this->treasury = linkedTreasury($this->foamUnit);
     $this->storeUnit = OperatingUnit::create([
         'company_id' => $this->company->id, 'blueprint_id' => $storeBlueprint->id,
         'name' => 'Showroom', 'code' => 'STORE-01', 'unit_type' => 'store', 'status' => 'active',
@@ -69,6 +70,7 @@ test('recording a unit expense posts overhead against cash tagged to the unit', 
         'amount' => 350.0,
         'expense_date' => now()->toDateString(),
         'payment_source' => 'cash',
+        'cash_account_id' => $this->treasury->id,
     ]);
 
     $entry = JournalEntry::where('source_document_id', $expense->id)->sole();
@@ -80,7 +82,7 @@ test('recording a unit expense posts overhead against cash tagged to the unit', 
     expect($debit->account->account_code)->toBe('54')
         ->and((float) $debit->debit)->toBe(350.0)
         ->and($debit->operating_unit_id)->toBe($this->foamUnit->id)
-        ->and($credit->account->account_code)->toBe('12')
+        ->and($credit->account->account_code)->toBe('121101')
         ->and($credit->operating_unit_id)->toBe($this->foamUnit->id);
 });
 
@@ -138,6 +140,7 @@ test('a unit-specific expense refuses allocation', function () {
         'amount' => 100.0,
         'expense_date' => now()->toDateString(),
         'payment_source' => 'cash',
+        'cash_account_id' => $this->treasury->id,
     ]);
 
     expect(fn () => $this->overhead->allocate($expense, AllocationMethod::EvenSplit))

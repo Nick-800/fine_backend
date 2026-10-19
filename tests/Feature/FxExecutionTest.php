@@ -88,7 +88,7 @@ test('it derives the effective rate when only the LYD amount is provided', funct
     $pr = $order->fresh()->paymentRequests()->sole();
 
     // FX-02: only LYD supplied, no rate.
-    $updated = $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5150.0);
+    $updated = $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5150.0, paymentSourceAccountId: cashLeafId());
 
     expect((float) $updated->fx_rate_used)->toBe(5.15);
 });
@@ -109,7 +109,7 @@ test('it derives the effective settled when only the rate is provided', function
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
 
     // FX-15: only rate supplied, no exact_used.
-    $updated = $this->stateService->executePayment($pr, fxRateUsed: 5.20);
+    $updated = $this->stateService->executePayment($pr, fxRateUsed: 5.20, paymentSourceAccountId: cashLeafId());
 
     expect((float) $updated->fx_rate_used)->toBe(5.20)
         ->and((float) $updated->bankHold->fresh()->exact_amount_used)->toBe(5200.0);
@@ -130,7 +130,7 @@ test('it accepts exact_amount_used_lyd on the Market route', function () {
     $pr = $order->fresh()->paymentRequests()->sole();
 
     // FX-02: صرّاف route accepts LYD; rate is derived.
-    $updated = $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5100.0);
+    $updated = $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5100.0, paymentSourceAccountId: cashLeafId());
 
     expect((float) $updated->fx_rate_used)->toBe(5.10)
         ->and($updated->bankHold)->toBeNull();
@@ -150,7 +150,7 @@ test('it accepts both inputs and reconciles to the LYD truth', function () {
     $pr = $order->fresh()->paymentRequests()->sole();
 
     // FX-02: both supplied; LYD wins, rate is reconciled to LYD/amount.
-    $updated = $this->stateService->executePayment($pr, fxRateUsed: 5.0, exactAmountUsedLyd: 5150.0);
+    $updated = $this->stateService->executePayment($pr, fxRateUsed: 5.0, exactAmountUsedLyd: 5150.0, paymentSourceAccountId: cashLeafId());
 
     expect((float) $updated->fx_rate_used)->toBe(5.15);
 });
@@ -168,7 +168,7 @@ test('it rejects execution when neither field is provided', function () {
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->fresh()->paymentRequests()->sole();
 
-    expect(fn () => $this->stateService->executePayment($pr))
+    expect(fn () => $this->stateService->executePayment($pr, paymentSourceAccountId: cashLeafId()))
         ->toThrow(InvalidArgumentException::class);
 });
 
@@ -186,7 +186,7 @@ test('it rounds effective_rate to 6 decimal places and effective_settled to 4', 
     $pr = $order->fresh()->paymentRequests()->sole();
 
     // 1000 / 333 = 3.003003003… → round to 6 dp = 3.003003
-    $updated = $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 1000.0);
+    $updated = $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 1000.0, paymentSourceAccountId: cashLeafId());
 
     expect((float) $updated->fx_rate_used)->toBe(3.003003);
 });
@@ -211,7 +211,7 @@ test('FX-TEST-02: a bank hold where exact_used exceeds held books the spread as 
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5000.00);
     $pr = $order->fresh()->paymentRequests()->sole();
-    $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5150.0, bankReference: 'BNK-SPREAD');
+    $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5150.0, bankReference: 'BNK-SPREAD', paymentSourceAccountId: cashLeafId());
 
     $hold = $pr->fresh()->bankHold;
     expect((float) $hold->exact_amount_used)->toBe(5150.0)
@@ -228,7 +228,7 @@ test('FX-TEST-02: a bank hold where exact_used exceeds held books the spread as 
 
     $advance = JournalEntry::where('source_document_type', 'PaymentRequest')->sole();
     expect((float) $advance->lines()->with('account')->get()
-        ->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(5150.0);
+        ->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(5150.0);
 
     $completion = JournalEntry::where('source_document_type', 'PurchaseOrder')->sole();
     $lines = $completion->lines()->with('account')->get();
@@ -260,7 +260,7 @@ test('FX-TEST-03: a USD order with no booked_fx_rate falls back to the most rece
     $pr = $order->fresh()->paymentRequests()->sole();
 
     // Executed at 5.2 — variance should be 200 LYD FX loss.
-    $this->stateService->executePayment($pr, fxRateUsed: 5.2);
+    $this->stateService->executePayment($pr, fxRateUsed: 5.2, paymentSourceAccountId: cashLeafId());
 
     $this->stateService->confirmShipment($order->fresh());
     $this->stateService->arriveAtPort($order->fresh());
@@ -289,7 +289,7 @@ test('FX-TEST-07: a landed cost line in the order currency converts at the reali
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 1000);
     $pr = $order->fresh()->paymentRequests()->sole();
-    $this->stateService->executePayment($pr, fxRateUsed: 5.2);
+    $this->stateService->executePayment($pr, fxRateUsed: 5.2, paymentSourceAccountId: cashLeafId());
 
     LandedCostLine::create([
         'purchase_order_id' => $order->id,
@@ -328,7 +328,7 @@ test('FX-TEST-08: executePayment without exact_amount_used_lyd defaults to amoun
     $pr = $order->fresh()->paymentRequests()->sole();
 
     // No exact_amount_used_lyd supplied — derived from amount × rate.
-    $this->stateService->executePayment($pr, fxRateUsed: 5.20);
+    $this->stateService->executePayment($pr, fxRateUsed: 5.20, paymentSourceAccountId: cashLeafId());
 
     $hold = $pr->fresh()->bankHold;
     expect((float) $hold->exact_amount_used)->toBe(5200.0)
@@ -470,7 +470,7 @@ test('resource exposes effective_settled_lyd when exact_amount_used is set', fun
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
     $pr = $order->paymentRequests()->sole();
-    $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5150.0);
+    $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5150.0, paymentSourceAccountId: cashLeafId());
 
     $payload = (new PaymentRequestResource($pr->fresh()->load('bankHold')))
         ->toArray(request());
@@ -496,7 +496,7 @@ test('resource derives effective_rate when only exact_amount_used is stored', fu
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 5500.00);
     $pr = $order->paymentRequests()->sole();
-    $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5150.0);
+    $this->stateService->executePayment($pr, null, exactAmountUsedLyd: 5150.0, paymentSourceAccountId: cashLeafId());
 
     // Inspect the persisted PR directly: fx_rate_used is the effective rate
     // (Phase 1 P2 decision — single source of truth in the column).
@@ -517,7 +517,7 @@ test('resource variance_vs_booked_lyd matches the actual settled-to-booked LYD d
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->paymentRequests()->sole();
-    $this->stateService->executePayment($pr, fxRateUsed: 5.10);
+    $this->stateService->executePayment($pr, fxRateUsed: 5.10, paymentSourceAccountId: cashLeafId());
 
     $payload = (new PaymentRequestResource($pr->fresh()->load('bankHold')))
         ->toArray(request());
@@ -540,7 +540,7 @@ test('resource flags variance_exceeds_hard_cap for spreads above 5% of settled',
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $pr = $order->paymentRequests()->sole();
-    $this->stateService->executePayment($pr, fxRateUsed: 6.00);
+    $this->stateService->executePayment($pr, fxRateUsed: 6.00, paymentSourceAccountId: cashLeafId());
 
     $payload = (new PaymentRequestResource($pr->fresh()->load('bankHold')))
         ->toArray(request());

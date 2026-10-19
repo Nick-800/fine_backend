@@ -51,8 +51,8 @@ function historyLine(string $debitCode, ?string $sourceId = null): JournalLine
 {
     $entry = app(AccountingService::class)->postJournal('History', [
         ['account_code' => $debitCode, 'debit' => 100],
-        ['account_code' => '41', 'credit' => 100],
-    ], $sourceId === null ? null : 'SalesOrder', $sourceId);
+        ['account_code' => '40201', 'credit' => 100],
+    ], $sourceId === null ? null : 'SalesOrder', $sourceId, isManual: true);
 
     return JournalLine::where('journal_entry_id', $entry->id)
         ->where('account_id', Account::where('account_code', $debitCode)->value('id'))
@@ -162,13 +162,13 @@ test('ignores non-receivable lines', function () {
     $order = salesOrderFor($this->client->id);
     $entry = app(AccountingService::class)->postJournal('History', [
         ['account_code' => '122', 'debit' => 100],
-        ['account_code' => '41', 'credit' => 100],
-    ], 'SalesOrder', $order->id);
+        ['account_code' => '40201', 'credit' => 100],
+    ], 'SalesOrder', $order->id, isManual: true);
 
     $this->artisan('ledger:backfill-clients')->assertExitCode(0);
 
     $revenue = JournalLine::where('journal_entry_id', $entry->id)
-        ->where('account_id', Account::where('account_code', '41')->value('id'))->firstOrFail();
+        ->where('account_id', Account::where('account_code', '40201')->value('id'))->firstOrFail();
     expect($revenue->client_id)->toBeNull();
 });
 

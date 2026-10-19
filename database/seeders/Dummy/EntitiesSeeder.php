@@ -14,6 +14,7 @@ use App\Models\Entity;
 use App\Models\EntityContact;
 use App\Models\EntityRole;
 use App\Models\OperatingUnit;
+use App\Support\SalesAccounts;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -59,7 +60,7 @@ class EntitiesSeeder extends Seeder
                 'operating_unit_id' => $unit->id,
             ]);
 
-            Client::create([
+            $client = Client::create([
                 'id' => (string) Str::uuid(),
                 'entity_id' => $entity->id,
                 'operating_unit_id' => $unit->id,
@@ -67,6 +68,9 @@ class EntitiesSeeder extends Seeder
                 'payment_terms_days' => fake()->randomElement([30, 45, 60]),
                 'status' => fake()->randomElement(ClientStatus::cases()),
             ]);
+
+            // Credit sales post to the client's own sub-account under 122.
+            SalesAccounts::receivableFor($client);
         }
     }
 

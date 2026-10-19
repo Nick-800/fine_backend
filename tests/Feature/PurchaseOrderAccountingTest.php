@@ -76,7 +76,7 @@ beforeEach(function () {
 
         $this->stateService->transitionToPendingPayment($order);
         $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, $price * $qty);
-        $this->stateService->executePayment($order->paymentRequests()->first(), $realizedRate);
+        $this->stateService->executePayment($order->paymentRequests()->first(), $realizedRate, paymentSourceAccountId: cashLeafId());
         $this->stateService->confirmShipment($order->fresh());
         $this->stateService->arriveAtPort($order->fresh());
         $this->stateService->transportToWarehouse($order->fresh());
@@ -351,7 +351,7 @@ test('executing a payment posts the advance against cash and completion clears i
 
     // 1000 USD at 5.0: money left the bank, sitting on the supplier.
     expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '15')->debit)->toBe(5000.0)
-        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(5000.0);
+        ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(5000.0);
 
     $this->stateService->completeOrder($order->fresh());
 
@@ -376,7 +376,7 @@ test('a bank hold settled above the computed rate books the spread as FX loss', 
     ]);
     $this->stateService->transitionToPendingPayment($order);
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Bank, 1000, 6000.00, 'INV-1');
-    $this->stateService->executePayment($order->paymentRequests()->first(), 5.0, 5150.00, 'BNK-1');
+    $this->stateService->executePayment($order->paymentRequests()->first(), 5.0, 5150.00, 'BNK-1', paymentSourceAccountId: cashLeafId());
     $this->stateService->confirmShipment($order->fresh());
     $this->stateService->arriveAtPort($order->fresh());
     $this->stateService->transportToWarehouse($order->fresh());
@@ -386,7 +386,7 @@ test('a bank hold settled above the computed rate books the spread as FX loss', 
     // The advance carries what the bank actually took.
     $advance = JournalEntry::where('source_document_type', 'PaymentRequest')->sole();
     expect((float) $advance->lines()->with('account')->get()
-        ->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(5150.0);
+        ->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(5150.0);
 
     $this->stateService->completeOrder($order->fresh());
 

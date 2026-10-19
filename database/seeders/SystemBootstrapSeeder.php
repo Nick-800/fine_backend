@@ -44,6 +44,9 @@ use App\Models\Warehouse;
 use App\Services\AccountingService;
 use App\Services\OperatingUnitService;
 use App\Services\ProductionBatchService;
+use App\Support\ReceivableAccounts;
+use App\Support\SalesAccounts;
+use App\Support\UnitRevenueAccounts;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -64,6 +67,10 @@ use Illuminate\Support\Str;
  */
 class SystemBootstrapSeeder extends Seeder
 {
+    private const MAIN_TREASURY_CODE = '121104';
+
+    private const FX_SAFE_CODE = '121105';
+
     public function run(): void
     {
         $this->seedCompany();
@@ -72,6 +79,8 @@ class SystemBootstrapSeeder extends Seeder
         $this->seedChartOfAccounts();
         $this->seedBlueprints();
         $units = $this->seedOperatingUnits();
+        UnitRevenueAccounts::linkDefaults();
+        $units = array_map(fn (OperatingUnit $unit): OperatingUnit => $unit->refresh(), $units);
         $this->seedFxRates();
         $this->seedCashAccountsAndOpeningBalance($units['procurement']);
         $this->seedSalesTreasuries($units);
@@ -179,6 +188,7 @@ class SystemBootstrapSeeder extends Seeder
                 'id' => (string) Str::uuid(),
                 'operating_unit_id' => $unit->id,
                 'name' => 'Main Operating Cash Treasury',
+                'account_id' => Account::where('account_code', self::MAIN_TREASURY_CODE)->value('id'),
                 'currency' => 'LYD',
                 'balance' => 1_500_000,
             ]);
@@ -186,17 +196,19 @@ class SystemBootstrapSeeder extends Seeder
                 'id' => (string) Str::uuid(),
                 'operating_unit_id' => $unit->id,
                 'name' => 'Foreign Exchange Clearing Safe',
+                'account_id' => Account::where('account_code', self::FX_SAFE_CODE)->value('id'),
                 'currency' => 'USD',
                 'balance' => 250_000,
             ]);
         }
 
-        if (Account::where('account_code', '12')->exists() && ! $this->openingBalanceAlreadyPosted($unit)) {
+        if (Account::where('account_code', self::MAIN_TREASURY_CODE)->exists() && ! $this->openingBalanceAlreadyPosted($unit)) {
             $openingValue = 1_500_000 + 250_000 * 5.20;
             app(AccountingService::class)->postJournal(
                 'Opening treasury cash (bootstrap)',
                 [
-                    ['account_code' => '12', 'debit' => $openingValue, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury + USD clearing safe at 5.20'],
+                    ['account_code' => self::MAIN_TREASURY_CODE, 'debit' => 1_500_000, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury'],
+                    ['account_code' => self::FX_SAFE_CODE, 'debit' => 250_000 * 5.20, 'operating_unit_id' => $unit->id, 'memo' => 'USD clearing safe at 5.20'],
                     ['account_code' => '31', 'credit' => $openingValue, 'operating_unit_id' => $unit->id],
                 ],
             );
@@ -221,7 +233,7 @@ class SystemBootstrapSeeder extends Seeder
         }
 
         $showroomCashBox = Account::firstOrCreate(
-            ['account_code' => '121103'],
+            ['account_code' => '121103'], // in the catalog; kept for charts seeded before it was
             [
                 'chart_of_accounts_id' => $cashBoxes->chart_of_accounts_id,
                 'parent_account_id' => $cashBoxes->id,
@@ -267,11 +279,11 @@ class SystemBootstrapSeeder extends Seeder
      * sub-account codes for the 12 events:
      *
      *   - purchases / opening / ending / purchase_returns: 111 (raw materials)
-     *   - sales: unit's own revenue_account_id (set elsewhere) or 41 header
-     *   - sales_returns: 41 header (sales returns reduce revenue)
+     *   - sales / sales_returns / earned_discount / granted_discount /
+     *     sales_commission: the unit's own revenue account (UnitRevenueAccounts);
+     *     skipped for a unit that does not sell, never the 41 header
      *   - cogs: 51 (cost of goods sold)
      *   - waste: 52 (inventory & production variance)
-     *   - earned_discount / granted_discount / sales_commission: 41 header
      *   - transport_in: 53 (transport in)
      *
      * Re-runnable: existing rows are skipped via the unique index on
@@ -288,15 +300,18 @@ class SystemBootstrapSeeder extends Seeder
             InventoryEventType::PurchaseReturns->value => '111',
             InventoryEventType::Cogs->value => '51',
             InventoryEventType::Waste->value => '52',
-            InventoryEventType::EarnedDiscount->value => '41',
-            InventoryEventType::GrantedDiscount->value => '41',
             InventoryEventType::TransportIn->value => '53',
-            InventoryEventType::SalesCommission->value => '41',
-            InventoryEventType::SalesReturns->value => '41',
+        ];
+
+        $revenueEvents = [
+            InventoryEventType::Sales,
+            InventoryEventType::SalesReturns,
+            InventoryEventType::EarnedDiscount,
+            InventoryEventType::GrantedDiscount,
+            InventoryEventType::SalesCommission,
         ];
 
         foreach ($units as $unit) {
-            $salesAccountCode = $unit->revenueAccount?->account_code ?? '41';
             foreach ($defaultsByEvent as $event => $code) {
                 if (OperatingUnitAccount::where('operating_unit_id', $unit->id)
                     ->where('event_type', $event)->exists()) {
@@ -313,17 +328,15 @@ class SystemBootstrapSeeder extends Seeder
                 ]);
             }
 
-            if (! OperatingUnitAccount::where('operating_unit_id', $unit->id)
-                ->where('event_type', InventoryEventType::Sales->value)->exists()) {
-                $salesAccount = $unit->revenueAccount
-                    ?? Account::where('account_code', '41')->first();
-                if ($salesAccount !== null) {
-                    OperatingUnitAccount::create([
-                        'operating_unit_id' => $unit->id,
-                        'event_type' => InventoryEventType::Sales->value,
-                        'account_id' => $salesAccount->id,
-                    ]);
-                }
+            if ($unit->revenue_account_id === null) {
+                continue;
+            }
+
+            foreach ($revenueEvents as $event) {
+                OperatingUnitAccount::firstOrCreate(
+                    ['operating_unit_id' => $unit->id, 'event_type' => $event->value],
+                    ['account_id' => $unit->revenue_account_id],
+                );
             }
         }
     }
@@ -484,6 +497,13 @@ class SystemBootstrapSeeder extends Seeder
                 'status' => ClientStatus::Active,
             ]);
         }
+
+        // Every client owns a receivable sub-account under 122 (credit sales post to it).
+        $client = $entity->client()->first();
+        if ($client !== null && $client->account_id === null
+            && Account::where('account_code', ReceivableAccounts::ROOT_CODE)->exists()) {
+            SalesAccounts::receivableFor($client);
+        }
     }
 
     private function seedEntityBackedEmployee(OperatingUnit $unit): void
@@ -584,7 +604,7 @@ class SystemBootstrapSeeder extends Seeder
                     "Import payment executed — {$supplier->name} (bootstrap)",
                     [
                         ['account_code' => '15', 'debit' => 650_000, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
-                        ['account_code' => '12', 'credit' => 650_000, 'operating_unit_id' => $unit->id],
+                        ['account_code' => self::MAIN_TREASURY_CODE, 'credit' => 650_000, 'operating_unit_id' => $unit->id],
                     ],
                     'PaymentRequest',
                     $paymentReq->id,
@@ -648,7 +668,7 @@ class SystemBootstrapSeeder extends Seeder
                     "Import payment executed — {$supplier->name} (bootstrap)",
                     [
                         ['account_code' => '15', 'debit' => 218_875, 'operating_unit_id' => $unit->id, 'memo' => $supplier->name],
-                        ['account_code' => '12', 'credit' => 218_875, 'operating_unit_id' => $unit->id],
+                        ['account_code' => self::MAIN_TREASURY_CODE, 'credit' => 218_875, 'operating_unit_id' => $unit->id],
                     ],
                     'PaymentRequest',
                     $paymentReq2->id,

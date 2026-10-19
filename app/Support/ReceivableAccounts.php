@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Support;
 
-use App\Models\Account;
-
 /**
  * The receivables subtree: account 122 and every descendant by parent_account_id.
  *
@@ -14,32 +12,14 @@ use App\Models\Account;
  */
 final class ReceivableAccounts
 {
+    public const ROOT_CODE = '122';
+
     /**
      * @return array<int, string>
      */
     public static function subtreeIds(): array
     {
-        $rootId = Account::query()->where('account_code', SalesAccounts::RECEIVABLE_FALLBACK)->value('id');
-
-        if ($rootId === null) {
-            return [];
-        }
-
-        $ids = [$rootId];
-        $frontier = [$rootId];
-
-        while ($frontier !== []) {
-            $frontier = Account::query()
-                ->whereIn('parent_account_id', $frontier)
-                ->pluck('id')
-                ->diff($ids)
-                ->values()
-                ->all();
-
-            $ids = [...$ids, ...$frontier];
-        }
-
-        return $ids;
+        return AccountTree::subtreeIds(self::ROOT_CODE);
     }
 
     public static function contains(string $accountId): bool

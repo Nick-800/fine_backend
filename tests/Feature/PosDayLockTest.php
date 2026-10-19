@@ -40,6 +40,8 @@ beforeEach(function () {
 
     $this->unitA = $makeUnit('Showroom A');
     $this->unitB = $makeUnit('Showroom B');
+    linkRevenueAccount($this->unitA, '40204');
+    linkRevenueAccount($this->unitB, '40203');
 
     $this->user = User::factory()->create(['must_change_password' => false]);
     $role = Role::create(['name' => 'Owner', 'slug' => 'owner']);
@@ -53,7 +55,7 @@ beforeEach(function () {
 
     foreach ([
         [InventoryEventType::Purchases, '1134'],
-        [InventoryEventType::Sales, '41'],
+        [InventoryEventType::Sales, '40204'],
         [InventoryEventType::Cogs, '51'],
     ] as [$event, $code]) {
         OperatingUnitAccount::create([

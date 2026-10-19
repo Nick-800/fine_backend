@@ -45,6 +45,8 @@ beforeEach(function () {
     $this->cutter = OperatingUnit::create([
         'company_id' => $this->company->id, 'blueprint_id' => $cutterBlueprint->id, 'name' => 'Cutter', 'unit_type' => 'manufactory',
     ]);
+    linkRevenueAccount($this->store, '40204');
+    linkRevenueAccount($this->cutter, '40202');
 
     $this->storeWarehouse = Warehouse::create(['operating_unit_id' => $this->store->id, 'name' => 'Store WH', 'code' => 'WH-S']);
     $this->cutterWarehouse = Warehouse::create(['operating_unit_id' => $this->cutter->id, 'name' => 'Cutter WH', 'code' => 'WH-C']);
@@ -267,7 +269,7 @@ test('delivering hands the pieces over and books their cost, each from the unit 
     $tb = app(AccountingService::class)->trialBalance();
     $byCode = collect($tb['rows'])->keyBy('account_code');
     expect($tb['balanced'])->toBeTrue()
-        ->and((float) $byCode['41']['credit'])->toBe(2500.0)
+        ->and((float) $byCode['40204']['credit'])->toBe(2500.0)
         ->and((float) $byCode['51']['debit'])->toBe(390.0)
         // The cutter's purchases account is 1132 (overridden in beforeEach
         // to match what the legacy per-item-type mapping used to dispatch),

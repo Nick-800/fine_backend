@@ -29,6 +29,31 @@ final class CashAccountController extends Controller
         return CashAccountResource::collection($query->orderBy('name')->get());
     }
 
+    /**
+     * The treasuries money can move through: linked to a ledger leaf, without
+     * balances, for the pickers on payroll, settlements, overhead, fixed
+     * assets and cash stock intake.
+     */
+    public function options(Request $request): JsonResponse
+    {
+        $query = CashAccount::with('account:id,account_code,name')->whereNotNull('account_id');
+
+        if (filled($request->query('kind'))) {
+            $query->where('kind', $request->query('kind'));
+        }
+
+        return response()->json([
+            'data' => $query->orderBy('name')->get()->map(fn (CashAccount $cashAccount): array => [
+                'id' => $cashAccount->id,
+                'name' => $cashAccount->name,
+                'kind' => $cashAccount->kind,
+                'currency' => $cashAccount->currency,
+                'operating_unit_id' => $cashAccount->operating_unit_id,
+                'account_code' => $cashAccount->account?->account_code,
+            ]),
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $request->validate([

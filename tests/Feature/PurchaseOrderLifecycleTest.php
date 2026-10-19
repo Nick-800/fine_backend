@@ -100,7 +100,7 @@ test('full import order state machine lifecycle transition', function () {
     expect((float) $paymentRequest->bankHold->held_amount_lyd)->toBe(65000.00);
 
     // 4. Execute Payment (Realized FX Rate 5.20 LYD/USD)
-    $this->stateService->executePayment($paymentRequest, 5.20, 62660.00, 'BNK-REF-7711');
+    $this->stateService->executePayment($paymentRequest, 5.20, 62660.00, 'BNK-REF-7711', paymentSourceAccountId: cashLeafId());
     expect($order->fresh()->status)->toBe(PurchaseOrderStatus::Paid);
     expect((float) $paymentRequest->fresh()->bankHold->released_amount)->toBe(2340.00);
 
@@ -151,7 +151,7 @@ test('cannot complete import order if unconfirmed landed cost lines exist', func
     $this->stateService->transitionToPendingPayment($order->fresh());
     $this->stateService->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 500);
     $paymentRequest = $order->paymentRequests()->first();
-    $this->stateService->executePayment($paymentRequest, 5.0);
+    $this->stateService->executePayment($paymentRequest, 5.0, paymentSourceAccountId: cashLeafId());
     $this->stateService->confirmShipment($order->fresh());
     $this->stateService->arriveAtPort($order->fresh());
     $this->stateService->transportToWarehouse($order->fresh());

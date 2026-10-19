@@ -156,18 +156,27 @@ test('document numbers are sequential per type and shared by every unit', functi
         ->and($numbers->next(DocumentNumberService::QUOTATION))->toBe("Q-{$year}-00001");
 });
 
-test('sales accounts fall back to the chart headers, never to inventory', function () {
-    $entity = Entity::create(['entity_type' => 'individual', 'name' => 'Walk-in']);
-    $client = Client::create(['entity_id' => $entity->id, 'operating_unit_id' => $this->store->id]);
-
-    expect(SalesAccounts::revenueFor($this->store))->toBe('41')
-        ->and(SalesAccounts::receivableFor($client))->toBe('122')
-        ->and(SalesAccounts::receivableFor(null))->toBe('122');
+test('sales accounts are leaves: the unit revenue account and the client own receivable', function () {
+    // An unlinked unit cannot sell — revenue never lands on the 41 header.
+    expect(fn () => SalesAccounts::revenueFor($this->store))
+        ->toThrow(SalesRuleException::class, 'no sales revenue account');
 
     $cutterSales = Account::where('account_code', '40202')->firstOrFail();
     $this->store->update(['revenue_account_id' => $cutterSales->id]);
 
     expect(SalesAccounts::revenueFor($this->store->fresh()))->toBe('40202');
+
+    // A client created without a receivable sub-account gets one on first use.
+    $entity = Entity::create(['entity_type' => 'individual', 'name' => 'Walk-in']);
+    $client = Client::create(['entity_id' => $entity->id, 'operating_unit_id' => $this->store->id]);
+
+    $code = SalesAccounts::receivableFor($client);
+
+    expect($code)->toStartWith('122')->not->toBe('122')
+        ->and($client->fresh()->account?->account_code)->toBe($code)
+        ->and(SalesAccounts::receivableFor($client->fresh()))->toBe($code);
+
+    expect(fn () => SalesAccounts::receivableFor(null))->toThrow(SalesRuleException::class);
 });
 
 test('a treasury that is not linked to the ledger cannot take money', function () {

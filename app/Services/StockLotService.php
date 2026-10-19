@@ -13,6 +13,7 @@ use App\Models\OperatingUnit;
 use App\Models\PurchaseOrder;
 use App\Models\StockLot;
 use App\Models\Warehouse;
+use App\Support\TreasuryAccounts;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -41,6 +42,7 @@ class StockLotService
      *
      * @param array{inventory_item_id: string, warehouse_id: string, lot_number?: string|null,
      *     quantity: float, unit_cost: float, source: string, purchase_order_id?: string|null,
+     *     cash_account_id?: string|null,
      *     attribute_values?: array<string, mixed>|null} $data
      */
     public function intake(array $data): StockLot
@@ -129,7 +131,7 @@ class StockLotService
             if (! $isImportReceipt && $value > 0) {
                 $creditAccount = match ($data['source']) {
                     'opening_balance' => '31', // Retained Earnings
-                    'purchase_cash' => '12',   // Cash and Bank
+                    'purchase_cash' => TreasuryAccounts::codeForId($data['cash_account_id'] ?? null),
                     'purchase_credit' => '21', // Accounts Payable
                     default => throw new InvalidArgumentException("Unknown intake source \"{$data['source']}\"."),
                 };

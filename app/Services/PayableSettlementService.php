@@ -7,24 +7,25 @@ namespace App\Services;
 use App\Models\Account;
 use App\Models\JournalLine;
 use App\Models\PayableSettlement;
+use App\Support\TreasuryAccounts;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
  * Paying down the liabilities the operational flows accumulate:
  *
- *   2100 Accounts Payable          — credit purchases (intake, overhead, assets)
- *   2210 Payroll Deductions Payable — withholdings awaiting remittance
- *   2300 Landed Cost Clearing       — customs/freight/transport providers
+ *   21  Accounts Payable           — credit purchases (intake, overhead, assets)
+ *   221 Suppliers
+ *   225 Payroll Deductions Payable — withholdings awaiting remittance
+ *   23  Landed Cost Clearing       — customs/freight/transport providers
  *
- * A settlement posts DR payable / CR 1200 Cash and is capped at the
- * account's live outstanding balance — the ledger is the source of truth,
- * so treasury can never pay a liability below zero. Single cash account
- * 1200 is the v1 policy.
+ * A settlement posts DR payable / CR the treasury the money leaves from and
+ * is capped at the account's live outstanding balance — the ledger is the
+ * source of truth, so treasury can never pay a liability below zero.
  */
 final class PayableSettlementService
 {
-    private const SETTLEABLE = ['21', '221', '23'];
+    public const SETTLEABLE = ['21', '221', '225', '23'];
 
     public function __construct(
         private readonly AccountingService $accountingService,
@@ -32,8 +33,8 @@ final class PayableSettlementService
 
     /**
      * @param array{company_id: string, account_code: string, amount: float,
-     *     operating_unit_id?: string|null, reference?: string|null,
-     *     settled_by_user_id?: string|null} $data
+     *     cash_account_id?: string|null, operating_unit_id?: string|null,
+     *     reference?: string|null, settled_by_user_id?: string|null} $data
      */
     public function settle(array $data): PayableSettlement
     {
@@ -41,9 +42,11 @@ final class PayableSettlementService
 
         if (! in_array($accountCode, self::SETTLEABLE, true)) {
             throw new InvalidArgumentException(
-                "Account {$accountCode} is not a settleable payable (21, 221 or 23)."
+                "Account {$accountCode} is not a settleable payable (".implode(', ', self::SETTLEABLE).').'
             );
         }
+
+        $treasuryCode = TreasuryAccounts::codeForId($data['cash_account_id'] ?? null);
 
         $amount = round((float) $data['amount'], 4);
 
@@ -51,7 +54,7 @@ final class PayableSettlementService
             throw new InvalidArgumentException('A settlement must be greater than zero.');
         }
 
-        return DB::transaction(function () use ($data, $accountCode, $amount) {
+        return DB::transaction(function () use ($data, $accountCode, $amount, $treasuryCode) {
             $unitId = $data['operating_unit_id'] ?? null;
             $outstanding = $this->outstanding($accountCode, $unitId);
 
@@ -84,7 +87,7 @@ final class PayableSettlementService
                         'memo' => $data['reference'] ?? null,
                     ],
                     [
-                        'account_code' => '12', // Cash and Bank
+                        'account_code' => $treasuryCode,
                         'credit' => $amount,
                         'operating_unit_id' => $unitId,
                     ],

@@ -80,8 +80,8 @@ function ledgerPost(string $date, ?string $clientId, float $debit = 0, float $cr
 {
     app(AccountingService::class)->postJournal($description, [
         ['account_code' => $code, 'debit' => $debit, 'credit' => $credit, 'client_id' => $clientId, 'operating_unit_id' => $unitId],
-        ['account_code' => '41', 'debit' => $credit, 'credit' => $debit, 'operating_unit_id' => $unitId],
-    ], entryDate: $date);
+        ['account_code' => '40201', 'debit' => $credit, 'credit' => $debit, 'operating_unit_id' => $unitId],
+    ], entryDate: $date, isManual: true);
 }
 
 function septemberFilters(array $overrides = []): DebtorStatementFilters

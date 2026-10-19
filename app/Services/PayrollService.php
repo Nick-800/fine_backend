@@ -13,6 +13,7 @@ use App\Models\Employee;
 use App\Models\LaborRoleRate;
 use App\Models\PayrollRun;
 use App\Models\Payslip;
+use App\Support\TreasuryAccounts;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -24,6 +25,9 @@ use InvalidArgumentException;
  */
 final class PayrollService
 {
+    /** Withholdings owed on to the tax office / social security until remitted. */
+    public const DEDUCTIONS_PAYABLE = '225';
+
     public function __construct(
         private readonly AccountingService $accountingService,
     ) {}
@@ -187,9 +191,12 @@ final class PayrollService
         });
     }
 
-    public function transition(PayrollRun $run, PayrollRunStatus $target, ?string $userId = null): PayrollRun
+    /**
+     * @param  string|null  $cashAccountId  the treasury net pay leaves from; required to post
+     */
+    public function transition(PayrollRun $run, PayrollRunStatus $target, ?string $userId = null, ?string $cashAccountId = null): PayrollRun
     {
-        return DB::transaction(function () use ($run, $target, $userId) {
+        return DB::transaction(function () use ($run, $target, $userId, $cashAccountId) {
             $run = PayrollRun::lockForUpdate()->findOrFail($run->id);
 
             if ($target === PayrollRunStatus::Calculated) {
@@ -207,7 +214,7 @@ final class PayrollService
             }
 
             if ($target === PayrollRunStatus::Posted) {
-                $this->postJournal($run);
+                $this->postJournal($run, $cashAccountId);
             }
 
             $run->status = $target;
@@ -264,31 +271,21 @@ final class PayrollService
     /**
      * HR-08 / phase-08 §8.4 PayrollRun.Posted, per unit:
      *
-     *   DR 2200 Wages Payable   (labor-log portion, accrued at order close)
-     *   DR 5700 Wage Expense    (base + attendance portion)
-     *   CR 1200 Cash and Bank   (net pay)
-     *   CR 2210 Deductions      (withheld)
+     *   DR 57      Wage Expense               (gross pay)
+     *   CR 1211xx  the chosen treasury        (net pay)
+     *   CR 225     Payroll deductions payable (withheld)
      */
-    private function postJournal(PayrollRun $run): void
+    private function postJournal(PayrollRun $run, ?string $cashAccountId): void
     {
+        $treasuryCode = TreasuryAccounts::codeForId($cashAccountId);
         $payslips = $run->payslips()->get();
 
         $lines = [];
 
         foreach ($payslips->groupBy('operating_unit_id') as $unitId => $unitSlips) {
-            $laborPortion = round((float) $unitSlips->sum('labor_log_pay'), 4);
-            $expensePortion = round((float) $unitSlips->sum('gross_pay') - $laborPortion, 4);
+            $expensePortion = round((float) $unitSlips->sum('gross_pay'), 4);
             $net = round((float) $unitSlips->sum('net_pay'), 4);
             $deductions = round((float) $unitSlips->sum(fn (Payslip $p) => $p->totalDeductions()), 4);
-
-            if ($laborPortion > 0) {
-                $lines[] = [
-                    'account_code' => '22', // Wages Payable — accrued at production close
-                    'debit' => $laborPortion,
-                    'operating_unit_id' => $unitId,
-                    'memo' => 'production labor settled',
-                ];
-            }
 
             if ($expensePortion > 0) {
                 $lines[] = [
@@ -300,7 +297,7 @@ final class PayrollService
 
             if ($net > 0) {
                 $lines[] = [
-                    'account_code' => '12', // Cash and Bank
+                    'account_code' => $treasuryCode,
                     'credit' => $net,
                     'operating_unit_id' => $unitId,
                     'memo' => 'net pay disbursed',
@@ -309,7 +306,7 @@ final class PayrollService
 
             if ($deductions > 0) {
                 $lines[] = [
-                    'account_code' => '221', // Payroll Deductions Payable
+                    'account_code' => self::DEDUCTIONS_PAYABLE,
                     'credit' => $deductions,
                     'operating_unit_id' => $unitId,
                 ];

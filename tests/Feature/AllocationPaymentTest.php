@@ -104,7 +104,7 @@ beforeEach(function () {
         $state->transitionToPendingPayment($order->fresh());
         $state->selectPaymentRoute($order->fresh(), PaymentRoute::Market, 500);
         $paymentRequest = $order->paymentRequests()->first();
-        $state->executePayment($paymentRequest, 5.0);
+        $state->executePayment($paymentRequest, 5.0, paymentSourceAccountId: cashLeafId());
         $state->confirmShipment($order->fresh());
         $state->arriveAtPort($order->fresh());
         $state->transportToWarehouse($order->fresh());
@@ -154,6 +154,7 @@ test('a non-manager cannot skip straight from pending to paid on an overhead all
         'amount' => 500.0,
         'expense_date' => now()->toDateString(),
         'payment_source' => 'cash',
+        'cash_account_id' => treasuryId(),
     ]);
     $expense = $service->allocate($expense, AllocationMethod::EvenSplit);
     $allocation = OverheadAllocation::where('operating_unit_id', $this->unit->id)->firstOrFail();
@@ -201,6 +202,7 @@ test('overhead allocation approval fails when the unit has no manager assigned',
         'amount' => 100.0,
         'expense_date' => now()->toDateString(),
         'payment_source' => 'cash',
+        'cash_account_id' => treasuryId(),
     ]);
     $expense = $service->allocate($expense, AllocationMethod::EvenSplit);
     $allocation = OverheadAllocation::where('operating_unit_id', $this->unit->id)->firstOrFail();
@@ -269,7 +271,7 @@ test('my-allocation-approvals only lists items for units I manage', function () 
     $e1 = $service->recordExpense([
         'company_id' => $this->company->id, 'operating_unit_id' => null,
         'category' => 'electricity', 'amount' => 800.0,
-        'expense_date' => now()->toDateString(), 'payment_source' => 'cash',
+        'expense_date' => now()->toDateString(), 'payment_source' => 'cash', 'cash_account_id' => treasuryId(),
     ]);
     $service->allocate($e1, AllocationMethod::ManualPercentage, [], [
         $this->unit->id => 60.0, $otherUnit->id => 40.0,

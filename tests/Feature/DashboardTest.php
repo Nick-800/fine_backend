@@ -53,8 +53,8 @@ beforeEach(function () {
 
     // This month: 1000 revenue, 600 COGS in unit A; 200 cash held company-wide.
     $accounting->postJournal('Sale', [
-        ['account_code' => '12', 'debit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
-        ['account_code' => '41', 'credit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '121101', 'debit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
+        ['account_code' => '40201', 'credit' => 1000.0, 'operating_unit_id' => $this->unitA->id],
     ]);
     $accounting->postJournal('COGS', [
         ['account_code' => '51', 'debit' => 600.0, 'operating_unit_id' => $this->unitA->id],
@@ -62,7 +62,7 @@ beforeEach(function () {
     ]);
     $accounting->postJournal('Cash out', [
         ['account_code' => '54', 'debit' => 200.0],
-        ['account_code' => '12', 'credit' => 200.0],
+        ['account_code' => '121101', 'credit' => 200.0],
     ]);
 
     $this->asOwner = fn () => $this->actingAs($this->owner);

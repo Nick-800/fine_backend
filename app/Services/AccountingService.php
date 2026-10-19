@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Exceptions\HeaderAccountPostingException;
 use App\Exceptions\MissingAccountException;
 use App\Exceptions\SalesRuleException;
 use App\Exceptions\UnbalancedJournalException;
@@ -92,11 +93,17 @@ class AccountingService
             throw new InvalidArgumentException('A journal entry with no value has nothing to record.');
         }
 
+        $accounts = [];
+
+        foreach ($lines as $line) {
+            $accounts[$line['account_code']] ??= $this->resolvePostableAccount($line['account_code'], $isManual);
+        }
+
         $this->validatePartyLines($lines);
 
         $entryDate ??= now()->toDateString();
 
-        return DB::transaction(function () use ($description, $lines, $sourceType, $sourceId, $companyId, $isManual, $userId, $entryDate): JournalEntry {
+        return DB::transaction(function () use ($description, $lines, $accounts, $sourceType, $sourceId, $companyId, $isManual, $userId, $entryDate): JournalEntry {
             $entry = JournalEntry::create([
                 'company_id' => $companyId,
                 'reference' => $this->nextReference($entryDate),
@@ -109,7 +116,7 @@ class AccountingService
             ]);
 
             foreach ($lines as $line) {
-                $account = $this->resolveAccount($line['account_code']);
+                $account = $accounts[$line['account_code']];
 
                 JournalLine::create([
                     'journal_entry_id' => $entry->id,
@@ -203,6 +210,26 @@ class AccountingService
                 );
             }
         }
+    }
+
+    /**
+     * Postings land on leaf accounts only. Manual entries may still name the
+     * receivables root, which debtor statements read for clients that were
+     * never given a sub-account.
+     */
+    private function resolvePostableAccount(string $code, bool $isManual): Account
+    {
+        $account = $this->resolveAccount($code);
+
+        if ($isManual && $code === ReceivableAccounts::ROOT_CODE) {
+            return $account;
+        }
+
+        if (Account::query()->where('parent_account_id', $account->id)->exists()) {
+            throw new HeaderAccountPostingException($account);
+        }
+
+        return $account;
     }
 
     private function resolveAccount(string $code): Account

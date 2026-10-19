@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\Account;
 use App\Models\CreditApprovalRequest;
 use App\Models\CutterWorkOrder;
 use App\Models\InternalRestockRequest;
@@ -16,6 +17,7 @@ use App\Models\PayrollRun;
 use App\Models\ProductionBatch;
 use App\Models\PurchaseOrder;
 use App\Models\SalesOrder;
+use App\Support\AccountTree;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -62,7 +64,7 @@ final class DashboardService
             'cogs_mtd' => round($cogs, 4),
             'gross_margin_pct' => $revenue > 0 ? round(($revenue - $cogs) / $revenue * 100, 2) : null,
             'net_profit_mtd' => (float) $income['net_income'],
-            'cash_position' => $this->accountBalance('12'),
+            'cash_position' => $this->cashPosition(),
             'fx_exposure' => $exposure,
             'pending_approvals' => $this->pendingCounts(),
         ];
@@ -249,11 +251,19 @@ final class DashboardService
         ];
     }
 
-    private function accountBalance(string $code): float
+    /**
+     * Every treasury and bank (the 121 subtree), plus anything posted to the
+     * 12 header before postings moved to leaves.
+     */
+    private function cashPosition(): float
     {
+        $accountIds = [
+            ...AccountTree::subtreeIds('121'),
+            ...Account::query()->where('account_code', '12')->pluck('id')->all(),
+        ];
+
         $row = JournalLine::query()
-            ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
-            ->where('accounts.account_code', $code)
+            ->whereIn('account_id', $accountIds)
             ->selectRaw('SUM(journal_lines.debit) as debit, SUM(journal_lines.credit) as credit')
             ->first();
 

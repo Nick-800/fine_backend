@@ -39,6 +39,8 @@ beforeEach(function () {
         'name' => 'Showroom', 'code' => 'STORE-01', 'unit_type' => 'store', 'status' => 'active',
     ]);
 
+    $this->treasury = linkedTreasury($this->unitA);
+
     $this->owner = User::factory()->create(['must_change_password' => false]);
     $ownerRole = Role::create(['name' => 'Owner', 'slug' => 'owner']);
     UserRole::create(['user_id' => $this->owner->id, 'role_id' => $ownerRole->id, 'operating_unit_id' => null]);
@@ -198,7 +200,12 @@ test('the run walks the full lifecycle and posting reaches the ledger', function
     ($this->asOwner)()->postJson("/api/v1/payroll-runs/{$run['id']}/submit")->assertStatus(200);
     ($this->asOwner)()->postJson("/api/v1/payroll-runs/{$run['id']}/approve")->assertStatus(200);
     ($this->asOwner)()->postJson("/api/v1/payroll-runs/{$run['id']}/mark-paid")->assertStatus(200);
-    $posted = ($this->asOwner)()->postJson("/api/v1/payroll-runs/{$run['id']}/post")
+    // Posting needs the treasury the net pay leaves from.
+    ($this->asOwner)()->postJson("/api/v1/payroll-runs/{$run['id']}/post")
+        ->assertStatus(422)
+        ->assertJsonPath('code', 'TREASURY_REQUIRED');
+
+    $posted = ($this->asOwner)()->postJson("/api/v1/payroll-runs/{$run['id']}/post", ['cash_account_id' => $this->treasury->id])
         ->assertStatus(200)->json();
 
     expect($posted['status'])->toBe('posted');
@@ -213,13 +220,13 @@ test('the run walks the full lifecycle and posting reaches the ledger', function
     // Unit A: 3000 fresh wage expense, 2900 cash out, 100 withheld. No labor
     // logs exist any more, so there is no accrual (22) leg at all.
     expect((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(3000.0)
-        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(2900.0)
-        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '221')->credit)->toBe(100.0)
+        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(2900.0)
+        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '225')->credit)->toBe(100.0)
         ->and($unitA->first(fn ($l) => $l->account->account_code === '22'))->toBeNull();
 
     // Unit B: pure attendance pay, no accrual, no deductions.
     expect((float) $unitB->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(160.0)
-        ->and((float) $unitB->firstWhere(fn ($l) => $l->account->account_code === '12')->credit)->toBe(160.0)
+        ->and((float) $unitB->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(160.0)
         ->and($unitB->first(fn ($l) => $l->account->account_code === '22'))->toBeNull();
 
     expect($entry->isBalanced())->toBeTrue();

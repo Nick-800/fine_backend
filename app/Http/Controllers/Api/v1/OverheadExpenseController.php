@@ -53,6 +53,7 @@ final class OverheadExpenseController extends Controller
             'amount' => 'required|numeric|min:0.0001',
             'expense_date' => 'required|date|before_or_equal:today',
             'payment_source' => 'required|string|in:cash,payable',
+            'cash_account_id' => 'nullable|uuid|exists:cash_accounts,id|required_if:payment_source,cash',
             // Explicit true = company-level expense awaiting allocation.
             'is_company_wide' => 'sometimes|boolean',
             'operating_unit_id' => 'sometimes|nullable|uuid|exists:operating_units,id',
@@ -77,6 +78,7 @@ final class OverheadExpenseController extends Controller
                 'amount' => (float) $validated['amount'],
                 'expense_date' => $validated['expense_date'],
                 'payment_source' => $validated['payment_source'],
+                'cash_account_id' => $validated['cash_account_id'] ?? null,
             ]);
         } catch (InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage(), 'code' => 'INVALID_OVERHEAD'], 422);

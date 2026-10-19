@@ -29,11 +29,14 @@ final class OverheadService
 
     /**
      * @param array{company_id: string, operating_unit_id?: string|null, category: string,
-     *     description?: string|null, amount: float, expense_date: string, payment_source: string} $data
+     *     description?: string|null, amount: float, expense_date: string, payment_source: string,
+     *     cash_account_id?: string|null} $data
      */
     public function recordExpense(array $data): OverheadExpense
     {
-        return DB::transaction(function () use ($data) {
+        $creditAccountCode = OverheadPaymentSource::from($data['payment_source'])->accountCode($data['cash_account_id'] ?? null);
+
+        return DB::transaction(function () use ($data, $creditAccountCode) {
             $expense = OverheadExpense::create([
                 'company_id' => $data['company_id'],
                 'operating_unit_id' => $data['operating_unit_id'] ?? null,
@@ -45,7 +48,6 @@ final class OverheadService
                 'status' => OverheadExpenseStatus::Recorded,
             ]);
 
-            $source = OverheadPaymentSource::from($data['payment_source']);
             $label = $expense->operatingUnit?->name ?? 'company-wide';
 
             $this->accountingService->postJournal(
@@ -58,7 +60,7 @@ final class OverheadService
                         'memo' => $expense->description,
                     ],
                     [
-                        'account_code' => $source->accountCode(),
+                        'account_code' => $creditAccountCode,
                         'credit' => (float) $expense->amount,
                         'operating_unit_id' => $expense->operating_unit_id,
                     ],

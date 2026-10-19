@@ -298,11 +298,13 @@ final class PurchaseOrderStateService
                 }
             }
 
-            // Resolve the payment source account. When supplied, use its
-            // account_code on the credit side; otherwise fall back to the
-            // universal '12' Cash and Bank (legacy behaviour for callers
-            // that haven't been updated yet).
-            $creditAccountCode = '12';
+            // The treasury or bank leaf the money leaves from. There is no
+            // fallback: posting to the 12 header would hide the payment from
+            // every cash report.
+            $creditAccountCode = null;
+            if (empty($paymentSourceAccountId) && $settled > 0) {
+                throw new InvalidArgumentException('Choose the treasury or bank account the payment leaves from.');
+            }
             if (! empty($paymentSourceAccountId)) {
                 $linked = Account::query()->whereKey($paymentSourceAccountId)->first();
                 if ($linked === null) {

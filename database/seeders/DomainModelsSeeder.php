@@ -12,6 +12,7 @@ use App\Models\Client;
 use App\Models\Employee;
 use App\Models\Entity;
 use App\Models\OperatingUnit;
+use App\Support\SalesAccounts;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -32,7 +33,7 @@ final class DomainModelsSeeder extends Seeder
             'entity_type' => EntityType::Organization,
         ]);
 
-        Client::create([
+        $client = Client::create([
             'id' => (string) Str::uuid(),
             'entity_id' => $clientEntity->id,
             'operating_unit_id' => $unit->id,
@@ -40,6 +41,9 @@ final class DomainModelsSeeder extends Seeder
             'payment_terms_days' => 45,
             'status' => ClientStatus::Active,
         ]);
+
+        // Credit sales post to the client's own sub-account under 122.
+        SalesAccounts::receivableFor($client);
 
         // 2. Seed Sample Employee
         $empEntity = Entity::where('name', 'Nasser Al-Deen Ahmed')->first() ?? Entity::create([

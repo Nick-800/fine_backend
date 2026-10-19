@@ -2,6 +2,7 @@
 
 use App\Enums\InventoryEventType;
 use App\Models\Account;
+use App\Models\CashAccount;
 use App\Models\OperatingUnit;
 use App\Models\OperatingUnitAccount;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -75,14 +76,9 @@ function seedUnitAccounts(OperatingUnit|array $units, array $overrides = []): vo
         InventoryEventType::Ending->value => '111',
         InventoryEventType::Purchases->value => '111',
         InventoryEventType::PurchaseReturns->value => '111',
-        InventoryEventType::Sales->value => '41',
-        InventoryEventType::SalesReturns->value => '41',
         InventoryEventType::Cogs->value => '51',
         InventoryEventType::Waste->value => '52',
-        InventoryEventType::EarnedDiscount->value => '41',
-        InventoryEventType::GrantedDiscount->value => '41',
         InventoryEventType::TransportIn->value => '53',
-        InventoryEventType::SalesCommission->value => '41',
     ];
 
     foreach ($units as $unit) {
@@ -103,4 +99,55 @@ function seedUnitAccounts(OperatingUnit|array $units, array $overrides = []): vo
             ]);
         }
     }
+}
+
+/**
+ * Link a unit to its sales revenue leaf — a sale from an unlinked unit is
+ * refused with UNIT_REVENUE_NOT_LINKED.
+ */
+function linkRevenueAccount(OperatingUnit $unit, string $code): void
+{
+    $unit->update(['revenue_account_id' => Account::where('account_code', $code)->value('id')]);
+}
+
+/**
+ * A treasury linked to its ledger leaf — every cash operation names one and
+ * posts to that leaf, never to the 12 header.
+ */
+function linkedTreasury(OperatingUnit $unit, string $code = '121101', string $kind = 'cash'): CashAccount
+{
+    return CashAccount::create([
+        'operating_unit_id' => $unit->id,
+        'name' => "Treasury {$code}",
+        'kind' => $kind,
+        'account_id' => Account::where('account_code', $code)->value('id'),
+        'currency' => 'LYD',
+        'balance' => 0,
+    ]);
+}
+
+/**
+ * The id of a linked treasury for service-level fixtures that only need some
+ * treasury to move cash through. Created on the first unit on first use.
+ */
+function treasuryId(string $code = '121101'): string
+{
+    $accountId = Account::where('account_code', $code)->value('id');
+
+    return CashAccount::firstOrCreate(
+        ['account_id' => $accountId],
+        [
+            'operating_unit_id' => OperatingUnit::withoutGlobalScopes()->value('id'),
+            'name' => "Treasury {$code}",
+            'kind' => 'cash',
+            'currency' => 'LYD',
+            'balance' => 0,
+        ],
+    )->id;
+}
+
+/** The ledger leaf a direct PO payment fixture pays from. */
+function cashLeafId(string $code = '121101'): string
+{
+    return Account::where('account_code', $code)->value('id');
 }
