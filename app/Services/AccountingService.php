@@ -218,46 +218,17 @@ class AccountingService
     }
 
     /**
-     * Trial balance across all accounts.
+     * All-time trial balance, optionally for one unit. Kept for existing
+     * callers; the dated three-column report lives in TrialBalanceService.
      *
      * If this ever fails to balance, something bypassed postJournal — which is
      * exactly what it is here to reveal.
      *
-     * @return array{rows: array<int, array<string, mixed>>, total_debit: float, total_credit: float, balanced: bool}
+     * @return array<string, mixed>
      */
     public function trialBalance(?string $operatingUnitId = null): array
     {
-        $query = JournalLine::query()
-            ->posted()
-            ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
-            ->selectRaw('accounts.account_code, accounts.name, accounts.type')
-            ->selectRaw('SUM(journal_lines.debit) as total_debit')
-            ->selectRaw('SUM(journal_lines.credit) as total_credit')
-            ->groupBy('accounts.account_code', 'accounts.name', 'accounts.type')
-            ->orderBy('accounts.account_code');
-
-        if ($operatingUnitId !== null) {
-            $query->where('journal_lines.operating_unit_id', $operatingUnitId);
-        }
-
-        $rows = $query->get()->map(fn ($row) => [
-            'account_code' => $row->account_code,
-            'name' => $row->name,
-            'type' => $row->type,
-            'debit' => round((float) $row->total_debit, 4),
-            'credit' => round((float) $row->total_credit, 4),
-            'balance' => round((float) $row->total_debit - (float) $row->total_credit, 4),
-        ])->all();
-
-        $totalDebit = round(array_sum(array_column($rows, 'debit')), 4);
-        $totalCredit = round(array_sum(array_column($rows, 'credit')), 4);
-
-        return [
-            'rows' => $rows,
-            'total_debit' => $totalDebit,
-            'total_credit' => $totalCredit,
-            'balanced' => abs($totalDebit - $totalCredit) < self::BALANCE_TOLERANCE,
-        ];
+        return app(TrialBalanceService::class)->build(operatingUnitId: $operatingUnitId);
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Models\Client;
 use App\Models\JournalEntry;
 use App\Rules\LeafAccount;
 use App\Services\AccountingService;
+use App\Services\TrialBalanceService;
 use App\Support\CurrentUnitContext;
 use App\Support\ReceivableAccounts;
 use Illuminate\Http\JsonResponse;
@@ -269,6 +270,23 @@ class JournalEntryController extends Controller
             $unitIdForBalance = null;
         }
 
-        return response()->json($this->accountingService->trialBalance($unitIdForBalance));
+        $validated = $request->validate([
+            'from' => ['sometimes', 'nullable', 'date'],
+            'to' => ['sometimes', 'nullable', 'date', 'after_or_equal:from'],
+            'include_zero' => ['sometimes', 'boolean'],
+            'view' => ['sometimes', 'string', 'in:leaf,level,tree'],
+            'level' => ['required_if:view,level', 'nullable', 'integer', 'min:1', 'max:10'],
+            'exclude_closing' => ['sometimes', 'boolean'],
+        ]);
+
+        return response()->json(app(TrialBalanceService::class)->build(
+            from: $validated['from'] ?? null,
+            to: $validated['to'] ?? null,
+            operatingUnitId: $unitIdForBalance,
+            includeZero: $request->boolean('include_zero'),
+            view: $validated['view'] ?? 'leaf',
+            level: isset($validated['level']) ? (int) $validated['level'] : null,
+            excludeClosing: $request->boolean('exclude_closing'),
+        ));
     }
 }
