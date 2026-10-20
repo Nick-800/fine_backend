@@ -12,6 +12,7 @@ use App\Models\Account;
 use App\Models\ChartOfAccounts;
 use App\Models\Company;
 use App\Models\JournalLine;
+use App\Services\AccountLedgerService;
 use App\Support\CurrentUnitContext;
 use App\Support\ReferenceGuard;
 use Illuminate\Http\JsonResponse;
@@ -193,6 +194,10 @@ final class AccountController extends Controller
                 'has_children' => count($descendantIds) > 0,
                 'transaction_count' => $transactionCount,
                 'direct_transaction_count' => $directTransactionCount,
+                // FR-GL-007: balance brought into the current year, on the account's normal side.
+                'fiscal_year_opening_balance' => $this->onNormalSide($account->type, app(AccountLedgerService::class)
+                    ->balanceBefore($allAccountIds, now()->startOfYear()->toDateString(), $unitId)),
+                'current_balance' => $balance,
                 'created_at' => $account->created_at?->toISOString(),
             ],
         ]);
@@ -245,49 +250,40 @@ final class AccountController extends Controller
         ], 422);
     }
 
-    public function ledger(Request $request, string $id): JsonResponse
+    /**
+     * Account statement (FR-FREP-004): opening balance, lines oldest first with
+     * the running balance, closing balance. `all=1` returns every line for
+     * printing or CSV.
+     */
+    public function ledger(Request $request, string $id, AccountLedgerService $ledger): JsonResponse
     {
         $account = Account::findOrFail($id);
 
-        $query = JournalLine::query()
-            ->with(['journalEntry:id,reference,entry_date,description,is_manual', 'operatingUnit:id,name', 'account:id,account_code,name'])
-            ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
-            ->whereNull('journal_entries.deleted_at')
-            ->orderByDesc('journal_entries.entry_date')
-            ->orderByDesc('journal_entries.created_at')
-            ->select('journal_lines.*');
+        $validated = $request->validate([
+            'from' => ['sometimes', 'nullable', 'date'],
+            'to' => ['sometimes', 'nullable', 'date'],
+            'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'order' => ['sometimes', 'string', 'in:asc,desc'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
 
-        if ($request->boolean('include_children')) {
-            $allAccountIds = array_merge([$account->id], $this->getDescendantAccountIds($account->id));
-            $query->whereIn('journal_lines.account_id', $allAccountIds);
-        } else {
-            $query->where('journal_lines.account_id', $account->id);
-        }
+        $accountIds = $request->boolean('include_children')
+            ? array_merge([$account->id], $this->getDescendantAccountIds($account->id))
+            : [$account->id];
 
-        // Optional filter by unit dimension on the transaction lines
-        $unitId = $this->resolveReportUnitId($request, $this->unitContext);
-        if ($unitId !== null) {
-            $query->where('journal_lines.operating_unit_id', $unitId);
-        }
-
-        if ($from = $request->query('from')) {
-            $query->whereDate('journal_entries.entry_date', '>=', $from);
-        }
-
-        if ($to = $request->query('to')) {
-            $query->whereDate('journal_entries.entry_date', '<=', $to);
-        }
-
-        if ($search = $request->query('search')) {
-            $term = '%'.trim((string) $search).'%';
-            $query->where(function ($q) use ($term) {
-                $q->where('journal_entries.reference', 'like', $term)
-                    ->orWhere('journal_entries.description', 'like', $term)
-                    ->orWhere('journal_lines.memo', 'like', $term);
-            });
-        }
-
-        return response()->json($query->paginate($request->integer('per_page', 25)));
+        return response()->json($ledger->statement(
+            $account,
+            $accountIds,
+            from: $validated['from'] ?? null,
+            to: $validated['to'] ?? null,
+            operatingUnitId: $this->resolveReportUnitId($request, $this->unitContext),
+            search: $validated['search'] ?? null,
+            order: $validated['order'] ?? 'asc',
+            perPage: (int) ($validated['per_page'] ?? 25),
+            page: (int) ($validated['page'] ?? 1),
+            all: $request->boolean('all'),
+        ));
     }
 
     /**
@@ -295,6 +291,14 @@ final class AccountController extends Controller
      *
      * @return list<string>
      */
+    /**
+     * A signed debit-minus-credit amount shown on the account's normal side.
+     */
+    private function onNormalSide(string $type, float $signed): float
+    {
+        return in_array($type, ['asset', 'expense'], true) ? $signed : round(-$signed, 4);
+    }
+
     private function getDescendantAccountIds(string $accountId): array
     {
         $childIds = Account::where('parent_account_id', $accountId)->pluck('id')->all();

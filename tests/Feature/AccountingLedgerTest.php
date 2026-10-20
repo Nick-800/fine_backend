@@ -184,7 +184,7 @@ test('the chart of accounts lists every account with signed balances', function 
         ->and($byCode['111']['parent_account_id'])->toBe($byCode['13']['id']);
 });
 
-test('an account ledger lists its lines newest first with entry context', function () {
+test('an account statement lists its lines oldest first with the running balance', function () {
     $this->accounting->postJournal('First', [
         ['account_code' => '111', 'debit' => 100.0, 'operating_unit_id' => $this->unit->id],
         ['account_code' => '21', 'credit' => 100.0, 'operating_unit_id' => $this->unit->id],
@@ -197,14 +197,22 @@ test('an account ledger lists its lines newest first with entry context', functi
     $accountId = collect(($this->api)()->getJson('/api/v1/accounts')->json('data'))
         ->firstWhere('account_code', '111')['id'];
 
-    $ledger = ($this->api)()->getJson("/api/v1/accounts/{$accountId}/ledger")
+    $statement = ($this->api)()->getJson("/api/v1/accounts/{$accountId}/ledger")
         ->assertStatus(200)
-        ->json('data');
+        ->json();
+    $ledger = $statement['data'];
 
     expect($ledger)->toHaveCount(2)
-        ->and((float) $ledger[0]['debit'])->toBe(200.0)
-        ->and($ledger[0]['journal_entry']['description'])->toBe('Second')
-        ->and((float) $ledger[1]['debit'])->toBe(100.0);
+        ->and((float) $ledger[0]['debit'])->toBe(100.0)
+        ->and($ledger[0]['journal_entry']['description'])->toBe('First')
+        ->and((float) $ledger[0]['running_balance'])->toBe(100.0)
+        ->and((float) $ledger[1]['running_balance'])->toBe(300.0)
+        ->and((float) $statement['summary']['closing_balance'])->toBe(300.0)
+        ->and($statement['summary']['normal_side'])->toBe('debit');
+
+    $newest = ($this->api)()->getJson("/api/v1/accounts/{$accountId}/ledger?order=desc")->json('data');
+    expect($newest[0]['journal_entry']['description'])->toBe('Second')
+        ->and((float) $newest[0]['running_balance'])->toBe(300.0);
 });
 
 test('journal references do not collide', function () {
@@ -462,4 +470,3 @@ test('chart of accounts rolls up child balances to parent accounts in index and 
     $resLedgerAll = ($this->api)()->getJson("/api/v1/accounts/{$parent1211->id}/ledger?include_children=1")->assertStatus(200);
     expect($resLedgerAll->json('total'))->toBe(2);
 });
-
