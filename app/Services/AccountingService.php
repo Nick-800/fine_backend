@@ -15,6 +15,7 @@ use App\Models\Client;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Support\CompanyClock;
 use App\Support\ReceivableAccounts;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,10 @@ class AccountingService
      */
     private const BALANCE_TOLERANCE = 0.0001;
 
-    public function __construct(private readonly DocumentNumberService $documentNumbers) {}
+    public function __construct(
+        private readonly DocumentNumberService $documentNumbers,
+        private readonly PeriodGuard $periodGuard,
+    ) {}
 
     /**
      * Post a balanced double-entry journal.
@@ -108,7 +112,7 @@ class AccountingService
 
         $this->validatePartyLines($lines);
 
-        $entryDate ??= now()->toDateString();
+        $entryDate ??= CompanyClock::today();
 
         return DB::transaction(fn (): JournalEntry => $this->writeEntry(
             [
@@ -151,7 +155,7 @@ class AccountingService
                 throw new LedgerRuleException("Entry {$locked->reference} has already been reversed.", 'ALREADY_REVERSED');
             }
 
-            $entryDate ??= now()->toDateString();
+            $entryDate ??= CompanyClock::today();
 
             if (Carbon::parse($entryDate)->lt($locked->entry_date->copy()->startOfDay())) {
                 throw new LedgerRuleException(
@@ -190,13 +194,18 @@ class AccountingService
 
     /**
      * The one place entries and lines are written. Callers validate first and
-     * run this inside their transaction.
+     * run this inside their transaction. The period guard (ACC-11) runs here,
+     * before any row exists, so manual entries, automatic postings and
+     * reversals are all held to the same locks.
      *
      * @param  array<string, mixed>  $attributes
      * @param  array<int, array<string, mixed>>  $lines  each with a resolved account_id
+     * @param  string|null  $closingYearId  set only for a closing entry or its reversal (ACC-12)
      */
-    private function writeEntry(array $attributes, array $lines): JournalEntry
+    private function writeEntry(array $attributes, array $lines, ?string $closingYearId = null): JournalEntry
     {
+        $this->periodGuard->ensurePostable((string) $attributes['entry_date'], (string) $attributes['company_id'], $closingYearId);
+
         $entry = JournalEntry::create([
             ...$attributes,
             'reference' => $this->nextReference($attributes['entry_date']),

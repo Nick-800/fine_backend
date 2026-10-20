@@ -9,6 +9,8 @@ use App\Models\Client;
 use App\Models\CutterWorkOrder;
 use App\Models\Employee;
 use App\Models\Entity;
+use App\Models\FiscalPeriod;
+use App\Models\FiscalYear;
 use App\Models\FixedAsset;
 use App\Models\InternalRestockRequest;
 use App\Models\InventoryItem;
@@ -112,5 +114,7 @@ class AppServiceProvider extends ServiceProvider
         BundleItem::observe(AuditObserver::class);
         WarehouseTransferLine::observe(AuditObserver::class);
         PurchaseOrderItem::observe(AuditObserver::class);
+        FiscalYear::observe(AuditObserver::class);
+        FiscalPeriod::observe(AuditObserver::class);
     }
 }

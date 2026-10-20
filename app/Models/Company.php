@@ -19,10 +19,12 @@ final class Company extends Model
         'overhead_absorption_enabled',
         'transfer_pricing_mode',
         'timezone',
+        'fiscal_year_start_month',
     ];
 
     protected $casts = [
         'overhead_absorption_enabled' => 'boolean',
+        'fiscal_year_start_month' => 'integer',
     ];
 
     public function operatingUnits(): HasMany

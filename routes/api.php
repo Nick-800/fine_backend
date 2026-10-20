@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\v1\DebtorStatementController;
 use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityLookupController;
 use App\Http\Controllers\Api\v1\FinancialReportController;
+use App\Http\Controllers\Api\v1\FiscalPeriodController;
 use App\Http\Controllers\Api\v1\FixedAssetController;
 use App\Http\Controllers\Api\v1\FxRateController;
 use App\Http\Controllers\Api\v1\GoodsReceiptController;
@@ -96,6 +97,9 @@ Route::prefix('v1')->group(function () {
 
             // Admin: Owner and Global Admins only
             Route::middleware('require.role:owner')->group(function () {
+                // ACC-11: only the owner reopens a locked month or changes the fiscal calendar.
+                Route::post('/fiscal-periods/{id}/reopen', [FiscalPeriodController::class, 'reopen']);
+                Route::put('/fiscal-settings', [FiscalPeriodController::class, 'updateSettings']);
                 Route::apiResource('operating-units', OperatingUnitController::class)->except(['index']);
                 Route::post('operating-units/{id}/restore', [OperatingUnitController::class, 'restore']);
                 Route::get('operating-units/{id}/warehouses', [WarehouseController::class, 'forOperatingUnit']);
@@ -146,6 +150,9 @@ Route::prefix('v1')->group(function () {
                 // ACC-04: manual entries (the controller keeps its own role check as a second layer).
                 Route::post('/journal-entries', [JournalEntryController::class, 'store']);
                 Route::post('/journal-entries/{id}/reverse', [JournalEntryController::class, 'reverse']);
+                // ACC-11: the accounting manager locks ended months.
+                Route::post('/fiscal-years', [FiscalPeriodController::class, 'storeYear']);
+                Route::post('/fiscal-periods/{id}/lock', [FiscalPeriodController::class, 'lock']);
             });
 
             // Allocation & landed cost approvals are guarded at the domain level by AllocationPaymentService (asserts manager of unit)
@@ -159,6 +166,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('/accounts', [AccountController::class, 'index']);
                 Route::get('/accounts/{id}', [AccountController::class, 'show']);
                 Route::get('/accounts/{id}/ledger', [AccountController::class, 'ledger']);
+                Route::get('/fiscal-years', [FiscalPeriodController::class, 'index']);
                 Route::get('/journal-entries', [JournalEntryController::class, 'index']);
                 Route::get('/journal-entries/for-document/{type}/{documentId}', [JournalEntryController::class, 'forDocument']);
                 Route::get('/journal-entries/{id}', [JournalEntryController::class, 'show']);

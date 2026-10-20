@@ -13,6 +13,7 @@ use App\Models\JournalEntry;
 use App\Rules\LeafAccount;
 use App\Services\AccountingService;
 use App\Services\TrialBalanceService;
+use App\Support\CompanyClock;
 use App\Support\CurrentUnitContext;
 use App\Support\ReceivableAccounts;
 use Illuminate\Http\JsonResponse;
@@ -141,7 +142,7 @@ class JournalEntryController extends Controller
         $validated = $request->validate([
             'entry_type' => ['sometimes', Rule::in(JournalEntryType::manualValues())],
             'description' => 'required|string|max:500',
-            'entry_date' => 'sometimes|nullable|date|before_or_equal:today',
+            'entry_date' => ['sometimes', 'nullable', 'date', 'before_or_equal:'.CompanyClock::today()],
             'lines' => 'required|array|min:2',
             'lines.*.account_code' => ['required', 'string', new LeafAccount('account_code', [ReceivableAccounts::ROOT_CODE], requireActive: true)],
             'lines.*.debit' => 'sometimes|numeric|min:0',
@@ -222,7 +223,7 @@ class JournalEntryController extends Controller
         $original = JournalEntry::findOrFail($id);
 
         $validated = $request->validate([
-            'entry_date' => ['sometimes', 'nullable', 'date', 'before_or_equal:today'],
+            'entry_date' => ['sometimes', 'nullable', 'date', 'before_or_equal:'.CompanyClock::today()],
             'reason' => ['required', 'string', 'max:500'],
         ]);
 

@@ -26,9 +26,9 @@ final class Account extends Model
         'parent_account_id',
     ];
 
-    protected $attributes = [
-        'status' => 'active',
-    ];
+    // No $attributes default for status: the column's database default covers
+    // it, and older data migrations that re-run the chart seeder insert
+    // accounts before the status column exists.
 
     protected $casts = [
         'status' => AccountStatus::class,

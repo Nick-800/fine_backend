@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\SalesRuleException;
-use App\Models\Company;
 use App\Models\OperatingUnit;
 use App\Models\PosDailyClose;
-use Carbon\CarbonImmutable;
+use App\Support\CompanyClock;
 
 /**
  * BR-INV-002 / BR-POS-004: once a unit's register day is closed and
@@ -20,18 +19,16 @@ use Carbon\CarbonImmutable;
  */
 final class PosDayGuard
 {
-    public const FALLBACK_TIMEZONE = 'Africa/Tripoli';
+    public const FALLBACK_TIMEZONE = CompanyClock::FALLBACK_TIMEZONE;
 
     public function timezoneFor(?OperatingUnit $unit): string
     {
-        return $unit?->company?->timezone
-            ?? Company::query()->value('timezone')
-            ?? self::FALLBACK_TIMEZONE;
+        return CompanyClock::timezone($unit);
     }
 
     public function today(?OperatingUnit $unit): string
     {
-        return CarbonImmutable::now($this->timezoneFor($unit))->toDateString();
+        return CompanyClock::today($unit);
     }
 
     public function isClosed(string $operatingUnitId, string $date): bool
