@@ -290,6 +290,14 @@ GET    /api/v1/fixed-assets/{id}/depreciation-schedule
 | ACC-08 | Asset disposal calculates gain/loss correctly | Service method: `proceeds - (acquisition_cost - accumulated_depreciation)` |
 | ACC-09 | FX gain/loss posted to dedicated account | CoA account code for FX Gain/Loss required |
 | ACC-10 | Landed cost allocated on ImportOrder.Complete, not on receipt | Observer triggers only on Complete transition |
+| ACC-11 | Nothing posts into a locked month or a closed fiscal year (Wave 1, 2026-10-20) | `PeriodGuard` inside `postJournal`; `PERIOD_LOCKED` / `YEAR_CLOSED`. Only an ended month can be locked; only the owner reopens, with a reason |
+| ACC-12 | Year-end close moves every revenue/expense balance into 33 أرباح وخسائر مرحلة, one line per operating unit | `FiscalYearService::close`; reopening the year reverses the closing entry |
+| ACC-13 | Posted entries never change; a correction is one linked reversal per entry | `LEDGER_IMMUTABLE`; `reversal_of_id` unique; closing entries and reversals are not reversible directly |
+| ACC-14 | A frozen account (or one under a frozen parent) refuses postings | `ACCOUNT_FROZEN`; reversal and closing mirrors are exempt |
+| ACC-15 | A foreign line's LYD amount equals original amount × rate | `FX_AMOUNT_MISMATCH` beyond 0.01; books stay in LYD |
+| ACC-16 | Reports and balances count only lines of non-deleted entries | `JournalLine::scopePosted()` |
+
+Cost centers were decided out on 2026-10-20: operating units on `journal_lines.operating_unit_id` serve that purpose.
 
 ---
 

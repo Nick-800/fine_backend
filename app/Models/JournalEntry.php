@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Exceptions\LedgerRuleException;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\HasOptimisticLocking;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -34,6 +35,21 @@ final class JournalEntry extends Model
         'is_manual' => 'boolean',
         'record_version' => 'integer',
     ];
+
+    /**
+     * ACC-13: a posted entry never changes or disappears; a correction is a
+     * reversal. Query-builder maintenance bypasses model events on purpose.
+     */
+    protected static function booted(): void
+    {
+        self::updating(function (): void {
+            throw new LedgerRuleException('Posted journal entries cannot be changed; reverse them instead.', 'LEDGER_IMMUTABLE');
+        });
+
+        self::deleting(function (): void {
+            throw new LedgerRuleException('Posted journal entries cannot be deleted; reverse them instead.', 'LEDGER_IMMUTABLE');
+        });
+    }
 
     public function lines(): HasMany
     {

@@ -142,6 +142,8 @@ Route::prefix('v1')->group(function () {
                 Route::put('/accounts/{id}', [AccountController::class, 'update']);
                 Route::patch('/accounts/{id}/parent', [AccountController::class, 'reparent']);
                 Route::delete('/accounts/{id}', [AccountController::class, 'destroy']);
+                // ACC-04: manual entries (the controller keeps its own role check as a second layer).
+                Route::post('/journal-entries', [JournalEntryController::class, 'store']);
             });
 
             // Allocation & landed cost approvals are guarded at the domain level by AllocationPaymentService (asserts manager of unit)
@@ -149,9 +151,6 @@ Route::prefix('v1')->group(function () {
             Route::post('/overhead-allocations/{id}/mark-paid', [OverheadAllocationController::class, 'markPaid']);
             Route::post('/purchase-orders/{id}/landed-cost-lines/{lineId}/approve', [LandedCostLineController::class, 'approve']);
             Route::post('/purchase-orders/{id}/landed-cost-lines/{lineId}/mark-paid', [LandedCostLineController::class, 'markPaid']);
-
-            // Manual journal posting is guarded inside JournalEntryController (returns MANUAL_JOURNAL_FORBIDDEN)
-            Route::post('/journal-entries', [JournalEntryController::class, 'store']);
 
             // Financial Ledger & Reports: Ledger queries, statements and reports (scoped by unit)
             Route::middleware(['require.role:owner,accounting-manager,unit_manager,manager,inventory-manager,foam-manager,foam-operator,cutter-manager,cutter-operator,furniture-manager,assembler,store-manager,pos-cashier,procurement-manager,treasury-officer', 'require.module:view-accounting'])->group(function () {

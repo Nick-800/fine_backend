@@ -6,6 +6,7 @@ use App\Exceptions\InsufficientTankStockException;
 use App\Exceptions\InvalidOperatingUnitException;
 use App\Exceptions\InvalidStateTransitionException;
 use App\Exceptions\InventoryAccountNotLinkedException;
+use App\Exceptions\LedgerRuleException;
 use App\Exceptions\MissingAccountException;
 use App\Exceptions\OptimisticLockConflictException;
 use App\Exceptions\SalesRuleException;
@@ -112,6 +113,14 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'message' => $e->getMessage(),
                 'code' => 'INSUFFICIENT_TANK_STOCK',
+            ], 422);
+        });
+
+        $exceptions->render(function (LedgerRuleException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => $e->errorCode,
+                ...$e->context,
             ], 422);
         });
 

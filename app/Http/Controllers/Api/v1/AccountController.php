@@ -12,6 +12,7 @@ use App\Models\ChartOfAccounts;
 use App\Models\Company;
 use App\Models\JournalLine;
 use App\Support\CurrentUnitContext;
+use App\Support\ReferenceGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,11 +26,27 @@ final class AccountController extends Controller
         private readonly CurrentUnitContext $unitContext,
     ) {}
 
+    /**
+     * Tables that link to an account; a linked account cannot be deleted.
+     *
+     * @var array<string, string>
+     */
+    private const ACCOUNT_REFERENCES = [
+        'clients' => 'account_id',
+        'suppliers' => 'account_id',
+        'cash_accounts' => 'account_id',
+        'inventory_item_accounts' => 'account_id',
+        'operating_unit_accounts' => 'account_id',
+        'fixed_assets' => 'account_id',
+        'operating_units' => 'revenue_account_id',
+        'purchase_orders' => 'payment_source_account_id',
+    ];
+
     public function index(): JsonResponse
     {
         $rawAccounts = Account::query()
-            ->withSum('journalLines as direct_debit', 'debit')
-            ->withSum('journalLines as direct_credit', 'credit')
+            ->withSum(['journalLines as direct_debit' => fn ($q) => $q->posted()], 'debit')
+            ->withSum(['journalLines as direct_credit' => fn ($q) => $q->posted()], 'credit')
             ->orderBy('account_code')
             ->get();
 
@@ -129,7 +146,7 @@ final class AccountController extends Controller
         $unitId = $this->resolveReportUnitId($request, $this->unitContext);
 
         // Direct lines
-        $directQuery = $account->journalLines();
+        $directQuery = $account->journalLines()->posted();
         if ($unitId) {
             $directQuery->where('operating_unit_id', $unitId);
         }
@@ -141,7 +158,7 @@ final class AccountController extends Controller
         $directTransactionCount = (clone $directQuery)->count();
 
         // Rolled-up lines (self + all descendants)
-        $rolledQuery = JournalLine::whereIn('account_id', $allAccountIds);
+        $rolledQuery = JournalLine::query()->posted()->whereIn('account_id', $allAccountIds);
         if ($unitId) {
             $rolledQuery->where('operating_unit_id', $unitId);
         }
@@ -203,11 +220,11 @@ final class AccountController extends Controller
         }
 
         if ($from = $request->query('from')) {
-            $query->where('journal_entries.entry_date', '>=', $from);
+            $query->whereDate('journal_entries.entry_date', '>=', $from);
         }
 
         if ($to = $request->query('to')) {
-            $query->where('journal_entries.entry_date', '<=', $to);
+            $query->whereDate('journal_entries.entry_date', '<=', $to);
         }
 
         if ($search = $request->query('search')) {
@@ -317,7 +334,7 @@ final class AccountController extends Controller
         $account->save();
 
         $fresh = $account->fresh('parent');
-        $linesQuery = $fresh->journalLines();
+        $linesQuery = $fresh->journalLines()->posted();
         $debit = round((float) $linesQuery->sum('debit'), 4);
         $credit = round((float) $linesQuery->sum('credit'), 4);
         $balance = in_array($fresh->type, ['asset', 'expense'], true)
@@ -371,6 +388,16 @@ final class AccountController extends Controller
             ], 422);
         }
 
+        // Every posting resolves its account by code: renaming the code of an
+        // account with history would silently re-point those postings' meaning.
+        if ($request->filled('account_code') && $request->input('account_code') !== $account->account_code
+            && $account->journalLines()->exists()) {
+            return response()->json([
+                'message' => 'Cannot change the code of an account that has postings.',
+                'code' => 'ACCOUNT_CODE_LOCKED',
+            ], 422);
+        }
+
         $payload = ['name' => $validated['name']];
         if (! $isMain && isset($validated['account_code'])) {
             $payload['account_code'] = $validated['account_code'];
@@ -398,20 +425,22 @@ final class AccountController extends Controller
         ]);
     }
 
-    public function destroy(Request $request, string $id): JsonResponse
+    /**
+     * Posted history is never destroyed (BR-GL-004): an account with journal
+     * lines — even on soft-deleted entries — or anything pointing at it stays.
+     */
+    public function destroy(string $id): JsonResponse
     {
         $account = Account::findOrFail($id);
-        $isMain = $account->parent_account_id === null;
-        $force = $request->boolean('force');
 
-        if ($isMain && ! $force) {
+        if ($account->parent_account_id === null) {
             return response()->json([
                 'message' => 'Main accounts cannot be deleted.',
                 'code' => 'MAIN_ACCOUNT_NOT_DELETABLE',
             ], 422);
         }
 
-        if ($account->journalLines()->exists() && ! $force) {
+        if ($account->journalLines()->exists()) {
             return response()->json([
                 'message' => 'Account has journal lines and cannot be deleted.',
                 'code' => 'ACCOUNT_HAS_TRANSACTIONS',
@@ -425,28 +454,36 @@ final class AccountController extends Controller
             ], 422);
         }
 
+        $table = ReferenceGuard::firstReference(self::ACCOUNT_REFERENCES, $account->id);
+
+        if ($table !== null) {
+            return response()->json([
+                'message' => "Account is still linked from {$table} and cannot be deleted.",
+                'code' => 'ACCOUNT_IN_USE',
+                'table' => $table,
+            ], 422);
+        }
+
         $account->delete();
 
         return response()->json(['message' => 'Account deleted successfully.'], 200);
     }
 
-    public function wipe(Request $request): JsonResponse
+    /**
+     * Rebuild an empty chart. Refused once anything has been posted: the
+     * ledger is never wiped to make room for a new chart.
+     */
+    public function wipe(): JsonResponse
     {
-        $force = $request->boolean('force');
-
-        if (! $force && JournalLine::query()->exists()) {
+        if (JournalLine::query()->exists()) {
             return response()->json([
-                'message' => 'Cannot wipe accounts because journal transactions exist. Use force=1 to override.',
+                'message' => 'Cannot wipe accounts while journal transactions exist.',
                 'code' => 'ACCOUNT_HAS_TRANSACTIONS',
             ], 422);
         }
 
         $deletedCount = 0;
-        DB::transaction(function () use ($force, &$deletedCount) {
-            if ($force) {
-                JournalLine::query()->delete();
-            }
-
+        DB::transaction(function () use (&$deletedCount) {
             if (Schema::hasTable('operating_unit_accounts')) {
                 DB::table('operating_unit_accounts')->delete();
             }

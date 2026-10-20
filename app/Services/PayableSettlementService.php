@@ -108,6 +108,7 @@ final class PayableSettlementService
     public function outstanding(string $accountCode, ?string $unitId = null): float
     {
         $query = JournalLine::query()
+            ->posted()
             ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
             ->where('accounts.account_code', $accountCode);
 

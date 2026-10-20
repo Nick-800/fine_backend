@@ -71,6 +71,8 @@ final class PostChartOfAccounts extends Command
                 try {
                     DB::transaction(function () use ($force) {
                         if ($force) {
+                            // Operator-only escape hatch on a dev database; the API never destroys history.
+                            $this->warn('--force deletes every posted journal line. Never run this against production data.');
                             JournalLine::query()->delete();
                         } elseif (JournalLine::query()->exists()) {
                             throw new \RuntimeException('Cannot wipe accounts: journal transactions exist in database. Use --force to override.');

@@ -72,8 +72,9 @@ test('a unit manager cannot post manual entries', function () {
     $this->actingAs($this->manager)
         ->withHeaders(['X-Operating-Unit-ID' => $this->unit->id])
         ->postJson('/api/v1/journal-entries', ($this->balancedPayload)())
-        ->assertStatus(403)
-        ->assertJsonPath('code', 'MANUAL_JOURNAL_FORBIDDEN');
+        ->assertForbidden()
+        // The route's role middleware answers before the controller's own check.
+        ->assertJsonPath('code', 'ACCESS_DENIED');
 
     expect(JournalEntry::count())->toBe(0);
 });

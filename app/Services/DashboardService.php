@@ -263,6 +263,7 @@ final class DashboardService
         ];
 
         $row = JournalLine::query()
+            ->posted()
             ->whereIn('account_id', $accountIds)
             ->selectRaw('SUM(journal_lines.debit) as debit, SUM(journal_lines.credit) as credit')
             ->first();

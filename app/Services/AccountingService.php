@@ -144,6 +144,7 @@ class AccountingService
     public function trialBalance(?string $operatingUnitId = null): array
     {
         $query = JournalLine::query()
+            ->posted()
             ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
             ->selectRaw('accounts.account_code, accounts.name, accounts.type')
             ->selectRaw('SUM(journal_lines.debit) as total_debit')
