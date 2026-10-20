@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\v1;
 
+use App\Enums\JournalEntryType;
 use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
@@ -14,6 +15,7 @@ use App\Support\CurrentUnitContext;
 use App\Support\ReceivableAccounts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 
 class JournalEntryController extends Controller
@@ -25,9 +27,26 @@ class JournalEntryController extends Controller
         public CurrentUnitContext $unitContext,
     ) {}
 
+    /**
+     * The journal book: filterable by date, type, account, author, amount and
+     * source (FR-FREP-014), with each entry's reversal links.
+     */
     public function index(Request $request): JsonResponse
     {
-        $query = JournalEntry::with(['lines.account'])->latest('entry_date');
+        $request->validate([
+            'entry_type' => ['sometimes', 'array'],
+            'entry_type.*' => [Rule::enum(JournalEntryType::class)],
+            'account_id' => ['sometimes', 'nullable', 'uuid'],
+            'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'created_by_user_id' => ['sometimes', 'nullable', 'uuid'],
+            'min_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'max_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'source_document_type' => ['sometimes', 'nullable', 'string', 'max:100'],
+        ]);
+
+        $query = JournalEntry::with(['lines.account', 'reversal:id,reference,reversal_of_id', 'reversalOf:id,reference'])
+            ->latest('entry_date')
+            ->latest('created_at');
 
         if (filled($request->query('from'))) {
             $query->whereDate('entry_date', '>=', $request->query('from'));
@@ -38,7 +57,40 @@ class JournalEntryController extends Controller
         }
 
         if ($request->boolean('manual_only')) {
-            $query->where('is_manual', true);
+            $query->whereIn('entry_type', JournalEntryType::manualValues());
+        }
+
+        if ($request->filled('entry_type')) {
+            $query->whereIn('entry_type', (array) $request->input('entry_type'));
+        }
+
+        if ($request->filled('account_id')) {
+            $accountId = (string) $request->input('account_id');
+            $query->whereHas('lines', fn ($q) => $q->where('account_id', $accountId));
+        }
+
+        if ($request->filled('search')) {
+            $term = '%'.$request->input('search').'%';
+            $query->where(fn ($q) => $q->where('reference', 'like', $term)->orWhere('description', 'like', $term));
+        }
+
+        if ($request->filled('created_by_user_id')) {
+            $query->where('created_by_user_id', $request->input('created_by_user_id'));
+        }
+
+        if ($request->filled('source_document_type')) {
+            $query->where('source_document_type', $request->input('source_document_type'));
+        }
+
+        foreach (['min_amount' => '>=', 'max_amount' => '<='] as $param => $operator) {
+            if ($request->filled($param)) {
+                // A formatted numeric literal, not a binding: PDO binds floats as
+                // text, which SQLite never compares as greater than a number.
+                $amount = sprintf('%.4F', (float) $request->input($param));
+                $query->whereRaw(
+                    "(select coalesce(sum(debit), 0) from journal_lines where journal_lines.journal_entry_id = journal_entries.id) {$operator} {$amount}"
+                );
+            }
         }
 
         // Filtered through lines, since an entry itself is company-level while its
@@ -68,6 +120,7 @@ class JournalEntryController extends Controller
         }
 
         $validated = $request->validate([
+            'entry_type' => ['sometimes', Rule::in(JournalEntryType::manualValues())],
             'description' => 'required|string|max:500',
             'entry_date' => 'sometimes|nullable|date|before_or_equal:today',
             'lines' => 'required|array|min:2',
@@ -86,6 +139,7 @@ class JournalEntryController extends Controller
                 isManual: true,
                 userId: $user->id,
                 entryDate: $validated['entry_date'] ?? null,
+                entryType: JournalEntryType::from($validated['entry_type'] ?? JournalEntryType::Manual->value),
             );
         } catch (InvalidArgumentException $e) {
             return response()->json([
@@ -133,8 +187,34 @@ class JournalEntryController extends Controller
     public function show(string $id): JsonResponse
     {
         return response()->json(
-            JournalEntry::with(['lines.account', 'lines.operatingUnit', 'createdBy'])->findOrFail($id)
+            JournalEntry::with(['lines.account', 'lines.operatingUnit', 'createdBy', 'reversal:id,reference,reversal_of_id', 'reversalOf:id,reference'])
+                ->findOrFail($id)
         );
+    }
+
+    /**
+     * ACC-13: reverse a posted entry with a linked mirror entry. Owner and
+     * accounting manager may reverse any entry except closing entries and
+     * reversals; reversing an automatic entry fixes the books but does not
+     * undo the sale, stock move or payroll behind it.
+     */
+    public function reverse(Request $request, string $id): JsonResponse
+    {
+        $original = JournalEntry::findOrFail($id);
+
+        $validated = $request->validate([
+            'entry_date' => ['sometimes', 'nullable', 'date', 'before_or_equal:today'],
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $reversal = $this->accountingService->reverseEntry(
+            $original,
+            $validated['entry_date'] ?? null,
+            $validated['reason'],
+            $request->user()->id,
+        );
+
+        return response()->json($reversal->load(['createdBy', 'reversalOf:id,reference']), 201);
     }
 
     /**

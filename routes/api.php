@@ -144,6 +144,7 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/accounts/{id}', [AccountController::class, 'destroy']);
                 // ACC-04: manual entries (the controller keeps its own role check as a second layer).
                 Route::post('/journal-entries', [JournalEntryController::class, 'store']);
+                Route::post('/journal-entries/{id}/reverse', [JournalEntryController::class, 'reverse']);
             });
 
             // Allocation & landed cost approvals are guarded at the domain level by AllocationPaymentService (asserts manager of unit)

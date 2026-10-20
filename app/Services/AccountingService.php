@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\JournalEntryType;
 use App\Exceptions\HeaderAccountPostingException;
+use App\Exceptions\LedgerRuleException;
 use App\Exceptions\MissingAccountException;
 use App\Exceptions\SalesRuleException;
 use App\Exceptions\UnbalancedJournalException;
@@ -16,6 +18,7 @@ use App\Models\JournalLine;
 use App\Support\ReceivableAccounts;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 class AccountingService
@@ -50,7 +53,11 @@ class AccountingService
         bool $isManual = false,
         ?string $userId = null,
         ?string $entryDate = null,
+        ?JournalEntryType $entryType = null,
     ): JournalEntry {
+        $entryType ??= $isManual ? JournalEntryType::Manual : JournalEntryType::Automatic;
+        $isManual = $isManual || $entryType->isManualFamily();
+
         if ($lines === []) {
             throw new InvalidArgumentException('A journal entry needs at least one line.');
         }
@@ -103,34 +110,111 @@ class AccountingService
 
         $entryDate ??= now()->toDateString();
 
-        return DB::transaction(function () use ($description, $lines, $accounts, $sourceType, $sourceId, $companyId, $isManual, $userId, $entryDate): JournalEntry {
-            $entry = JournalEntry::create([
+        return DB::transaction(fn (): JournalEntry => $this->writeEntry(
+            [
                 'company_id' => $companyId,
-                'reference' => $this->nextReference($entryDate),
                 'entry_date' => $entryDate,
                 'description' => $description,
                 'source_document_type' => $sourceType,
                 'source_document_id' => $sourceId,
                 'is_manual' => $isManual,
+                'entry_type' => $entryType,
                 'created_by_user_id' => $userId,
-            ]);
+            ],
+            array_map(fn (array $line): array => [...$line, 'account_id' => $accounts[$line['account_code']]->id], $lines),
+        ));
+    }
 
-            foreach ($lines as $line) {
-                $account = $accounts[$line['account_code']];
+    /**
+     * ACC-13: correct a posted entry by posting its mirror, linked to it. The
+     * original never changes, and the unique reversal_of_id index makes a
+     * second reversal impossible even under a race.
+     *
+     * The mirror re-uses the accounts the original already posted to, so it
+     * skips the header and party checks: undoing an accepted balance can't
+     * create a new problem, even if an account has since gained children.
+     */
+    public function reverseEntry(JournalEntry $original, ?string $entryDate, string $reason, ?string $userId = null): JournalEntry
+    {
+        return DB::transaction(function () use ($original, $entryDate, $reason, $userId): JournalEntry {
+            $locked = JournalEntry::with('lines')->lockForUpdate()->findOrFail($original->getKey());
 
-                JournalLine::create([
-                    'journal_entry_id' => $entry->id,
-                    'account_id' => $account->id,
-                    'operating_unit_id' => $line['operating_unit_id'] ?? null,
-                    'debit' => round((float) ($line['debit'] ?? 0), 4),
-                    'credit' => round((float) ($line['credit'] ?? 0), 4),
-                    'client_id' => $line['client_id'] ?? null,
-                    'memo' => $line['memo'] ?? null,
-                ]);
+            if ($locked->entry_type === JournalEntryType::Closing) {
+                throw new LedgerRuleException('A closing entry is undone by reopening its fiscal year, not by reversal.', 'CLOSING_NOT_REVERSIBLE');
             }
 
-            return $entry->fresh(['lines.account']);
+            if ($locked->entry_type === JournalEntryType::Reversal) {
+                throw new LedgerRuleException('A reversal cannot itself be reversed; post a new entry instead.', 'REVERSAL_NOT_REVERSIBLE');
+            }
+
+            if (JournalEntry::withTrashed()->where('reversal_of_id', $locked->id)->exists()) {
+                throw new LedgerRuleException("Entry {$locked->reference} has already been reversed.", 'ALREADY_REVERSED');
+            }
+
+            $entryDate ??= now()->toDateString();
+
+            if (Carbon::parse($entryDate)->lt($locked->entry_date->copy()->startOfDay())) {
+                throw new LedgerRuleException(
+                    'A reversal cannot be dated before the entry it reverses.',
+                    'REVERSAL_DATE_BEFORE_ORIGINAL',
+                    ['original_date' => $locked->entry_date->toDateString()],
+                );
+            }
+
+            return $this->writeEntry(
+                [
+                    'company_id' => $locked->company_id,
+                    'entry_date' => $entryDate,
+                    // The full reason lives in reversal_reason; description and memo are 255 chars.
+                    'description' => Str::limit("عكس القيد {$locked->reference}: {$reason}", 250),
+                    // Same source, so the document's audit path shows both entries.
+                    'source_document_type' => $locked->source_document_type,
+                    'source_document_id' => $locked->source_document_id,
+                    'is_manual' => true,
+                    'entry_type' => JournalEntryType::Reversal,
+                    'reversal_of_id' => $locked->id,
+                    'reversal_reason' => $reason,
+                    'created_by_user_id' => $userId,
+                ],
+                $locked->lines->map(fn (JournalLine $line): array => [
+                    'account_id' => $line->account_id,
+                    'operating_unit_id' => $line->operating_unit_id,
+                    'client_id' => $line->client_id,
+                    'debit' => (float) $line->credit,
+                    'credit' => (float) $line->debit,
+                    'memo' => Str::limit('عكس: '.($line->memo ?? $locked->description), 250),
+                ])->all(),
+            );
         });
+    }
+
+    /**
+     * The one place entries and lines are written. Callers validate first and
+     * run this inside their transaction.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @param  array<int, array<string, mixed>>  $lines  each with a resolved account_id
+     */
+    private function writeEntry(array $attributes, array $lines): JournalEntry
+    {
+        $entry = JournalEntry::create([
+            ...$attributes,
+            'reference' => $this->nextReference($attributes['entry_date']),
+        ]);
+
+        foreach ($lines as $line) {
+            JournalLine::create([
+                'journal_entry_id' => $entry->id,
+                'account_id' => $line['account_id'],
+                'operating_unit_id' => $line['operating_unit_id'] ?? null,
+                'debit' => round((float) ($line['debit'] ?? 0), 4),
+                'credit' => round((float) ($line['credit'] ?? 0), 4),
+                'client_id' => $line['client_id'] ?? null,
+                'memo' => $line['memo'] ?? null,
+            ]);
+        }
+
+        return $entry->fresh(['lines.account']);
     }
 
     /**
