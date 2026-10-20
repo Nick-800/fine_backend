@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\v1;
 
+use App\Enums\AccountStatus;
 use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\v1\ReparentAccountRequest;
@@ -17,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 
 final class AccountController extends Controller
 {
@@ -118,6 +120,7 @@ final class AccountController extends Controller
                 'type' => $account->type,
                 'section' => $account->section,
                 'currency' => $account->currency,
+                'status' => $account->status->value,
                 'parent_account_id' => $account->parent_account_id,
                 'is_main' => $account->parent_account_id === null,
                 'total_debit' => $debit,
@@ -177,6 +180,7 @@ final class AccountController extends Controller
                 'type' => $account->type,
                 'section' => $account->section,
                 'currency' => $account->currency,
+                'status' => $account->status->value,
                 'parent_account_id' => $account->parent_account_id,
                 'is_main' => $account->parent_account_id === null,
                 'parent' => $account->parent,
@@ -192,6 +196,53 @@ final class AccountController extends Controller
                 'created_at' => $account->created_at?->toISOString(),
             ],
         ]);
+    }
+
+    /**
+     * Freeze or reactivate an account (FR-GL-002, ACC-14). Freezing keeps the
+     * history and balance; it only stops new postings and links. The change is
+     * audit-logged by the Account observer.
+     */
+    public function updateStatus(Request $request, string $id): JsonResponse
+    {
+        $account = Account::findOrFail($id);
+
+        $validated = $request->validate([
+            'status' => ['required', Rule::enum(AccountStatus::class)],
+        ]);
+
+        $account->update(['status' => $validated['status']]);
+
+        return response()->json([
+            'message' => 'Account status updated.',
+            'data' => ['id' => $account->id, 'account_code' => $account->account_code, 'status' => $account->status->value],
+        ]);
+    }
+
+    /**
+     * BR-GL-003: two accounts under the same parent may not share a name
+     * (trimmed, case-insensitive). Client sub-accounts under different
+     * parents may still share one.
+     */
+    private function duplicateNameResponse(string $name, ?string $parentId, ?string $exceptId = null): ?JsonResponse
+    {
+        $normalized = mb_strtolower(trim($name));
+
+        $clash = Account::query()
+            ->when($parentId === null, fn ($q) => $q->whereNull('parent_account_id'), fn ($q) => $q->where('parent_account_id', $parentId))
+            ->when($exceptId !== null, fn ($q) => $q->whereKeyNot($exceptId))
+            ->get(['id', 'name', 'account_code'])
+            ->first(fn (Account $sibling): bool => mb_strtolower(trim($sibling->name)) === $normalized);
+
+        if ($clash === null) {
+            return null;
+        }
+
+        return response()->json([
+            'message' => "Another account under the same parent is already named \"{$clash->name}\" ({$clash->account_code}).",
+            'code' => 'ACCOUNT_NAME_DUPLICATE',
+            'account_code' => $clash->account_code,
+        ], 422);
     }
 
     public function ledger(Request $request, string $id): JsonResponse
@@ -278,6 +329,10 @@ final class AccountController extends Controller
                     ],
                 ], 422);
             }
+        }
+
+        if ($duplicate = $this->duplicateNameResponse($validated['name'], $validated['parent_account_id'] ?? null)) {
+            return $duplicate;
         }
 
         $company = Company::first();
@@ -396,6 +451,10 @@ final class AccountController extends Controller
                 'message' => 'Cannot change the code of an account that has postings.',
                 'code' => 'ACCOUNT_CODE_LOCKED',
             ], 422);
+        }
+
+        if ($duplicate = $this->duplicateNameResponse($validated['name'], $account->parent_account_id, $account->id)) {
+            return $duplicate;
         }
 
         $payload = ['name' => $validated['name']];

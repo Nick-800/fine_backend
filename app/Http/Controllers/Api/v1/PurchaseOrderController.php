@@ -338,7 +338,7 @@ final class PurchaseOrderController extends Controller
     public function payLocal(Request $request, string $id): JsonResponse
     {
         $validated = $request->validate([
-            'payment_source_account_id' => ['required', 'uuid', 'exists:accounts,id', new LeafAccount],
+            'payment_source_account_id' => ['required', 'uuid', 'exists:accounts,id', new LeafAccount(requireActive: true)],
         ]);
 
         $order = PurchaseOrder::findOrFail($id);
@@ -425,7 +425,7 @@ final class PurchaseOrderController extends Controller
             'exact_amount_used_lyd' => 'nullable|numeric|min:0',
             'bank_reference' => 'nullable|string',
             'extra_allocation_note' => 'nullable|string|max:500',
-            'payment_source_account_id' => ['required_if:action,execute_payment', 'nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
+            'payment_source_account_id' => ['required_if:action,execute_payment', 'nullable', 'uuid', 'exists:accounts,id', new LeafAccount(requireActive: true)],
             'warehouse_id' => ['required_if:action,arrived_at_warehouse,receive_goods', 'nullable', 'uuid', new ExistsInCurrentUnit(Warehouse::class, 'warehouse')],
             'received_qty' => 'required_if:action,receive_goods|nullable|numeric|min:0.0001',
             'condition_notes' => 'nullable|string',

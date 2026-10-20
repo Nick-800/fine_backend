@@ -152,7 +152,10 @@ final class ClientController extends Controller
             'operating_unit_id' => 'sometimes|required|uuid|exists:operating_units,id',
             'credit_limit' => 'sometimes|numeric|min:0',
             'payment_terms_days' => 'sometimes|integer|min:0',
-            'account_id' => ['nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
+            'account_id' => ['nullable', 'uuid', 'exists:accounts,id', new LeafAccount(
+                requireActive: true,
+                unchangedValue: Client::query()->whereKey($id)->value('account_id'),
+            )],
             'coa_action' => 'nullable|string|in:create_new,link_existing,none',
             'new_account' => 'nullable|array',
             'new_account.parent_account_id' => 'required_if:coa_action,create_new|nullable|uuid|exists:accounts,id',

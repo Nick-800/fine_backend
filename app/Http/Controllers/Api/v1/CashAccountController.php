@@ -60,7 +60,7 @@ final class CashAccountController extends Controller
             'operating_unit_id' => 'required|uuid|exists:operating_units,id',
             'name' => 'required|string|max:255',
             'kind' => 'sometimes|string|in:cash,bank',
-            'account_id' => ['nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
+            'account_id' => ['nullable', 'uuid', 'exists:accounts,id', new LeafAccount(requireActive: true)],
             'currency' => 'sometimes|string|size:3',
             'balance' => 'sometimes|numeric',
         ]);
@@ -84,13 +84,14 @@ final class CashAccountController extends Controller
      */
     public function update(Request $request, string $id): CashAccountResource
     {
+        $account = CashAccount::findOrFail($id);
+
         $validated = $request->validate([
             'name' => 'sometimes|required|string|max:255',
             'kind' => 'sometimes|string|in:cash,bank',
-            'account_id' => ['sometimes', 'nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
+            'account_id' => ['sometimes', 'nullable', 'uuid', 'exists:accounts,id', new LeafAccount(requireActive: true, unchangedValue: $account->account_id)],
         ]);
 
-        $account = CashAccount::findOrFail($id);
         $account->update($validated);
 
         return new CashAccountResource($account->load('account'));

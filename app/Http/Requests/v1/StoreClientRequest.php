@@ -29,7 +29,7 @@ final class StoreClientRequest extends FormRequest
             'operating_unit_id' => ['nullable', 'uuid', 'exists:operating_units,id'],
             'credit_limit' => ['nullable', 'numeric', 'min:0'],
             'payment_terms_days' => ['nullable', 'integer', 'min:0'],
-            'account_id' => ['nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
+            'account_id' => ['nullable', 'uuid', 'exists:accounts,id', new LeafAccount(requireActive: true)],
             'coa_action' => ['nullable', 'string', 'in:auto,create_new,link_existing,none'],
             'new_account' => ['nullable', 'array'],
             'new_account.parent_account_id' => ['required_if:coa_action,create_new', 'nullable', 'uuid', 'exists:accounts,id'],

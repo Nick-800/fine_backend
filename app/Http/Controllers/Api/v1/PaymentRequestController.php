@@ -123,7 +123,7 @@ final class PaymentRequestController extends Controller
             'exact_amount_used_lyd' => 'required_without:fx_rate_used|nullable|numeric|min:0',
             'bank_reference' => 'nullable|string',
             'extra_allocation_note' => 'nullable|string|max:500',
-            'payment_source_account_id' => ['required', 'uuid', 'exists:accounts,id', new LeafAccount],
+            'payment_source_account_id' => ['required', 'uuid', 'exists:accounts,id', new LeafAccount(requireActive: true)],
         ]);
 
         // FX-04 / FX-24: variance is measured in LYD against the booked

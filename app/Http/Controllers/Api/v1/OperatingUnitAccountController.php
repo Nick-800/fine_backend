@@ -62,7 +62,7 @@ class OperatingUnitAccountController extends Controller
 
         $validated = $request->validate([
             'event_type' => ['required', 'string', 'in:'.implode(',', array_column(InventoryEventType::cases(), 'value'))],
-            'account_id' => ['required', 'uuid', 'exists:accounts,id', new LeafAccount],
+            'account_id' => ['required', 'uuid', 'exists:accounts,id', new LeafAccount(requireActive: true)],
         ]);
 
         $event = InventoryEventType::from($validated['event_type']);

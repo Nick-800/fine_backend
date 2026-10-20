@@ -97,7 +97,10 @@ final class OperatingUnitController extends Controller
             'name' => 'sometimes|required|string|max:255',
             'status' => 'sometimes|required|string|in:provisioning,active,inactive',
             'manager_user_id' => 'sometimes|nullable|uuid|exists:users,id',
-            'revenue_account_id' => ['sometimes', 'nullable', 'uuid', 'exists:accounts,id', new LeafAccount],
+            'revenue_account_id' => ['sometimes', 'nullable', 'uuid', 'exists:accounts,id', new LeafAccount(
+                requireActive: true,
+                unchangedValue: OperatingUnit::query()->whereKey($id)->value('revenue_account_id'),
+            )],
         ]);
 
         $unit = OperatingUnit::findOrFail($id);

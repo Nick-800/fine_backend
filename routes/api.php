@@ -141,6 +141,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/accounts/wipe', [AccountController::class, 'wipe']);
                 Route::put('/accounts/{id}', [AccountController::class, 'update']);
                 Route::patch('/accounts/{id}/parent', [AccountController::class, 'reparent']);
+                Route::patch('/accounts/{id}/status', [AccountController::class, 'updateStatus']);
                 Route::delete('/accounts/{id}', [AccountController::class, 'destroy']);
                 // ACC-04: manual entries (the controller keeps its own role check as a second layer).
                 Route::post('/journal-entries', [JournalEntryController::class, 'store']);

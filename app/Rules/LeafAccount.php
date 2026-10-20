@@ -16,6 +16,10 @@ use Illuminate\Contracts\Validation\ValidationRule;
  * Validates an account given by id (default) or by account_code. Codes in
  * $allowedHeaders are exempt — the receivable root 122 takes client-tagged
  * lines by design (debtor statements read them by client_id).
+ *
+ * With $requireActive, a frozen account (ACC-14) is refused too — unless the
+ * value is $unchangedValue, so re-saving a form that already links a since-
+ * frozen account still works.
  */
 final class LeafAccount implements ValidationRule
 {
@@ -25,6 +29,8 @@ final class LeafAccount implements ValidationRule
     public function __construct(
         private readonly string $column = 'id',
         private readonly array $allowedHeaders = [],
+        private readonly bool $requireActive = false,
+        private readonly ?string $unchangedValue = null,
     ) {}
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
@@ -37,6 +43,12 @@ final class LeafAccount implements ValidationRule
 
         // Existence is the job of the exists:/required rules next to this one.
         if ($account === null) {
+            return;
+        }
+
+        if ($this->requireActive && $value !== $this->unchangedValue && $account->isFrozen()) {
+            $fail("Account {$account->account_code} ({$account->name}) is frozen; choose an active account.");
+
             return;
         }
 

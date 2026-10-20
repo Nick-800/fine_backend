@@ -306,6 +306,14 @@ class AccountingService
     {
         $account = $this->resolveAccount($code);
 
+        if ($account->isFrozen()) {
+            throw new LedgerRuleException(
+                "Account {$account->account_code} ({$account->name}) is frozen and takes no new postings.",
+                'ACCOUNT_FROZEN',
+                ['account_code' => $account->account_code],
+            );
+        }
+
         if ($isManual && $code === ReceivableAccounts::ROOT_CODE) {
             return $account;
         }

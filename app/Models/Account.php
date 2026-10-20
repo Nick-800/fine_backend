@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\AccountStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -21,8 +22,38 @@ final class Account extends Model
         'type',
         'section',
         'currency',
+        'status',
         'parent_account_id',
     ];
+
+    protected $attributes = [
+        'status' => 'active',
+    ];
+
+    protected $casts = [
+        'status' => AccountStatus::class,
+    ];
+
+    /**
+     * ACC-14: frozen itself or under a frozen ancestor. Walks up the chart
+     * (a handful of levels) with a guard against a corrupt cycle.
+     */
+    public function isFrozen(): bool
+    {
+        $seen = [];
+        $current = $this;
+
+        while ($current !== null && ! isset($seen[$current->id])) {
+            if ($current->status === AccountStatus::Frozen) {
+                return true;
+            }
+
+            $seen[$current->id] = true;
+            $current = $current->parent_account_id !== null ? self::query()->find($current->parent_account_id) : null;
+        }
+
+        return false;
+    }
 
     public function chartOfAccounts(): BelongsTo
     {
