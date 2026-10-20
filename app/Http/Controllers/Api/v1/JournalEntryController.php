@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\v1;
 
 use App\Enums\JournalEntryType;
+use App\Exceptions\LedgerRuleException;
 use App\Http\Controllers\Concerns\ResolvesReportScope;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
@@ -22,6 +23,8 @@ use InvalidArgumentException;
 class JournalEntryController extends Controller
 {
     use ResolvesReportScope;
+
+    private const EXPORT_LIMIT = 5000;
 
     public function __construct(
         public AccountingService $accountingService,
@@ -98,6 +101,21 @@ class JournalEntryController extends Controller
         // lines carry the unit.
         if ($unitId = $this->resolveReportUnitId($request, $this->unitContext)) {
             $query->whereHas('lines', fn ($q) => $q->where('operating_unit_id', $unitId));
+        }
+
+        // The journal book print and CSV take every filtered entry at once.
+        if ($request->boolean('all')) {
+            $total = (clone $query)->count();
+
+            if ($total > self::EXPORT_LIMIT) {
+                throw new LedgerRuleException(
+                    'Too many entries to export at once; narrow the filters.',
+                    'EXPORT_TOO_LARGE',
+                    ['limit' => self::EXPORT_LIMIT, 'total' => $total],
+                );
+            }
+
+            return response()->json(['data' => $query->get(), 'current_page' => 1, 'last_page' => 1, 'total' => $total]);
         }
 
         return response()->json($query->paginate($request->integer('per_page', 25)));

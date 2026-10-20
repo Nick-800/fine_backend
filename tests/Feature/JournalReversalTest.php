@@ -172,3 +172,18 @@ test('existing manual entries are backfilled as manual', function () {
     DB::table('journal_entries')->where('is_manual', true)->update(['entry_type' => 'manual']);
     expect(JournalEntry::find($legacy->id)->entry_type)->toBe(JournalEntryType::Manual);
 });
+
+test('the journal book exports every filtered entry at once', function () {
+    foreach (range(1, 3) as $i) {
+        $this->accounting->postJournal("Batch {$i}", [
+            ['account_code' => '54', 'debit' => 1.0],
+            ['account_code' => '223', 'credit' => 1.0],
+        ]);
+    }
+
+    $all = $this->actingAs($this->owner)->getJson('/api/v1/journal-entries?all=1&per_page=1')->assertOk()->json();
+
+    expect($all['data'])->toHaveCount(4)
+        ->and($all['total'])->toBe(4)
+        ->and($all['data'][0]['lines'])->toHaveCount(2);
+});
