@@ -300,7 +300,7 @@ class SystemBootstrapSeeder extends Seeder
             InventoryEventType::PurchaseReturns->value => '111',
             InventoryEventType::Cogs->value => '51',
             InventoryEventType::Waste->value => '52',
-            InventoryEventType::TransportIn->value => '53',
+            InventoryEventType::TransportIn->value => '406',
         ];
 
         $revenueEvents = [

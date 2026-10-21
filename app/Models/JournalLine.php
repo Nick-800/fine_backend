@@ -22,12 +22,17 @@ final class JournalLine extends Model
         'client_id',
         'debit',
         'credit',
+        'currency',
+        'original_amount',
+        'fx_rate',
         'memo',
     ];
 
     protected $casts = [
         'debit' => 'decimal:4',
         'credit' => 'decimal:4',
+        'original_amount' => 'decimal:4',
+        'fx_rate' => 'decimal:8',
     ];
 
     /**

@@ -308,6 +308,8 @@ GET    /api/v1/fixed-assets/{id}/depreciation-schedule
 | ACC-15 | A foreign line's LYD amount equals original amount × rate | `FX_AMOUNT_MISMATCH` beyond 0.01; books stay in LYD |
 | ACC-16 | Reports and balances count only lines of non-deleted entries | `JournalLine::scopePosted()` |
 
+Under ACC-15, journal lines track `currency`, `original_amount`, and `fx_rate` (derived as `round(lyd / original, 8)` if omitted; checked against LYD with 0.01 tolerance). Import payments stamp foreign currency on the supplier advance line and any matching-currency FX safe credit line. Historical supplier advance lines can be stamped via `php artisan ledger:backfill-line-currency {--dry-run}`.
+
 Cost centers were decided out on 2026-10-20: operating units on `journal_lines.operating_unit_id` serve that purpose.
 
 ---

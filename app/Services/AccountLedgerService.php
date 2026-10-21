@@ -41,29 +41,48 @@ final class AccountLedgerService
         int $perPage = 25,
         int $page = 1,
         bool $all = false,
+        ?string $currency = null,
     ): array {
+        $currency = $currency !== null && trim($currency) !== '' ? strtoupper(trim($currency)) : null;
+
+        $debitExpr = $currency !== null
+            ? 'CASE WHEN journal_lines.debit > 0 THEN journal_lines.original_amount ELSE 0 END'
+            : 'journal_lines.debit';
+        $creditExpr = $currency !== null
+            ? 'CASE WHEN journal_lines.credit > 0 THEN journal_lines.original_amount ELSE 0 END'
+            : 'journal_lines.credit';
+
         $opening = 0.0;
 
         if ($from !== null) {
             $row = $this->base($accountIds, $operatingUnitId)
+                ->when($currency !== null, fn (Builder $q) => $q->where('journal_lines.currency', $currency))
                 ->where('journal_entries.entry_date', '<', $from)
-                ->selectRaw('COALESCE(SUM(journal_lines.debit), 0) as debit, COALESCE(SUM(journal_lines.credit), 0) as credit')
+                ->selectRaw("COALESCE(SUM({$debitExpr}), 0) as debit, COALESCE(SUM({$creditExpr}), 0) as credit")
                 ->first();
             $opening = round((float) $row->debit - (float) $row->credit, 4);
         }
 
+        $cumulativeExpr = $currency !== null
+            ? "SUM(({$debitExpr}) - ({$creditExpr})) OVER (ORDER BY journal_entries.entry_date, journal_entries.created_at, journal_entries.reference, journal_lines.id) as cumulative"
+            : 'SUM(journal_lines.debit - journal_lines.credit) OVER (ORDER BY journal_entries.entry_date, journal_entries.created_at, journal_entries.reference, journal_lines.id) as cumulative';
+
         $period = $this->base($accountIds, $operatingUnitId)
+            ->when($currency !== null, fn (Builder $q) => $q->where('journal_lines.currency', $currency))
             ->select([
                 'journal_lines.id',
                 'journal_lines.debit',
                 'journal_lines.credit',
+                'journal_lines.currency',
+                'journal_lines.original_amount',
+                'journal_lines.fx_rate',
                 'journal_lines.memo',
                 'journal_entries.entry_date',
                 'journal_entries.created_at as entry_created_at',
                 'journal_entries.reference',
                 'journal_entries.description',
             ])
-            ->selectRaw('SUM(journal_lines.debit - journal_lines.credit) OVER (ORDER BY journal_entries.entry_date, journal_entries.created_at, journal_entries.reference, journal_lines.id) as cumulative');
+            ->selectRaw($cumulativeExpr);
 
         if ($from !== null) {
             $period->where('journal_entries.entry_date', '>=', $from);
@@ -74,9 +93,10 @@ final class AccountLedgerService
         }
 
         $sums = DB::query()->fromSub($this->base($accountIds, $operatingUnitId)
+            ->when($currency !== null, fn (Builder $q) => $q->where('journal_lines.currency', $currency))
             ->when($from !== null, fn (Builder $q) => $q->where('journal_entries.entry_date', '>=', $from))
             ->when($to !== null, fn (Builder $q) => $q->where('journal_entries.entry_date', '<', Carbon::parse($to)->addDay()->toDateString()))
-            ->select(['journal_lines.debit', 'journal_lines.credit']), 'p')
+            ->selectRaw("{$debitExpr} as debit, {$creditExpr} as credit"), 'p')
             ->selectRaw('COALESCE(SUM(p.debit), 0) as debit, COALESCE(SUM(p.credit), 0) as credit')
             ->first();
 
@@ -122,6 +142,7 @@ final class AccountLedgerService
                 'period_credit' => $periodCredit,
                 'closing_balance' => round($opening + $periodDebit - $periodCredit, 4),
                 'normal_side' => in_array($account->type, ['asset', 'expense'], true) ? 'debit' : 'credit',
+                ...($currency !== null ? ['currency' => $currency] : []),
             ],
             'current_page' => $page,
             'last_page' => max((int) ceil($total / max($perPage, 1)), 1),

@@ -46,7 +46,7 @@ class AccountingService
      * than a rejected one, because it silently breaks the trial balance and
      * nothing downstream would notice.
      *
-     * @param  array<int, array{account_code: string, debit?: float, credit?: float, operating_unit_id?: string|null, memo?: string|null, client_id?: string|null}>  $lines
+     * @param  array<int, array{account_code: string, debit?: float, credit?: float, operating_unit_id?: string|null, memo?: string|null, client_id?: string|null, currency?: string|null, original_amount?: float|null, fx_rate?: float|null}>  $lines
      */
     public function postJournal(
         string $description,
@@ -72,8 +72,11 @@ class AccountingService
             throw new InvalidArgumentException('No company exists to post a journal against.');
         }
 
+        $defaultCurrency = strtoupper(trim((string) (Company::query()->where('id', $companyId)->value('default_currency') ?? 'LYD')));
+
         $totalDebit = 0.0;
         $totalCredit = 0.0;
+        $normalizedLines = [];
 
         foreach ($lines as $line) {
             $debit = round((float) ($line['debit'] ?? 0), 4);
@@ -87,9 +90,54 @@ class AccountingService
                 throw new InvalidArgumentException('A journal line is either a debit or a credit, never both.');
             }
 
+            $rawCurrency = isset($line['currency']) && is_string($line['currency']) && trim($line['currency']) !== ''
+                ? strtoupper(trim($line['currency']))
+                : null;
+
+            if ($rawCurrency === null || $rawCurrency === $defaultCurrency) {
+                $line['currency'] = null;
+                $line['original_amount'] = null;
+                $line['fx_rate'] = null;
+            } else {
+                $originalAmount = isset($line['original_amount']) && is_numeric($line['original_amount'])
+                    ? round((float) $line['original_amount'], 4)
+                    : null;
+
+                if ($originalAmount === null || $originalAmount <= 0) {
+                    throw new InvalidArgumentException('Original amount must be greater than zero.');
+                }
+
+                $lyd = $debit > 0 ? $debit : $credit;
+
+                if (! isset($line['fx_rate']) || $line['fx_rate'] === null || $line['fx_rate'] === '') {
+                    $fxRate = round($lyd / $originalAmount, 8);
+                } else {
+                    $fxRate = round((float) $line['fx_rate'], 8);
+                    if (abs(round($originalAmount * $fxRate, 4) - $lyd) > 0.01) {
+                        throw new LedgerRuleException(
+                            "ACC-15: Amount mismatch between {$rawCurrency} {$originalAmount} at rate {$fxRate} and {$lyd} {$defaultCurrency}.",
+                            'FX_AMOUNT_MISMATCH',
+                            [
+                                'currency' => $rawCurrency,
+                                'original_amount' => $originalAmount,
+                                'fx_rate' => $fxRate,
+                                'amount' => $lyd,
+                            ],
+                        );
+                    }
+                }
+
+                $line['currency'] = $rawCurrency;
+                $line['original_amount'] = $originalAmount;
+                $line['fx_rate'] = $fxRate;
+            }
+
             $totalDebit += $debit;
             $totalCredit += $credit;
+            $normalizedLines[] = $line;
         }
+
+        $lines = $normalizedLines;
 
         $totalDebit = round($totalDebit, 4);
         $totalCredit = round($totalCredit, 4);
@@ -186,6 +234,9 @@ class AccountingService
                     'client_id' => $line->client_id,
                     'debit' => (float) $line->credit,
                     'credit' => (float) $line->debit,
+                    'currency' => $line->currency,
+                    'original_amount' => $line->original_amount !== null ? (float) $line->original_amount : null,
+                    'fx_rate' => $line->fx_rate !== null ? (float) $line->fx_rate : null,
                     'memo' => Str::limit('عكس: '.($line->memo ?? $locked->description), 250),
                 ])->all(),
             );
@@ -218,6 +269,9 @@ class AccountingService
                 'operating_unit_id' => $line['operating_unit_id'] ?? null,
                 'debit' => round((float) ($line['debit'] ?? 0), 4),
                 'credit' => round((float) ($line['credit'] ?? 0), 4),
+                'currency' => $line['currency'] ?? null,
+                'original_amount' => $line['original_amount'] ?? null,
+                'fx_rate' => $line['fx_rate'] ?? null,
                 'client_id' => $line['client_id'] ?? null,
                 'memo' => $line['memo'] ?? null,
             ]);

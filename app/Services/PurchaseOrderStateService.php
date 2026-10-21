@@ -14,6 +14,7 @@ use App\Exceptions\InvalidStateTransitionException;
 use App\Exceptions\InventoryAccountNotLinkedException;
 use App\Models\Account;
 use App\Models\BankHold;
+use App\Models\CashAccount;
 use App\Models\FxRate;
 use App\Models\GoodsReceipt;
 use App\Models\LandedCostLine;
@@ -23,6 +24,7 @@ use App\Models\PurchaseOrderItem;
 use App\Models\StockLot;
 use App\Models\Supplier;
 use App\Models\Warehouse;
+use App\Support\LedgerAccounts;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -317,23 +319,41 @@ final class PurchaseOrderStateService
                 $order->save();
             }
 
+            $supplierLine = [
+                'account_code' => $supplierAccountCode, // Advances to Suppliers (or linked supplier account)
+                'debit' => $settled,
+                'operating_unit_id' => $order->operating_unit_id,
+                'memo' => $order->supplier?->name,
+            ];
+
+            $creditLine = [
+                'account_code' => $creditAccountCode,
+                'credit' => $settled,
+                'operating_unit_id' => $order->operating_unit_id,
+                'memo' => $paymentRequest->route->value.' route',
+            ];
+
+            if ($order->currency !== $functionalCurrency) {
+                $supplierLine['currency'] = $order->currency;
+                $supplierLine['original_amount'] = (float) $order->totalCost();
+
+                $sourceAccountId = $paymentSourceAccountId ?: $order->payment_source_account_id;
+                if (! empty($sourceAccountId)) {
+                    $cashAccountCurrency = CashAccount::query()
+                        ->where('account_id', $sourceAccountId)
+                        ->value('currency');
+
+                    if ($cashAccountCurrency !== null && strtoupper($cashAccountCurrency) === strtoupper($order->currency)) {
+                        $creditLine['currency'] = $order->currency;
+                        $creditLine['original_amount'] = (float) $order->totalCost();
+                    }
+                }
+            }
+
             if ($settled > 0) {
                 $this->accountingService->postJournal(
                     "Import payment executed — {$order->supplier?->name}",
-                    [
-                        [
-                            'account_code' => $supplierAccountCode, // Advances to Suppliers (or linked supplier account)
-                            'debit' => $settled,
-                            'operating_unit_id' => $order->operating_unit_id,
-                            'memo' => $order->supplier?->name,
-                        ],
-                        [
-                            'account_code' => $creditAccountCode,
-                            'credit' => $settled,
-                            'operating_unit_id' => $order->operating_unit_id,
-                            'memo' => $paymentRequest->route->value.' route',
-                        ],
-                    ],
+                    [$supplierLine, $creditLine],
                     'PaymentRequest',
                     $paymentRequest->id,
                     $order->operatingUnit?->company_id,
@@ -708,12 +728,19 @@ final class PurchaseOrderStateService
             }
 
             $landedCostTotal = round($landedCostTotal + $amount, 4);
-            $clearingLines[] = [
+            $clearingLine = [
                 'account_code' => '23', // Landed Cost Clearing
                 'credit' => $amount,
                 'operating_unit_id' => $order->operating_unit_id,
                 'memo' => $line->type->value,
             ];
+
+            if ($line->currency !== null && $line->currency !== '' && strtoupper($line->currency) !== strtoupper($functionalCurrency)) {
+                $clearingLine['currency'] = $line->currency;
+                $clearingLine['original_amount'] = (float) $line->amount;
+            }
+
+            $clearingLines[] = $clearingLine;
         }
 
         $receivedQty = (float) $order->goodsReceipt->received_qty;
@@ -729,7 +756,7 @@ final class PurchaseOrderStateService
 
         if ($fxDifference > 0) {
             $lines[] = [
-                'account_code' => '53', // FX Loss
+                'account_code' => LedgerAccounts::FX_LOSS, // FX Loss
                 'debit' => $fxDifference,
                 'operating_unit_id' => $order->operating_unit_id,
                 'memo' => "booked {$bookedCost}, settled {$settled}",
@@ -744,16 +771,23 @@ final class PurchaseOrderStateService
             }
         }
 
-        $lines[] = [
+        $supplierLine = [
             'account_code' => $supplierAccountCode, // Advances to Suppliers (or linked supplier account) — cleared
             'credit' => $settled,
             'operating_unit_id' => $order->operating_unit_id,
             'memo' => $order->supplier?->name,
         ];
 
+        if ($order->currency !== $functionalCurrency) {
+            $supplierLine['currency'] = $order->currency;
+            $supplierLine['original_amount'] = $supplierCostFc;
+        }
+
+        $lines[] = $supplierLine;
+
         if ($fxDifference < 0) {
             $lines[] = [
-                'account_code' => '42', // FX Gain
+                'account_code' => LedgerAccounts::FX_GAIN, // FX Gain
                 'credit' => -$fxDifference,
                 'operating_unit_id' => $order->operating_unit_id,
                 'memo' => "booked {$bookedCost}, settled {$settled}",

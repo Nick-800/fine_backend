@@ -173,6 +173,24 @@ final class AccountController extends Controller
             : round($totalCredit - $totalDebit, 4);
         $transactionCount = (clone $rolledQuery)->count();
 
+        $currencyBalances = (clone $rolledQuery)
+            ->whereNotNull('currency')
+            ->selectRaw('
+                currency,
+                SUM(CASE WHEN debit > 0 THEN original_amount ELSE -original_amount END) as original_balance,
+                SUM(debit - credit) as lyd_balance
+            ')
+            ->groupBy('currency')
+            ->orderBy('currency')
+            ->get()
+            ->map(fn ($row): array => [
+                'currency' => (string) $row->currency,
+                'original_balance' => round((float) $row->original_balance, 4),
+                'lyd_balance' => round((float) $row->lyd_balance, 4),
+            ])
+            ->values()
+            ->all();
+
         return response()->json([
             'data' => [
                 'id' => $account->id,
@@ -181,6 +199,7 @@ final class AccountController extends Controller
                 'type' => $account->type,
                 'section' => $account->section,
                 'currency' => $account->currency,
+                'currency_balances' => $currencyBalances,
                 'status' => $account->status->value,
                 'parent_account_id' => $account->parent_account_id,
                 'is_main' => $account->parent_account_id === null,
@@ -266,6 +285,7 @@ final class AccountController extends Controller
             'order' => ['sometimes', 'string', 'in:asc,desc'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'page' => ['sometimes', 'integer', 'min:1'],
+            'currency' => ['sometimes', 'nullable', 'string', 'size:3'],
         ]);
 
         $accountIds = $request->boolean('include_children')
@@ -283,6 +303,7 @@ final class AccountController extends Controller
             perPage: (int) ($validated['per_page'] ?? 25),
             page: (int) ($validated['page'] ?? 1),
             all: $request->boolean('all'),
+            currency: $validated['currency'] ?? null,
         ));
     }
 

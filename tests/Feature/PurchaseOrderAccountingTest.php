@@ -350,7 +350,10 @@ test('executing a payment posts the advance against cash and completion clears i
     $lines = $advance->lines()->with('account')->get();
 
     // 1000 USD at 5.0: money left the bank, sitting on the supplier.
-    expect((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '15')->debit)->toBe(5000.0)
+    $advanceDebit = $lines->firstWhere(fn ($l) => $l->account->account_code === '15');
+    expect((float) $advanceDebit->debit)->toBe(5000.0)
+        ->and($advanceDebit->currency)->toBe('USD')
+        ->and((float) $advanceDebit->original_amount)->toBe(1000.0)
         ->and((float) $lines->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(5000.0);
 
     $this->stateService->completeOrder($order->fresh());
