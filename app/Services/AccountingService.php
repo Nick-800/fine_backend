@@ -13,9 +13,11 @@ use App\Exceptions\UnbalancedJournalException;
 use App\Models\Account;
 use App\Models\Client;
 use App\Models\Company;
+use App\Models\FiscalYear;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
 use App\Support\CompanyClock;
+use App\Support\LedgerAccounts;
 use App\Support\ReceivableAccounts;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -239,6 +241,146 @@ class AccountingService
                     'fx_rate' => $line->fx_rate !== null ? (float) $line->fx_rate : null,
                     'memo' => Str::limit('عكس: '.($line->memo ?? $locked->description), 250),
                 ])->all(),
+            );
+        });
+    }
+
+    /**
+     * ACC-12: post the balanced closing entry that moves P&L balances to 33.
+     *
+     * Resolves accounts without header/frozen checks for P&L lines (legacy lines
+     * may sit on accounts that later gained children or became frozen), while
+     * retained earnings (33) is checked with the strict postable check.
+     *
+     * @param  array<int, array{account_code: string, debit?: float, credit?: float, operating_unit_id?: string|null, memo?: string|null, client_id?: string|null, currency?: string|null, original_amount?: float|null, fx_rate?: float|null}>  $lines
+     *
+     * @throws LedgerRuleException RETAINED_EARNINGS_NOT_POSTABLE
+     * @throws UnbalancedJournalException
+     * @throws InvalidArgumentException
+     */
+    public function postClosingEntry(FiscalYear $year, array $lines, ?string $userId = null): JournalEntry
+    {
+        $totalDebit = 0.0;
+        $totalCredit = 0.0;
+        $normalizedLines = [];
+
+        foreach ($lines as $line) {
+            $debit = (float) ($line['debit'] ?? 0);
+            $credit = (float) ($line['credit'] ?? 0);
+
+            if ($debit < 0 || $credit < 0) {
+                throw new InvalidArgumentException('Journal line amounts must be positive.');
+            }
+
+            if ($debit > 0 && $credit > 0) {
+                throw new InvalidArgumentException('A journal line cannot have both a debit and a credit.');
+            }
+
+            if ($debit == 0.0 && $credit == 0.0) {
+                continue;
+            }
+
+            $totalDebit += $debit;
+            $totalCredit += $credit;
+            $normalizedLines[] = $line;
+        }
+
+        $lines = $normalizedLines;
+
+        $totalDebit = round($totalDebit, 4);
+        $totalCredit = round($totalCredit, 4);
+
+        if (abs($totalDebit - $totalCredit) > self::BALANCE_TOLERANCE) {
+            throw new UnbalancedJournalException(
+                "Journal does not balance: debits {$totalDebit} against credits {$totalCredit} for closing of \"{$year->name}\"."
+            );
+        }
+
+        if ($totalDebit === 0.0) {
+            throw new InvalidArgumentException('A journal entry with no value has nothing to record.');
+        }
+
+        $accounts = [];
+        $retainedCode = LedgerAccounts::RETAINED_EARNINGS;
+
+        foreach ($lines as $line) {
+            $code = (string) $line['account_code'];
+            if (! isset($accounts[$code])) {
+                if ($code === $retainedCode) {
+                    $account = Account::where('account_code', $retainedCode)->first();
+                    if ($account === null || $account->isFrozen() || Account::query()->where('parent_account_id', $account->id)->exists()) {
+                        throw new LedgerRuleException(
+                            "Account {$retainedCode} cannot accept closing entries.",
+                            'RETAINED_EARNINGS_NOT_POSTABLE',
+                            ['account_code' => $retainedCode],
+                        );
+                    }
+                    $accounts[$code] = $account;
+                } else {
+                    $accounts[$code] = $this->resolveAccount($code);
+                }
+            }
+        }
+
+        return DB::transaction(fn (): JournalEntry => $this->writeEntry(
+            [
+                'company_id' => $year->company_id,
+                'entry_date' => $year->end_date->toDateString(),
+                'description' => "إقفال السنة المالية {$year->name}",
+                'source_document_type' => 'FiscalYear',
+                'source_document_id' => $year->id,
+                'is_manual' => false,
+                'entry_type' => JournalEntryType::Closing,
+                'created_by_user_id' => $userId,
+            ],
+            array_map(fn (array $line): array => [
+                ...$line,
+                'account_id' => $accounts[(string) $line['account_code']]->id,
+            ], $lines),
+            closingYearId: $year->id,
+        ));
+    }
+
+    /**
+     * ACC-12: reverse a closing entry when reopening its fiscal year.
+     *
+     * Mirror of the closing entry (swap debit/credit, same accounts/units, entry_type Reversal).
+     * Dated the year end_date, through writeEntry() with closingYearId set.
+     */
+    public function reverseClosingEntry(JournalEntry $closing, FiscalYear $year, string $reason, ?string $userId = null): JournalEntry
+    {
+        return DB::transaction(function () use ($closing, $year, $reason, $userId): JournalEntry {
+            $locked = JournalEntry::with('lines')->lockForUpdate()->findOrFail($closing->getKey());
+
+            if (JournalEntry::withTrashed()->where('reversal_of_id', $locked->id)->exists()) {
+                throw new LedgerRuleException("Entry {$locked->reference} has already been reversed.", 'ALREADY_REVERSED');
+            }
+
+            return $this->writeEntry(
+                [
+                    'company_id' => $locked->company_id,
+                    'entry_date' => $year->end_date->toDateString(),
+                    'description' => Str::limit("عكس قيد الإقفال {$locked->reference}: {$reason}", 250),
+                    'source_document_type' => 'FiscalYear',
+                    'source_document_id' => $year->id,
+                    'is_manual' => false,
+                    'entry_type' => JournalEntryType::Reversal,
+                    'reversal_of_id' => $locked->id,
+                    'reversal_reason' => $reason,
+                    'created_by_user_id' => $userId,
+                ],
+                $locked->lines->map(fn (JournalLine $line): array => [
+                    'account_id' => $line->account_id,
+                    'operating_unit_id' => $line->operating_unit_id,
+                    'client_id' => $line->client_id,
+                    'debit' => (float) $line->credit,
+                    'credit' => (float) $line->debit,
+                    'currency' => $line->currency,
+                    'original_amount' => $line->original_amount !== null ? (float) $line->original_amount : null,
+                    'fx_rate' => $line->fx_rate !== null ? (float) $line->fx_rate : null,
+                    'memo' => Str::limit('عكس: '.($line->memo ?? $locked->description), 250),
+                ])->all(),
+                closingYearId: $year->id,
             );
         });
     }

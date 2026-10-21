@@ -64,4 +64,9 @@ final class FiscalYear extends Model
     {
         return $this->belongsTo(User::class, 'reopened_by_user_id');
     }
+
+    public function closingEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class, 'closing_entry_id');
+    }
 }

@@ -28,7 +28,7 @@ class FiscalPeriodController extends Controller
 
         $years = FiscalYear::query()
             ->where('company_id', $company->id)
-            ->with(['periods.lockedBy:id,name', 'periods.reopenedBy:id,name', 'closedBy:id,name', 'reopenedBy:id,name'])
+            ->with(['periods.lockedBy:id,name', 'periods.reopenedBy:id,name', 'closedBy:id,name', 'reopenedBy:id,name', 'closingEntry:id,reference'])
             ->orderByDesc('start_date')
             ->get();
 
@@ -38,6 +38,10 @@ class FiscalPeriodController extends Controller
             'fiscal_year_start_month' => (int) $company->fiscal_year_start_month,
             'data' => $years->map(fn (FiscalYear $year): array => [
                 ...$year->toArray(),
+                'closing_entry' => $year->closingEntry ? [
+                    'id' => $year->closingEntry->id,
+                    'reference' => $year->closingEntry->reference,
+                ] : null,
                 'periods' => $year->periods->map(fn (FiscalPeriod $p): array => [
                     ...$p->toArray(),
                     'label' => $p->label(),

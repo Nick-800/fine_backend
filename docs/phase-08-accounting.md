@@ -312,6 +312,30 @@ Under ACC-15, journal lines track `currency`, `original_amount`, and `fx_rate` (
 
 Cost centers were decided out on 2026-10-20: operating units on `journal_lines.operating_unit_id` serve that purpose.
 
+### 8.8.1 Fiscal Year-End Close, Year Reopen, and Report Alignment (ACC-12)
+
+- **Closing Entry & 33-Per-Unit Rule:**
+  - A closing entry (`entry_type = Closing`, dated the fiscal year `end_date`) zeroes out all revenue and expense account balances of the year (`[start_date, end_date]`, excluding closing-related entries).
+  - Every operating unit with net income/loss receives exactly one balancing line on `33` (أرباح وخسائر مرحلة). Unallocated lines (null operating unit) form their own group. Net profit credits `33`; net loss debits `33`.
+  - A fiscal year with no P&L activity closes without an entry (`closing_entry_id = null`).
+  - Account `401` (بضاعة أول المدة) is classified as an asset under `13` (inventory), ensuring it carries forward without being zeroed into `33`.
+- **Preview & Refusal Codes:**
+  - `FiscalYearService::preview()` returns generated closing lines, unit summaries, net income, and a list of `blockers`.
+  - `FiscalYearService::close()` strictly enforces refusal codes in this sequence:
+    1. `YEAR_ALREADY_CLOSED`: Year status is already closed.
+    2. `YEAR_NOT_ENDED`: Company clock (`CompanyClock::today()`) is not after `end_date`.
+    3. `PREVIOUS_YEAR_OPEN`: An earlier fiscal year of the company is still open.
+    4. `YEAR_PERIODS_NOT_LOCKED`: One or more months of the year remain open (`open_periods` context array).
+    5. `RETAINED_EARNINGS_NOT_POSTABLE`: Account `33` is missing, frozen, or has sub-accounts.
+- **Reopening a Closed Year:**
+  - Only the owner may reopen a closed year (`POST /fiscal-years/{id}/reopen` with audit `reason`).
+  - Refuses with `YEAR_NOT_CLOSED` if the year is not closed, or `LATER_YEAR_CLOSED` if any subsequent fiscal year is closed.
+  - Automatically reverses the closing entry (if any) via `AccountingService::reverseClosingEntry` (`entry_type = Reversal`, `reversal_of_id` linked).
+  - Year status returns to Open; months stay locked. Direct user reversals via `/journal-entries/{id}/reverse` remain refused with `CLOSING_NOT_REVERSIBLE`.
+- **Financial Report Alignment:**
+  - **Income Statement & Unit Profitability:** Filter out closing-related entries (`scopeClosingRelated()`), preserving historical operating revenue, expenses, and net profit visibility.
+  - **Balance Sheet:** Integrates closing entries on balance-sheet and equity accounts (`33`), and includes unclosed period earnings (`Σ(credit - debit)` of P&L lines including closing entries) under `retained_current_period` (`retained_current_period_label` => 'أرباح الفترات غير المقفلة'). Equity and assets/liabilities balance across any historical or current `as_of` date.
+
 ---
 
 ## 8.9 Testing Strategy

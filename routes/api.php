@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\v1\EmployeeController;
 use App\Http\Controllers\Api\v1\EntityLookupController;
 use App\Http\Controllers\Api\v1\FinancialReportController;
 use App\Http\Controllers\Api\v1\FiscalPeriodController;
+use App\Http\Controllers\Api\v1\FiscalYearController;
 use App\Http\Controllers\Api\v1\FixedAssetController;
 use App\Http\Controllers\Api\v1\FxRateController;
 use App\Http\Controllers\Api\v1\GoodsReceiptController;
@@ -97,8 +98,9 @@ Route::prefix('v1')->group(function () {
 
             // Admin: Owner and Global Admins only
             Route::middleware('require.role:owner')->group(function () {
-                // ACC-11: only the owner reopens a locked month or changes the fiscal calendar.
+                // ACC-11, ACC-12: only the owner reopens a locked month or closed year, or changes the fiscal calendar.
                 Route::post('/fiscal-periods/{id}/reopen', [FiscalPeriodController::class, 'reopen']);
+                Route::post('/fiscal-years/{id}/reopen', [FiscalYearController::class, 'reopen']);
                 Route::put('/fiscal-settings', [FiscalPeriodController::class, 'updateSettings']);
                 Route::apiResource('operating-units', OperatingUnitController::class)->except(['index']);
                 Route::post('operating-units/{id}/restore', [OperatingUnitController::class, 'restore']);
@@ -150,8 +152,9 @@ Route::prefix('v1')->group(function () {
                 // ACC-04: manual entries (the controller keeps its own role check as a second layer).
                 Route::post('/journal-entries', [JournalEntryController::class, 'store']);
                 Route::post('/journal-entries/{id}/reverse', [JournalEntryController::class, 'reverse']);
-                // ACC-11: the accounting manager locks ended months.
+                // ACC-11, ACC-12: the accounting manager locks ended months and closes fiscal years.
                 Route::post('/fiscal-years', [FiscalPeriodController::class, 'storeYear']);
+                Route::post('/fiscal-years/{id}/close', [FiscalYearController::class, 'close']);
                 Route::post('/fiscal-periods/{id}/lock', [FiscalPeriodController::class, 'lock']);
             });
 
@@ -167,6 +170,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('/accounts/{id}', [AccountController::class, 'show']);
                 Route::get('/accounts/{id}/ledger', [AccountController::class, 'ledger']);
                 Route::get('/fiscal-years', [FiscalPeriodController::class, 'index']);
+                Route::get('/fiscal-years/{id}/closing-preview', [FiscalYearController::class, 'closingPreview']);
                 Route::get('/journal-entries', [JournalEntryController::class, 'index']);
                 Route::get('/journal-entries/for-document/{type}/{documentId}', [JournalEntryController::class, 'forDocument']);
                 Route::get('/journal-entries/{id}', [JournalEntryController::class, 'show']);

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Support\CompanyClock;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -12,9 +14,12 @@ use Illuminate\Database\Eloquent\Builder;
  * never stored). Lines carry the operating unit, so every report can serve
  * both the company-wide and the per-unit question with the same query.
  *
- * No closing entries exist in this ledger — revenue and expense accounts are
- * never zeroed into equity — so the balance sheet folds the running net income
- * into the equity section itself. Without that the sheet could never balance.
+ * ACC-12: Year-end closing entries move revenue and expense balances into
+ * retained earnings (33). The income statement and unit profitability exclude
+ * closing-related entries so they reflect true operating performance across
+ * closed years. The balance sheet incorporates closing entries into equity
+ * accounts and folds remaining unclosed earnings into the equity section,
+ * ensuring the sheet balances at any historical or current date.
  */
 final class FinancialReportService
 {
@@ -25,7 +30,7 @@ final class FinancialReportService
      */
     public function incomeStatement(?string $from = null, ?string $to = null, ?string $operatingUnitId = null): array
     {
-        $rows = $this->accountActivity(['revenue', 'expense'], $from, $to, $operatingUnitId);
+        $rows = $this->accountActivity(['revenue', 'expense'], $from, $to, $operatingUnitId, excludeClosing: true);
 
         $revenue = [];
         $expenses = [];
@@ -56,9 +61,9 @@ final class FinancialReportService
      */
     public function balanceSheet(?string $asOf = null, ?string $operatingUnitId = null): array
     {
-        $asOf ??= now()->toDateString();
+        $asOf ??= CompanyClock::today();
 
-        $rows = $this->accountActivity(['asset', 'liability', 'equity'], null, $asOf, $operatingUnitId);
+        $rows = $this->accountActivity(['asset', 'liability', 'equity'], null, $asOf, $operatingUnitId, excludeClosing: false);
 
         $assets = [];
         $liabilities = [];
@@ -74,11 +79,11 @@ final class FinancialReportService
             }
         }
 
-        $income = $this->incomeStatement(null, $asOf, $operatingUnitId);
+        $unclosedEarnings = $this->unclosedEarnings($asOf, $operatingUnitId);
 
         $totalAssets = round(array_sum(array_column($assets, 'balance')), 4);
         $totalLiabilities = round(array_sum(array_column($liabilities, 'balance')), 4);
-        $totalEquity = round(array_sum(array_column($equity, 'balance')) + $income['net_income'], 4);
+        $totalEquity = round(array_sum(array_column($equity, 'balance')) + $unclosedEarnings, 4);
 
         return [
             'as_of' => $asOf,
@@ -87,7 +92,8 @@ final class FinancialReportService
             'liabilities' => ['rows' => $liabilities, 'total' => $totalLiabilities],
             'equity' => [
                 'rows' => $equity,
-                'retained_current_period' => $income['net_income'],
+                'retained_current_period' => $unclosedEarnings,
+                'retained_current_period_label' => 'أرباح الفترات غير المقفلة',
                 'total' => $totalEquity,
             ],
             'balanced' => abs($totalAssets - ($totalLiabilities + $totalEquity)) < self::BALANCE_TOLERANCE,
@@ -108,6 +114,7 @@ final class FinancialReportService
             ->whereNull('journal_entries.deleted_at')
             ->leftJoin('operating_units', 'operating_units.id', '=', 'journal_lines.operating_unit_id')
             ->whereIn('accounts.type', ['revenue', 'expense'])
+            ->whereNotIn('journal_entries.id', JournalEntry::query()->closingRelated()->select('id'))
             ->selectRaw('journal_lines.operating_unit_id, operating_units.name as unit_name, accounts.type')
             ->selectRaw('SUM(journal_lines.debit) as debit, SUM(journal_lines.credit) as credit')
             ->groupBy('journal_lines.operating_unit_id', 'operating_units.name', 'accounts.type');
@@ -154,12 +161,28 @@ final class FinancialReportService
     }
 
     /**
+     * Unclosed period earnings: running net income Σ(credit - debit) of revenue/expense
+     * lines up to as_of INCLUDING closing entries (ACC-12).
+     */
+    private function unclosedEarnings(?string $asOf, ?string $operatingUnitId): float
+    {
+        $rows = $this->accountActivity(['revenue', 'expense'], null, $asOf, $operatingUnitId, excludeClosing: false);
+
+        $net = 0.0;
+        foreach ($rows as $row) {
+            $net += ((float) $row['credit'] - (float) $row['debit']);
+        }
+
+        return round($net, 4);
+    }
+
+    /**
      * Per-account debit/credit sums for the given account types.
      *
      * @param  list<string>  $types
      * @return list<array<string, mixed>>
      */
-    private function accountActivity(array $types, ?string $from, ?string $to, ?string $operatingUnitId): array
+    private function accountActivity(array $types, ?string $from, ?string $to, ?string $operatingUnitId, bool $excludeClosing = false): array
     {
         $query = JournalLine::query()
             ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
@@ -175,6 +198,10 @@ final class FinancialReportService
 
         if ($operatingUnitId !== null) {
             $query->where('journal_lines.operating_unit_id', $operatingUnitId);
+        }
+
+        if ($excludeClosing) {
+            $query->whereNotIn('journal_entries.id', JournalEntry::query()->closingRelated()->select('id'));
         }
 
         return $query->get()->map(fn ($row) => [
