@@ -68,6 +68,7 @@ final class OverheadService
                 'OverheadExpense',
                 $expense->id,
                 $expense->company_id,
+                entryDate: $expense->expense_date->toDateString(),
             );
 
             return $expense->refresh();

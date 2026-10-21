@@ -31,6 +31,8 @@ final class FixedAsset extends Model
         'depreciation_method',
         'useful_life_years',
         'salvage_value',
+        'disposal_proceeds',
+        'disposed_at',
         'status',
         'record_version',
     ];

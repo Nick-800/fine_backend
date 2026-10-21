@@ -133,12 +133,23 @@ CR  Accounts Payable
 ```
 
 ### Event: PayrollRun.Posted
+Payroll posts as two separate entries (HR-08, phase-08 §8.4):
+
+1. **Accrual Entry** — dated `min(last day of period month, today)` (the period month end):
 ```
-DR  Wage Expense — [Unit]
-CR  Cash / Bank (net pay)
-CR  Social Security Payable (if applicable)
-CR  Tax Payable (if applicable)
+DR  57      Wage Expense — [Unit]               (gross pay)
+CR  226     Wages Payable                       (net pay payable)
+CR  225     Payroll Deductions Payable          (withheld)
 ```
+
+2. **Payment Entry** — dated today (tripoli local date, posted only when total net > 0):
+```
+DR  226     Wages Payable                       (net pay)
+CR  1211xx  Treasury / Cash Account             (net pay disbursed)
+```
+
+> **Note on Business Event Posting Dates (ACC-11):**
+> Depreciation, overhead, and fixed-asset entries are dated on their business date (depreciation on `min(last day of period, today)`; overhead on `expense_date`; fixed-asset acquisition on `acquisition_date` and disposal on `disposed_at`). If an event is dated into a locked period, `PeriodGuard` throws `LedgerRuleException` (`PERIOD_LOCKED`), refusing the posting (ACC-11).
 
 ### Event: DepreciationEntry (Monthly)
 ```

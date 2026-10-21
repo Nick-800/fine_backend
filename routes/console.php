@@ -8,8 +8,9 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// ACC-07: monthly depreciation. Idempotent, so a missed or repeated run is
-// harmless — assets already posted for the period are skipped.
+// ACC-07: monthly depreciation. The scheduler runs on the 1st to book the
+// month that just ended. Idempotent, so a missed or repeated run is harmless —
+// assets already posted for the period are skipped.
 Schedule::command('accounting:run-depreciation')
     ->monthlyOn(1, '02:00')
     ->withoutOverlapping();

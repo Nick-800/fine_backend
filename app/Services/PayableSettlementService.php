@@ -17,6 +17,7 @@ use InvalidArgumentException;
  *   21  Accounts Payable           — credit purchases (intake, overhead, assets)
  *   221 Suppliers
  *   225 Payroll Deductions Payable — withholdings awaiting remittance
+ *   226 Wages Payable              — net pay accrued awaiting disbursement
  *   23  Landed Cost Clearing       — customs/freight/transport providers
  *
  * A settlement posts DR payable / CR the treasury the money leaves from and
@@ -25,7 +26,7 @@ use InvalidArgumentException;
  */
 final class PayableSettlementService
 {
-    public const SETTLEABLE = ['21', '221', '225', '23'];
+    public const SETTLEABLE = ['21', '221', '225', '226', '23'];
 
     public function __construct(
         private readonly AccountingService $accountingService,

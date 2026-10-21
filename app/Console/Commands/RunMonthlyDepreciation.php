@@ -7,23 +7,25 @@ namespace App\Console\Commands;
 use App\Enums\FixedAssetStatus;
 use App\Models\FixedAsset;
 use App\Services\FixedAssetService;
+use App\Support\CompanyClock;
 use Illuminate\Console\Command;
 use Throwable;
 
 /**
  * ACC-07: depreciation runs monthly via the scheduler and can be triggered
- * manually. Re-runs are idempotent — an asset that already posted for the
- * period is skipped, so a failed run can simply be run again.
+ * manually. The scheduler in routes/console.php runs on the 1st, so it now books
+ * the month that just ended; runs stay idempotent per period — an asset that
+ * already posted for the period is skipped, so a failed run can simply be run again.
  */
 final class RunMonthlyDepreciation extends Command
 {
-    protected $signature = 'accounting:run-depreciation {--period= : YYYY-MM, defaults to the current month}';
+    protected $signature = 'accounting:run-depreciation {--period= : YYYY-MM, defaults to the previous month}';
 
     protected $description = 'Post monthly depreciation for every active fixed asset';
 
     public function handle(FixedAssetService $assetService): int
     {
-        $period = $this->option('period') ?? now()->format('Y-m');
+        $period = $this->option('period') ?? CompanyClock::now()->subMonthNoOverflow()->format('Y-m');
 
         $posted = 0;
         $skipped = 0;

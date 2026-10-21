@@ -11,6 +11,7 @@ use App\Exceptions\InvalidStateTransitionException;
 use App\Models\Account;
 use App\Models\DepreciationEntry;
 use App\Models\FixedAsset;
+use App\Support\CompanyClock;
 use App\Support\TreasuryAccounts;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -86,6 +87,7 @@ final class FixedAssetService
                 'FixedAsset',
                 $asset->id,
                 $asset->company_id,
+                entryDate: $asset->acquisition_date->toDateString(),
             );
 
             return $asset->refresh();
@@ -99,7 +101,7 @@ final class FixedAssetService
      */
     public function depreciateForPeriod(FixedAsset $asset, ?string $period = null): ?DepreciationEntry
     {
-        $period ??= now()->format('Y-m');
+        $period ??= CompanyClock::now()->format('Y-m');
 
         if (! preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period)) {
             throw new InvalidArgumentException("Period must be YYYY-MM, got \"{$period}\".");
@@ -140,6 +142,9 @@ final class FixedAssetService
             $asset->accumulated_depreciation = round((float) $asset->accumulated_depreciation + $amount, 4);
             $asset->save();
 
+            $lastDayOfPeriod = Carbon::createFromFormat('!Y-m', $period)->endOfMonth()->toDateString();
+            $entryDate = min($lastDayOfPeriod, CompanyClock::today());
+
             $this->accountingService->postJournal(
                 "Depreciation {$period}: {$asset->name}",
                 [
@@ -158,6 +163,7 @@ final class FixedAssetService
                 'DepreciationEntry',
                 $entry->id,
                 $asset->company_id,
+                entryDate: $entryDate,
             );
 
             return $entry;
@@ -231,18 +237,21 @@ final class FixedAssetService
                 ];
             }
 
+            $entryDate = $disposedAt ?? CompanyClock::today();
+
             $this->accountingService->postJournal(
                 "Asset disposed: {$asset->name} ({$asset->asset_code})",
                 $lines,
                 'FixedAsset',
                 $asset->id,
                 $asset->company_id,
+                entryDate: $entryDate,
             );
 
             $asset->update([
                 'status' => FixedAssetStatus::Disposed,
                 'disposal_proceeds' => round($proceeds, 4),
-                'disposed_at' => $disposedAt ?? now()->toDateString(),
+                'disposed_at' => $entryDate,
             ]);
 
             return $asset->refresh();

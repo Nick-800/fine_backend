@@ -13,6 +13,7 @@ use App\Models\Employee;
 use App\Models\LaborRoleRate;
 use App\Models\PayrollRun;
 use App\Models\Payslip;
+use App\Support\CompanyClock;
 use App\Support\TreasuryAccounts;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,9 @@ final class PayrollService
 {
     /** Withholdings owed on to the tax office / social security until remitted. */
     public const DEDUCTIONS_PAYABLE = '225';
+
+    /** Net pay accrued at period end awaiting disbursement. */
+    public const WAGES_PAYABLE = '226';
 
     public function __construct(
         private readonly AccountingService $accountingService,
@@ -271,24 +275,31 @@ final class PayrollService
     /**
      * HR-08 / phase-08 §8.4 PayrollRun.Posted, per unit:
      *
+     * 1. ACCRUAL (dated min(end of period, today)):
      *   DR 57      Wage Expense               (gross pay)
-     *   CR 1211xx  the chosen treasury        (net pay)
+     *   CR 226     Wages Payable              (net pay payable)
      *   CR 225     Payroll deductions payable (withheld)
+     *
+     * 2. PAYMENT (dated today, when total net > 0):
+     *   DR 226     Wages Payable              (net pay)
+     *   CR 1211xx  the chosen treasury        (net pay disbursed)
      */
     private function postJournal(PayrollRun $run, ?string $cashAccountId): void
     {
         $treasuryCode = TreasuryAccounts::codeForId($cashAccountId);
         $payslips = $run->payslips()->get();
 
-        $lines = [];
+        $accrualLines = [];
+        $totalNet = 0.0;
 
         foreach ($payslips->groupBy('operating_unit_id') as $unitId => $unitSlips) {
             $expensePortion = round((float) $unitSlips->sum('gross_pay'), 4);
             $net = round((float) $unitSlips->sum('net_pay'), 4);
             $deductions = round((float) $unitSlips->sum(fn (Payslip $p) => $p->totalDeductions()), 4);
+            $totalNet = round($totalNet + $net, 4);
 
             if ($expensePortion > 0) {
-                $lines[] = [
+                $accrualLines[] = [
                     'account_code' => '57', // Wage Expense
                     'debit' => $expensePortion,
                     'operating_unit_id' => $unitId,
@@ -296,16 +307,16 @@ final class PayrollService
             }
 
             if ($net > 0) {
-                $lines[] = [
-                    'account_code' => $treasuryCode,
+                $accrualLines[] = [
+                    'account_code' => self::WAGES_PAYABLE,
                     'credit' => $net,
                     'operating_unit_id' => $unitId,
-                    'memo' => 'net pay disbursed',
+                    'memo' => 'net pay payable',
                 ];
             }
 
             if ($deductions > 0) {
-                $lines[] = [
+                $accrualLines[] = [
                     'account_code' => self::DEDUCTIONS_PAYABLE,
                     'credit' => $deductions,
                     'operating_unit_id' => $unitId,
@@ -313,14 +324,51 @@ final class PayrollService
             }
         }
 
-        $entry = $this->accountingService->postJournal(
-            "Payroll {$run->period} posted",
-            $lines,
+        $lastDayOfPeriod = Carbon::createFromFormat('!Y-m', $run->period)->endOfMonth()->toDateString();
+        $accrualDate = min($lastDayOfPeriod, CompanyClock::today());
+
+        $accrualEntry = $this->accountingService->postJournal(
+            "Payroll {$run->period} accrued",
+            $accrualLines,
             'PayrollRun',
             $run->id,
             $run->company_id,
+            entryDate: $accrualDate,
         );
 
-        $run->payslips()->update(['journal_entry_id' => $entry->id]);
+        $run->payslips()->update(['journal_entry_id' => $accrualEntry->id]);
+
+        if ($totalNet > 0) {
+            $paymentLines = [];
+
+            foreach ($payslips->groupBy('operating_unit_id') as $unitId => $unitSlips) {
+                $net = round((float) $unitSlips->sum('net_pay'), 4);
+
+                if ($net > 0) {
+                    $paymentLines[] = [
+                        'account_code' => self::WAGES_PAYABLE,
+                        'debit' => $net,
+                        'operating_unit_id' => $unitId,
+                    ];
+
+                    $paymentLines[] = [
+                        'account_code' => $treasuryCode,
+                        'credit' => $net,
+                        'operating_unit_id' => $unitId,
+                        'memo' => 'net pay disbursed',
+                    ];
+                }
+            }
+
+            $paymentEntry = $this->accountingService->postJournal(
+                "Payroll {$run->period} paid",
+                $paymentLines,
+                'PayrollRun',
+                $run->id,
+                $run->company_id,
+            );
+
+            $run->payment_journal_entry_id = $paymentEntry->id;
+        }
     }
 }

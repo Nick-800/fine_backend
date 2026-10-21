@@ -210,30 +210,50 @@ test('the run walks the full lifecycle and posting reaches the ledger', function
 
     expect($posted['status'])->toBe('posted');
 
-    $entry = JournalEntry::where('source_document_type', 'PayrollRun')
-        ->where('source_document_id', $run['id'])->sole();
-    $lines = $entry->lines()->with('account')->get();
+    $accrualEntry = JournalEntry::where('source_document_type', 'PayrollRun')
+        ->where('source_document_id', $run['id'])
+        ->where('description', "Payroll {$run['period']} accrued")
+        ->sole();
+    $paymentEntry = JournalEntry::where('source_document_type', 'PayrollRun')
+        ->where('source_document_id', $run['id'])
+        ->where('description', "Payroll {$run['period']} paid")
+        ->sole();
 
-    $unitA = $lines->where('operating_unit_id', $this->unitA->id);
-    $unitB = $lines->where('operating_unit_id', $this->unitB->id);
+    $accrualLines = $accrualEntry->lines()->with('account')->get();
+    $paymentLines = $paymentEntry->lines()->with('account')->get();
 
-    // Unit A: 3000 fresh wage expense, 2900 cash out, 100 withheld. No labor
-    // logs exist any more, so there is no accrual (22) leg at all.
-    expect((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(3000.0)
-        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(2900.0)
-        ->and((float) $unitA->firstWhere(fn ($l) => $l->account->account_code === '225')->credit)->toBe(100.0)
-        ->and($unitA->first(fn ($l) => $l->account->account_code === '22'))->toBeNull();
+    $unitAAccrual = $accrualLines->where('operating_unit_id', $this->unitA->id);
+    $unitBAccrual = $accrualLines->where('operating_unit_id', $this->unitB->id);
+    $unitAPayment = $paymentLines->where('operating_unit_id', $this->unitA->id);
+    $unitBPayment = $paymentLines->where('operating_unit_id', $this->unitB->id);
 
-    // Unit B: pure attendance pay, no accrual, no deductions.
-    expect((float) $unitB->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(160.0)
-        ->and((float) $unitB->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(160.0)
-        ->and($unitB->first(fn ($l) => $l->account->account_code === '22'))->toBeNull();
+    // Unit A accrual: 3000 wage expense, 2900 wages payable (226), 100 withheld (225).
+    expect((float) $unitAAccrual->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(3000.0)
+        ->and((float) $unitAAccrual->firstWhere(fn ($l) => $l->account->account_code === '226')->credit)->toBe(2900.0)
+        ->and((float) $unitAAccrual->firstWhere(fn ($l) => $l->account->account_code === '225')->credit)->toBe(100.0)
+        ->and($unitAAccrual->first(fn ($l) => $l->account->account_code === '22'))->toBeNull();
 
-    expect($entry->isBalanced())->toBeTrue();
+    // Unit A payment: 2900 DR wages payable (226), 2900 CR cash out.
+    expect((float) $unitAPayment->firstWhere(fn ($l) => $l->account->account_code === '226')->debit)->toBe(2900.0)
+        ->and((float) $unitAPayment->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(2900.0);
 
-    // Payslips carry the audit path back to the entry (ACC-03 / §9.7).
+    // Unit B accrual: 160 wage expense, 160 wages payable (226), no deductions.
+    expect((float) $unitBAccrual->firstWhere(fn ($l) => $l->account->account_code === '57')->debit)->toBe(160.0)
+        ->and((float) $unitBAccrual->firstWhere(fn ($l) => $l->account->account_code === '226')->credit)->toBe(160.0)
+        ->and($unitBAccrual->first(fn ($l) => $l->account->account_code === '22'))->toBeNull();
+
+    // Unit B payment: 160 DR wages payable (226), 160 CR cash out.
+    expect((float) $unitBPayment->firstWhere(fn ($l) => $l->account->account_code === '226')->debit)->toBe(160.0)
+        ->and((float) $unitBPayment->firstWhere(fn ($l) => $l->account->account_code === '121101')->credit)->toBe(160.0);
+
+    expect($accrualEntry->isBalanced())->toBeTrue()
+        ->and($paymentEntry->isBalanced())->toBeTrue();
+
+    // Payslips carry the audit path back to the accrual entry (ACC-03 / §9.7).
     expect(collect(($this->asOwner)()->getJson("/api/v1/payroll-runs/{$run['id']}/payslips")->json('data'))
-        ->pluck('journal_entry_id')->unique()->sole())->toBe($entry->id);
+        ->pluck('journal_entry_id')->unique()->sole())->toBe($accrualEntry->id);
+
+    expect($posted['payment_journal_entry_id'])->toBe($paymentEntry->id);
 
     $tb = ($this->asOwner)()->getJson('/api/v1/reports/trial-balance')->assertStatus(200)->json();
     expect($tb['balanced'])->toBeTrue();

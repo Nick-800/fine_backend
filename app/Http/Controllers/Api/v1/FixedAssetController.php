@@ -13,6 +13,7 @@ use App\Models\Scopes\OperatingUnitOrSharedScope;
 use App\Rules\LeafAccount;
 use App\Services\CoaLinkService;
 use App\Services\FixedAssetService;
+use App\Support\CompanyClock;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -60,7 +61,7 @@ final class FixedAssetController extends Controller
             'name' => 'required|string|max:255',
             'asset_code' => 'required|string|max:50|unique:fixed_assets,asset_code',
             'acquisition_cost' => 'required|numeric|min:0.0001',
-            'acquisition_date' => 'required|date|before_or_equal:today',
+            'acquisition_date' => 'required|date|before_or_equal:'.CompanyClock::today(),
             'depreciation_method' => 'required|string|in:straight_line,declining_balance',
             'useful_life_years' => 'required|integer|min:1|max:100',
             'salvage_value' => 'sometimes|numeric|min:0',
@@ -154,7 +155,7 @@ final class FixedAssetController extends Controller
 
         $validated = $request->validate([
             'proceeds' => 'required|numeric|min:0',
-            'disposed_at' => 'sometimes|nullable|date|before_or_equal:today',
+            'disposed_at' => 'sometimes|nullable|date|before_or_equal:'.CompanyClock::today(),
             'cash_account_id' => ['nullable', 'uuid', 'exists:cash_accounts,id', Rule::requiredIf(fn (): bool => (float) $request->input('proceeds') > 0)],
         ]);
 

@@ -27,6 +27,7 @@ final class PayrollRun extends Model
         'total_net',
         'opened_by_user_id',
         'approved_by_user_id',
+        'payment_journal_entry_id',
         'record_version',
     ];
 
@@ -56,5 +57,10 @@ final class PayrollRun extends Model
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by_user_id');
+    }
+
+    public function paymentEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class, 'payment_journal_entry_id');
     }
 }

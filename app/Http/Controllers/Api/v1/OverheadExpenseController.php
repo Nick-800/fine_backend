@@ -12,6 +12,7 @@ use App\Models\OverheadAllocationRule;
 use App\Models\OverheadExpense;
 use App\Models\Scopes\OperatingUnitOrSharedScope;
 use App\Services\OverheadService;
+use App\Support\CompanyClock;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -51,7 +52,7 @@ final class OverheadExpenseController extends Controller
             'category' => 'required|string|max:50',
             'description' => 'nullable|string|max:500',
             'amount' => 'required|numeric|min:0.0001',
-            'expense_date' => 'required|date|before_or_equal:today',
+            'expense_date' => 'required|date|before_or_equal:'.CompanyClock::today(),
             'payment_source' => 'required|string|in:cash,payable',
             'cash_account_id' => 'nullable|uuid|exists:cash_accounts,id|required_if:payment_source,cash',
             // Explicit true = company-level expense awaiting allocation.
