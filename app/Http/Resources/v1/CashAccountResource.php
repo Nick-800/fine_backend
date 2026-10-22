@@ -23,7 +23,11 @@ final class CashAccountResource extends JsonResource
                 'name' => $this->account->name,
             ] : null),
             'currency' => $this->currency,
+            // Creation-time opening figure; the real balance is ledger_balance (TRS-01).
             'balance' => (float) $this->balance,
+            // Attached by TreasuryBalanceService::attach() in one query for the whole list.
+            'ledger_balance' => $this->when($this->resource->ledger_balance !== null, fn () => $this->resource->ledger_balance),
+            'currency_balances' => $this->when($this->resource->currency_balances !== null, fn () => $this->resource->currency_balances),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

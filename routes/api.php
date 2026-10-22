@@ -211,6 +211,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('/cash-accounts', [CashAccountController::class, 'index']);
                 Route::post('/cash-accounts', [CashAccountController::class, 'store']);
                 Route::put('/cash-accounts/{id}', [CashAccountController::class, 'update']);
+                Route::get('/cash-accounts/{id}/statement', [CashAccountController::class, 'statement']);
             });
 
             // Procurement

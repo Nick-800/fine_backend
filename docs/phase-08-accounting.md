@@ -336,6 +336,23 @@ Cost centers were decided out on 2026-10-20: operating units on `journal_lines.o
   - **Income Statement & Unit Profitability:** Filter out closing-related entries (`scopeClosingRelated()`), preserving historical operating revenue, expenses, and net profit visibility.
   - **Balance Sheet:** Integrates closing entries on balance-sheet and equity accounts (`33`), and includes unclosed period earnings (`Σ(credit - debit)` of P&L lines including closing entries) under `retained_current_period` (`retained_current_period_label` => 'أرباح الفترات غير المقفلة'). Equity and assets/liabilities balance across any historical or current `as_of` date.
 
+### 8.8.2 Treasury Rules (Wave 2)
+
+| Rule ID | Summary | Detail / Enforcement |
+|---|---|---|
+| TRS-01 | Treasury balance = ledger balance of its linked account | The stored `CashAccount.balance` column is only the creation-time opening figure; the live balance is the ledger balance of its linked account (`JournalLine::scopePosted()`). |
+| TRS-02 | A voucher posts once; cancelling reverses it | Receipt and payment vouchers post balanced journal entries once; cancellation creates a linked reversal entry. |
+| TRS-03 | A transfer posts only after approval by someone other than its creator (owner excepted), same currency only | Internal treasury transfers require dual-control approval unless initiated by the owner; source and destination must share the same currency. |
+| TRS-04 | A reconciliation finishes only at zero difference; a ledger line is cleared at most once | Treasury reconciliation finishes only at zero unreconciled difference; a posted ledger line is cleared at most once. |
+| TRS-05 | A cheque moves only along its allowed states, one entry per move | A cheque moves strictly through its permitted lifecycle states, creating one balanced journal entry per move. |
+| TRS-06 | The POS daily close posts its cash difference to 625 (shortage) / 44 (surplus) | Daily POS till closing posts cash discrepancy to 625 (عجز الخزائن) for shortages, or 44 (زيادة الخزائن) for surpluses. |
+
+#### New Treasury Accounts (Wave 2)
+- **125 (شيكات برسم التحصيل - Cheques under Collection):** Asset under `12` (الأصول المتداولة) for holding received customer cheques awaiting bank deposit or clearance.
+- **227 (أوراق الدفع - Notes Payable):** Liability under `22` (المطاليب والالتزامات المتداولة) for promissory notes and commercial paper payable to creditors or suppliers.
+- **44 (زيادة الخزائن - Cash Overage):** Revenue under `4` (الإيرادات) for recording treasury and POS cash surpluses upon reconciliation or daily close.
+- **625 (عجز الخزائن - Cash Shortage):** Expense under `6` (المصاريف التشغيلية والإدارية) for recording treasury and POS cash deficits upon reconciliation or daily close.
+
 ---
 
 ## 8.9 Testing Strategy

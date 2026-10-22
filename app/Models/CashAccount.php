@@ -22,6 +22,18 @@ final class CashAccount extends Model
 
     public const KIND_BANK = 'bank';
 
+    /**
+     * Transient live ledger balance attached by TreasuryBalanceService (TRS-01).
+     */
+    public ?float $ledger_balance = null;
+
+    /**
+     * Transient currency balances attached by TreasuryBalanceService (TRS-01).
+     *
+     * @var list<array{currency: string, original_balance: float, lyd_balance: float}>|null
+     */
+    public ?array $currency_balances = null;
+
     protected $fillable = [
         'operating_unit_id',
         'name',

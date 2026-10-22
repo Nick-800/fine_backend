@@ -7,7 +7,7 @@ namespace App\Support;
 /**
  * Standard ledger account codes referenced across accounting operations.
  *
- * ACC-12, ACC-15, BR-CUR-008.
+ * ACC-12, ACC-15, BR-CUR-008, TRS-01, TRS-05, TRS-06.
  */
 final class LedgerAccounts
 {
@@ -16,4 +16,14 @@ final class LedgerAccounts
     public const FX_GAIN = '42';
 
     public const FX_LOSS = '53';
+
+    public const NOTES_RECEIVABLE = '124';
+
+    public const CHEQUES_UNDER_COLLECTION = '125';
+
+    public const NOTES_PAYABLE = '227';
+
+    public const CASH_OVERAGE = '44';
+
+    public const CASH_SHORTAGE = '625';
 }

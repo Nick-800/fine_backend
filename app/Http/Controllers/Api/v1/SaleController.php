@@ -11,6 +11,7 @@ use App\Models\CashAccount;
 use App\Models\OperatingUnit;
 use App\Models\SalesOrder;
 use App\Services\SaleCheckoutService;
+use App\Services\TreasuryBalanceService;
 use App\Support\CurrentUnitContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -160,7 +161,10 @@ final class SaleController extends Controller
             $query->where('kind', $request->query('kind'));
         }
 
-        return CashAccountResource::collection($query->get());
+        $treasuries = $query->get();
+        app(TreasuryBalanceService::class)->attach($treasuries);
+
+        return CashAccountResource::collection($treasuries);
     }
 
     /**
