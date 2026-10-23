@@ -55,6 +55,7 @@ use App\Http\Controllers\Api\v1\StockLotController;
 use App\Http\Controllers\Api\v1\StockMovementCardController;
 use App\Http\Controllers\Api\v1\SupplierController;
 use App\Http\Controllers\Api\v1\SystemVersionController;
+use App\Http\Controllers\Api\v1\TreasuryVoucherController;
 use App\Http\Controllers\Api\v1\UnitBlueprintController;
 use App\Http\Controllers\Api\v1\UserController;
 use App\Http\Controllers\Api\v1\WarehouseController;
@@ -156,6 +157,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/fiscal-years', [FiscalPeriodController::class, 'storeYear']);
                 Route::post('/fiscal-years/{id}/close', [FiscalYearController::class, 'close']);
                 Route::post('/fiscal-periods/{id}/lock', [FiscalPeriodController::class, 'lock']);
+                Route::post('/treasury-vouchers/{id}/cancel', [TreasuryVoucherController::class, 'cancel']);
             });
 
             // Allocation & landed cost approvals are guarded at the domain level by AllocationPaymentService (asserts manager of unit)
@@ -212,6 +214,9 @@ Route::prefix('v1')->group(function () {
                 Route::post('/cash-accounts', [CashAccountController::class, 'store']);
                 Route::put('/cash-accounts/{id}', [CashAccountController::class, 'update']);
                 Route::get('/cash-accounts/{id}/statement', [CashAccountController::class, 'statement']);
+                Route::get('/treasury-vouchers', [TreasuryVoucherController::class, 'index']);
+                Route::get('/treasury-vouchers/{id}', [TreasuryVoucherController::class, 'show']);
+                Route::post('/treasury-vouchers', [TreasuryVoucherController::class, 'store']);
             });
 
             // Procurement
