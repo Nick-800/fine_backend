@@ -55,6 +55,7 @@ use App\Http\Controllers\Api\v1\StockLotController;
 use App\Http\Controllers\Api\v1\StockMovementCardController;
 use App\Http\Controllers\Api\v1\SupplierController;
 use App\Http\Controllers\Api\v1\SystemVersionController;
+use App\Http\Controllers\Api\v1\TreasuryTransferController;
 use App\Http\Controllers\Api\v1\TreasuryVoucherController;
 use App\Http\Controllers\Api\v1\UnitBlueprintController;
 use App\Http\Controllers\Api\v1\UserController;
@@ -217,6 +218,12 @@ Route::prefix('v1')->group(function () {
                 Route::get('/treasury-vouchers', [TreasuryVoucherController::class, 'index']);
                 Route::get('/treasury-vouchers/{id}', [TreasuryVoucherController::class, 'show']);
                 Route::post('/treasury-vouchers', [TreasuryVoucherController::class, 'store']);
+                Route::get('/treasury-transfers', [TreasuryTransferController::class, 'index']);
+                Route::get('/treasury-transfers/{id}', [TreasuryTransferController::class, 'show']);
+                Route::post('/treasury-transfers', [TreasuryTransferController::class, 'store']);
+                Route::post('/treasury-transfers/{id}/approve', [TreasuryTransferController::class, 'approve']);
+                Route::post('/treasury-transfers/{id}/reject', [TreasuryTransferController::class, 'reject']);
+                Route::post('/treasury-transfers/{id}/cancel', [TreasuryTransferController::class, 'cancel']);
             });
 
             // Procurement

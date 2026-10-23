@@ -26,6 +26,7 @@ use App\Models\Quotation;
 use App\Models\Role;
 use App\Models\SalesOrder;
 use App\Models\StockLot;
+use App\Models\TreasuryTransfer;
 use App\Models\TreasuryVoucher;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -93,8 +94,9 @@ class AppServiceProvider extends ServiceProvider
         // Phase 09: payroll moves wages — same treatment.
         PayrollRun::observe(AuditObserver::class);
 
-        // Phase 08 Wave 2 / TRS-02: vouchers move money.
+        // Phase 08 Wave 2 / TRS-02, TRS-03: vouchers and transfers move money.
         TreasuryVoucher::observe(AuditObserver::class);
+        TreasuryTransfer::observe(AuditObserver::class);
 
         // Phase 07: a quotation is the price the client was promised.
         Quotation::observe(AuditObserver::class);
