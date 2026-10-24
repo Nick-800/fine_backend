@@ -208,7 +208,7 @@ class SystemBootstrapSeeder extends Seeder
                 'Opening treasury cash (bootstrap)',
                 [
                     ['account_code' => self::MAIN_TREASURY_CODE, 'debit' => 1_500_000, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury'],
-                    ['account_code' => self::FX_SAFE_CODE, 'debit' => 250_000 * 5.20, 'operating_unit_id' => $unit->id, 'memo' => 'USD clearing safe at 5.20'],
+                    ['account_code' => self::FX_SAFE_CODE, 'debit' => 250_000 * 5.20, 'operating_unit_id' => $unit->id, 'memo' => 'USD clearing safe at 5.20', 'currency' => 'USD', 'original_amount' => 250_000, 'fx_rate' => 5.20],
                     ['account_code' => '31', 'credit' => $openingValue, 'operating_unit_id' => $unit->id],
                 ],
             );

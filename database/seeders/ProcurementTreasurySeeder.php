@@ -80,7 +80,7 @@ final class ProcurementTreasurySeeder extends Seeder
             'Opening treasury cash (seed)',
             [
                 ['account_code' => '121104', 'debit' => 1500000.00, 'operating_unit_id' => $unit->id, 'memo' => 'LYD treasury'],
-                ['account_code' => '121105', 'debit' => 1300000.00, 'operating_unit_id' => $unit->id, 'memo' => 'USD clearing safe at 5.20'],
+                ['account_code' => '121105', 'debit' => 1300000.00, 'operating_unit_id' => $unit->id, 'memo' => 'USD clearing safe at 5.20', 'currency' => 'USD', 'original_amount' => 250000.00, 'fx_rate' => 5.20],
                 ['account_code' => '31', 'credit' => 2800000.00, 'operating_unit_id' => $unit->id],
             ],
         );
