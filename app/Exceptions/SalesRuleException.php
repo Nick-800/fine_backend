@@ -14,7 +14,10 @@ use Exception;
  */
 final class SalesRuleException extends Exception
 {
-    public function __construct(string $message, public readonly string $errorCode)
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    public function __construct(string $message, public readonly string $errorCode, public readonly array $context = [])
     {
         parent::__construct($message);
     }

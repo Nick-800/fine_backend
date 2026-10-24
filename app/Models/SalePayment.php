@@ -23,15 +23,20 @@ final class SalePayment extends Model
         'sales_order_id',
         'client_id',
         'amount',
+        'tendered_amount',
+        'change_given',
         'method',
         'cash_account_id',
         'received_at',
         'received_by_user_id',
         'journal_entry_id',
+        'cheque_id',
     ];
 
     protected $casts = [
         'amount' => 'decimal:4',
+        'tendered_amount' => 'decimal:4',
+        'change_given' => 'decimal:4',
         'received_at' => 'datetime',
     ];
 
@@ -48,5 +53,10 @@ final class SalePayment extends Model
     public function receivedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'received_by_user_id');
+    }
+
+    public function cheque(): BelongsTo
+    {
+        return $this->belongsTo(Cheque::class);
     }
 }

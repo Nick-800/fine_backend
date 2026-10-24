@@ -401,6 +401,19 @@ stateDiagram-v2
 - **44 (زيادة الخزائن - Cash Overage):** Revenue under `4` (الإيرادات) for recording treasury and POS cash surpluses upon reconciliation or daily close.
 - **625 (عجز الخزائن - Cash Shortage):** Expense under `6` (المصاريف التشغيلية والإدارية) for recording treasury and POS cash deficits upon reconciliation or daily close.
 
+#### POS Daily Close Difference Posting (TRS-06)
+The POS daily close reconciles physically counted cash with expected cash derived from today's cash sales and cash collections. When the discrepancy is material (|counted − expected| ≥ 0.005), an automatic journal entry is posted dated the close date (`sourceType: 'PosDailyClose'`, tagged with the operating unit):
+- Shortage (counted < expected): DR 625 (عجز الخزائن) / CR Drawer Treasury.
+- Surplus (counted > expected): DR Drawer Treasury / CR 44 (زيادة الخزائن).
+
+**Treasury Selection Rule:**
+- Expected cash is calculated as the sum of today's cash payments for the operating unit into the drawer treasury (`cash_account_id`).
+- When `cash_account_id` is omitted: if exactly one cash treasury received payments today, it is auto-selected; if multiple treasuries received payments, `cash_account_id` is required (refusal 422 `CASH_ACCOUNT_REQUIRED` with context listing candidate treasuries); if none received payments and counted is 0, the day closes without posting; if none received payments and counted > 0, `cash_account_id` is required.
+- The close and its journal entry commit in the same transaction. If posting fails (e.g., locked accounting month), the transaction is rolled back and no close record is written.
+
+**Cheque Collections on Receivable Sales:**
+Collecting a receivable sale by cheque receives the customer cheque into portfolio via `ChequeService::receive` (DR 124 / CR Client Receivable, reducing client balance once) without a duplicate collection journal, links `SalePayment.cheque_id`, and excludes cheque payments from expected cash calculations.
+
 ---
 
 ## 8.9 Testing Strategy

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\ChequeStatus;
 use App\Enums\InventoryEventType;
 use App\Enums\SaleFulfillmentStatus;
 use App\Enums\SalesOrderStatus;
@@ -13,6 +14,7 @@ use App\Exceptions\SalesRuleException;
 use App\Models\Account;
 use App\Models\Bundle;
 use App\Models\CashAccount;
+use App\Models\ChequeEvent;
 use App\Models\Client;
 use App\Models\CreditApprovalRequest;
 use App\Models\InventoryItem;
@@ -49,6 +51,7 @@ final class SaleCheckoutService
         private readonly StockIssueService $stockIssueService,
         private readonly DocumentNumberService $documentNumbers,
         private readonly PosDayGuard $posDayGuard,
+        private readonly ChequeService $chequeService,
     ) {}
 
     /**
@@ -98,8 +101,22 @@ final class SaleCheckoutService
             throw new SalesRuleException('A sale to a client must have a total above zero.', 'ZERO_TOTAL');
         }
 
+        $tendered = null;
+        $changeGiven = null;
+        if ($method === 'cash' && array_key_exists('tendered_amount', $data) && $data['tendered_amount'] !== null) {
+            $tendered = round((float) $data['tendered_amount'], 4);
+            if ($tendered < $total - 0.0001) {
+                throw new SalesRuleException(
+                    "Tendered amount {$tendered} is less than sale total {$total}.",
+                    'TENDER_BELOW_TOTAL',
+                    ['total' => $total, 'tendered' => $tendered],
+                );
+            }
+            $changeGiven = round($tendered - $total, 4);
+        }
+
         try {
-            return DB::transaction(function () use ($unit, $data, $seller, $client, $buyerUnit, $method, $cashAccount, $lines, $total, $requestId): SalesOrder {
+            return DB::transaction(function () use ($unit, $data, $seller, $client, $buyerUnit, $method, $cashAccount, $lines, $total, $requestId, $tendered, $changeGiven): SalesOrder {
                 $order = SalesOrder::create([
                     'operating_unit_id' => $unit->id,
                     'order_number' => $this->documentNumbers->next(DocumentNumberService::SALE),
@@ -127,7 +144,7 @@ final class SaleCheckoutService
                     return $this->escalate($order, $client, $total);
                 }
 
-                $this->finalize($order, $data['buyer_warehouse_id'] ?? null, $seller);
+                $this->finalize($order, $data['buyer_warehouse_id'] ?? null, $seller, $tendered, $changeGiven);
 
                 return $this->reload($order);
             });
@@ -190,22 +207,56 @@ final class SaleCheckoutService
     /**
      * Money collected later against a receivable sale (SALE-06): the treasury
      * is debited, the client's receivable credited, and the balance drops.
+     *
+     * @param  array{
+     *     cheque_no?: string|null,
+     *     bank_name?: string|null,
+     *     drawer_name?: string|null,
+     *     due_date?: string|null,
+     *     is_certified?: bool|null,
+     * }|null  $chequeData
      */
-    public function collectPayment(SalesOrder $order, float $amount, string $method, ?string $cashAccountId, User $receivedBy): SalesOrder
-    {
+    public function collectPayment(
+        SalesOrder $order,
+        float $amount,
+        string $method,
+        ?string $cashAccountId,
+        User $receivedBy,
+        ?float $tenderedAmount = null,
+        ?array $chequeData = null,
+    ): SalesOrder {
         if ($amount <= 0) {
             throw new SalesRuleException('A payment must be greater than zero.', 'INVALID_AMOUNT');
         }
 
-        if (! in_array($method, ['cash', 'bank'], true)) {
-            throw new SalesRuleException('A collection is received in cash or by bank.', 'PAYMENT_METHOD_REQUIRED');
+        if (! in_array($method, ['cash', 'bank', 'cheque'], true)) {
+            throw new SalesRuleException('A collection is received in cash, by bank, or by cheque.', 'PAYMENT_METHOD_REQUIRED');
+        }
+
+        if ($method === 'cheque' && empty($chequeData)) {
+            throw new SalesRuleException('Cheque details are required for a cheque payment.', 'CHEQUE_DETAILS_REQUIRED');
         }
 
         $this->posDayGuard->ensureOpen($order->operatingUnit()->firstOrFail());
 
-        $cashAccount = $this->resolveTreasury($cashAccountId, $method);
+        $cashAccount = in_array($method, ['cash', 'bank'], true)
+            ? $this->resolveTreasury($cashAccountId, $method)
+            : null;
 
-        return DB::transaction(function () use ($order, $amount, $method, $cashAccount, $receivedBy): SalesOrder {
+        $changeGiven = null;
+        if ($method === 'cash' && $tenderedAmount !== null) {
+            $tendered = round($tenderedAmount, 4);
+            if ($tendered < $amount - 0.0001) {
+                throw new SalesRuleException(
+                    "Tendered amount {$tendered} is less than payment amount {$amount}.",
+                    'TENDER_BELOW_TOTAL',
+                    ['total' => $amount, 'amount' => $amount, 'tendered' => $tendered],
+                );
+            }
+            $changeGiven = round($tendered - $amount, 4);
+        }
+
+        return DB::transaction(function () use ($order, $amount, $method, $cashAccount, $receivedBy, $tenderedAmount, $changeGiven, $chequeData): SalesOrder {
             $locked = SalesOrder::whereKey($order->getKey())->lockForUpdate()->firstOrFail();
 
             if (! $locked->isReceivable() || ! $locked->status->isSold()) {
@@ -223,27 +274,68 @@ final class SaleCheckoutService
                 );
             }
 
-            $client = Client::with('account')->whereKey($locked->client_id)->lockForUpdate()->first();
+            if ($method === 'cheque') {
+                $cheque = $this->chequeService->receive([
+                    'direction' => 'incoming',
+                    'client_id' => $locked->client_id,
+                    'operating_unit_id' => $locked->operating_unit_id,
+                    'company_id' => $locked->operatingUnit?->company_id,
+                    'amount' => $amount,
+                    'currency' => 'LYD',
+                    'cheque_no' => $chequeData['cheque_no'] ?? '',
+                    'bank_name' => $chequeData['bank_name'] ?? '',
+                    'drawer_name' => $chequeData['drawer_name'] ?? null,
+                    'due_date' => $chequeData['due_date'] ?? null,
+                    'is_certified' => (bool) ($chequeData['is_certified'] ?? false),
+                ], $receivedBy);
 
-            if ($client !== null) {
-                $client->current_balance = round((float) $client->current_balance - $amount, 4);
-                $client->save();
+                $journalEntryId = ChequeEvent::where('cheque_id', $cheque->id)
+                    ->where('to_status', ChequeStatus::InPortfolio)
+                    ->value('journal_entry_id');
+
+                $this->recordPayment(
+                    $locked,
+                    $amount,
+                    'cheque',
+                    null,
+                    $receivedBy,
+                    $journalEntryId,
+                    tenderedAmount: null,
+                    changeGiven: null,
+                    chequeId: $cheque->id,
+                );
+            } else {
+                $client = Client::with('account')->whereKey($locked->client_id)->lockForUpdate()->first();
+
+                if ($client !== null) {
+                    $client->current_balance = round((float) $client->current_balance - $amount, 4);
+                    $client->save();
+                }
+
+                $receivableCode = SalesAccounts::receivableFor($client);
+
+                $entry = $this->accountingService->postJournal(
+                    "Collection on sale {$locked->order_number}",
+                    [
+                        ['account_code' => SalesAccounts::treasuryFor($cashAccount), 'debit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
+                        ['account_code' => $receivableCode, 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id, 'client_id' => $this->partyFor($client, $receivableCode)],
+                    ],
+                    'SalesOrder',
+                    $locked->id,
+                    $locked->operatingUnit?->company_id,
+                );
+
+                $this->recordPayment(
+                    $locked,
+                    $amount,
+                    $method,
+                    $cashAccount,
+                    $receivedBy,
+                    $entry->id,
+                    tenderedAmount: $tenderedAmount,
+                    changeGiven: $changeGiven,
+                );
             }
-
-            $receivableCode = SalesAccounts::receivableFor($client);
-
-            $entry = $this->accountingService->postJournal(
-                "Collection on sale {$locked->order_number}",
-                [
-                    ['account_code' => SalesAccounts::treasuryFor($cashAccount), 'debit' => $amount, 'operating_unit_id' => $locked->operating_unit_id],
-                    ['account_code' => $receivableCode, 'credit' => $amount, 'operating_unit_id' => $locked->operating_unit_id, 'client_id' => $this->partyFor($client, $receivableCode)],
-                ],
-                'SalesOrder',
-                $locked->id,
-                $locked->operatingUnit?->company_id,
-            );
-
-            $this->recordPayment($locked, $amount, $method, $cashAccount, $receivedBy, $entry->id);
 
             $locked->amount_paid = round((float) $locked->amount_paid + $amount, 4);
             $locked->status = $this->settledStatus($locked);
@@ -268,8 +360,13 @@ final class SaleCheckoutService
     /**
      * Move the stock and post the books for a sale that is allowed to happen.
      */
-    private function finalize(SalesOrder $order, ?string $buyerWarehouseId, User $actor): void
-    {
+    private function finalize(
+        SalesOrder $order,
+        ?string $buyerWarehouseId,
+        User $actor,
+        ?float $tenderedAmount = null,
+        ?float $changeGiven = null,
+    ): void {
         $isInternal = $order->isInternal();
         $totalCost = 0.0;
         $costByAccount = [];
@@ -384,7 +481,16 @@ final class SaleCheckoutService
             }
             $order->amount_paid = 0;
         } else {
-            $this->recordPayment($order, $total, $order->payment_method, $cashAccount, $actor, $entry->id);
+            $this->recordPayment(
+                $order,
+                $total,
+                $order->payment_method,
+                $cashAccount,
+                $actor,
+                $entry->id,
+                $tenderedAmount,
+                $changeGiven,
+            );
             $order->amount_paid = $total;
         }
 
@@ -454,9 +560,18 @@ final class SaleCheckoutService
         return $paid && $delivered ? SalesOrderStatus::Completed : SalesOrderStatus::Open;
     }
 
-    private function recordPayment(SalesOrder $order, float $amount, string $method, ?CashAccount $cashAccount, User $receivedBy, ?string $journalEntryId): void
-    {
-        SalePayment::create([
+    private function recordPayment(
+        SalesOrder $order,
+        float $amount,
+        string $method,
+        ?CashAccount $cashAccount,
+        User $receivedBy,
+        ?string $journalEntryId,
+        ?float $tenderedAmount = null,
+        ?float $changeGiven = null,
+        ?string $chequeId = null,
+    ): SalePayment {
+        return SalePayment::create([
             'operating_unit_id' => $order->operating_unit_id,
             'sales_order_id' => $order->id,
             'client_id' => $order->client_id,
@@ -466,6 +581,9 @@ final class SaleCheckoutService
             'received_at' => now(),
             'received_by_user_id' => $receivedBy->id,
             'journal_entry_id' => $journalEntryId,
+            'tendered_amount' => $tenderedAmount !== null ? round($tenderedAmount, 4) : null,
+            'change_given' => $changeGiven !== null ? round($changeGiven, 4) : null,
+            'cheque_id' => $chequeId,
         ]);
     }
 
@@ -666,6 +784,9 @@ final class SaleCheckoutService
             'buyerUnit',
             'cashAccount',
             'creditApprovalRequest',
+            'payments.cashAccount',
+            'payments.cheque',
+            'payments.receivedBy:id,name',
         ]);
     }
 }

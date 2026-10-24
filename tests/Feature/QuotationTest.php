@@ -13,6 +13,7 @@ use App\Models\JournalEntry;
 use App\Models\OperatingUnit;
 use App\Models\Quotation;
 use App\Models\Role;
+use App\Models\SalePayment;
 use App\Models\SalesOrder;
 use App\Models\StockLot;
 use App\Models\UnitBlueprint;
@@ -178,4 +179,22 @@ test('a cancelled quotation cannot be converted', function () {
     ($this->api)()->postJson("/api/v1/quotations/{$quotation['id']}/convert", [
         'payment_method' => 'cash', 'cash_account_id' => $this->drawer->id,
     ])->assertUnprocessable()->assertJsonPath('code', 'QUOTATION_NOT_OPEN');
+});
+
+test('converting with cash keeps the tendered amount and change', function () {
+    $quotation = ($this->quote)()->json();
+
+    $sale = ($this->api)()->postJson("/api/v1/quotations/{$quotation['id']}/convert", [
+        'payment_method' => 'cash',
+        'cash_account_id' => $this->drawer->id,
+        'tendered_amount' => 2500,
+        'lines' => [
+            ['inventory_item_id' => $this->pillow->id, 'quantity' => 4, 'unit_price' => 30],
+            ['line_type' => 'bundle', 'bundle_id' => $this->sofa->id, 'quantity' => 1, 'unit_price' => 2200],
+        ],
+    ])->assertCreated()->json();
+
+    $payment = SalePayment::where('sales_order_id', $sale['id'])->sole();
+    expect((float) $payment->tendered_amount)->toBe(2500.0)
+        ->and((float) $payment->change_given)->toBe(180.0);
 });

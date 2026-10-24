@@ -73,6 +73,7 @@ final class SaleController extends Controller
             'buyer_warehouse_id' => ['nullable', 'uuid', 'exists:warehouses,id'],
             'payment_method' => ['nullable', Rule::in(['cash', 'bank', 'receivable'])],
             'cash_account_id' => ['nullable', 'uuid'],
+            'tendered_amount' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.line_type' => ['nullable', Rule::in(['item', 'bundle'])],
@@ -114,6 +115,7 @@ final class SaleController extends Controller
                 'buyerUnit',
                 'cashAccount',
                 'payments.cashAccount',
+                'payments.cheque',
                 'payments.receivedBy:id,name',
                 'soldBy:id,name',
                 'creditApprovalRequest.decidedBy:id,name',
@@ -128,8 +130,15 @@ final class SaleController extends Controller
     {
         $validated = $request->validate([
             'amount' => ['required', 'numeric', 'gt:0'],
-            'method' => ['required', Rule::in(['cash', 'bank'])],
-            'cash_account_id' => ['required', 'uuid'],
+            'method' => ['required', Rule::in(['cash', 'bank', 'cheque'])],
+            'cash_account_id' => [Rule::requiredIf(fn () => in_array($request->input('method'), ['cash', 'bank'], true)), 'nullable', 'uuid'],
+            'tendered_amount' => ['nullable', 'numeric', 'min:0'],
+            'cheque' => [Rule::requiredIf(fn () => $request->input('method') === 'cheque'), 'array'],
+            'cheque.cheque_no' => [Rule::requiredIf(fn () => $request->input('method') === 'cheque'), 'string'],
+            'cheque.bank_name' => [Rule::requiredIf(fn () => $request->input('method') === 'cheque'), 'string'],
+            'cheque.drawer_name' => ['nullable', 'string'],
+            'cheque.due_date' => [Rule::requiredIf(fn () => $request->input('method') === 'cheque'), 'date'],
+            'cheque.is_certified' => ['nullable', 'boolean'],
         ]);
 
         $sale = SalesOrder::findOrFail($id);
@@ -138,8 +147,10 @@ final class SaleController extends Controller
             $sale,
             (float) $validated['amount'],
             $validated['method'],
-            $validated['cash_account_id'],
+            $validated['cash_account_id'] ?? null,
             $request->user(),
+            isset($validated['tendered_amount']) ? (float) $validated['tendered_amount'] : null,
+            $validated['cheque'] ?? null,
         ));
     }
 

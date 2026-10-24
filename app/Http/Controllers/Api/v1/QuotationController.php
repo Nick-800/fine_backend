@@ -138,6 +138,7 @@ final class QuotationController extends Controller
             'client_request_id' => ['nullable', 'uuid'],
             'payment_method' => ['required', Rule::in(['cash', 'bank', 'receivable'])],
             'cash_account_id' => ['nullable', 'uuid'],
+            'tendered_amount' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
             ...$this->lineRules(required: false),
         ]);
@@ -168,6 +169,7 @@ final class QuotationController extends Controller
                 'client_id' => $quotation->client_id,
                 'payment_method' => $validated['payment_method'],
                 'cash_account_id' => $validated['cash_account_id'] ?? null,
+                'tendered_amount' => $validated['tendered_amount'] ?? null,
                 'client_request_id' => $validated['client_request_id'] ?? null,
                 'quotation_id' => $quotation->id,
                 'notes' => $validated['notes'] ?? $quotation->notes,

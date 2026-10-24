@@ -15,6 +15,7 @@ final class PosDailyClose extends Model
     use BelongsToOperatingUnit, HasFactory, HasUuids;
 
     protected $fillable = [
+        'id',
         'operating_unit_id',
         'close_date',
         'expected_cash',
@@ -24,6 +25,8 @@ final class PosDailyClose extends Model
         'total_sales',
         'notes',
         'closed_by_user_id',
+        'cash_account_id',
+        'journal_entry_id',
     ];
 
     protected $casts = [
@@ -43,5 +46,15 @@ final class PosDailyClose extends Model
     public function closedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'closed_by_user_id');
+    }
+
+    public function cashAccount(): BelongsTo
+    {
+        return $this->belongsTo(CashAccount::class);
+    }
+
+    public function journalEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class);
     }
 }
