@@ -25,8 +25,10 @@ use App\Models\SalesOrderLine;
 use App\Models\User;
 use App\Support\ReceivableAccounts;
 use App\Support\SalesAccounts;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 /**
  * The POS is the one place a sale happens (SALE-04). A checkout is atomic:
@@ -44,7 +46,7 @@ use Illuminate\Support\Facades\DB;
  */
 final class SaleCheckoutService
 {
-    private const METHODS = ['cash', 'bank', 'receivable'];
+    private const METHODS = ['cash', 'bank', 'receivable', 'split'];
 
     public function __construct(
         private readonly AccountingService $accountingService,
@@ -53,6 +55,36 @@ final class SaleCheckoutService
         private readonly PosDayGuard $posDayGuard,
         private readonly ChequeService $chequeService,
     ) {}
+
+    /**
+     * Shared validation rules for split checkout payments (FR-INV-024).
+     *
+     * @return array<string, array<int, mixed>|ValidationRule>
+     */
+    public static function splitPaymentRules(): array
+    {
+        return [
+            'payments' => [
+                'required_if:payment_method,split',
+                'nullable',
+                'array',
+                Rule::when(
+                    fn ($input) => ($input['payment_method'] ?? null) === 'split',
+                    ['min:2', 'max:4'],
+                ),
+            ],
+            'payments.*.method' => ['required_if:payment_method,split', Rule::in(['cash', 'bank', 'cheque'])],
+            'payments.*.amount' => ['required_if:payment_method,split', 'numeric', 'gt:0'],
+            'payments.*.cash_account_id' => ['required_if:payments.*.method,cash,bank', 'nullable', 'uuid'],
+            'payments.*.tendered_amount' => ['nullable', 'numeric', 'min:0', 'prohibited_unless:payments.*.method,cash'],
+            'payments.*.cheque' => ['required_if:payments.*.method,cheque', 'prohibited_unless:payments.*.method,cheque', 'array'],
+            'payments.*.cheque.cheque_no' => ['required_if:payments.*.method,cheque', 'string'],
+            'payments.*.cheque.bank_name' => ['required_if:payments.*.method,cheque', 'string'],
+            'payments.*.cheque.drawer_name' => ['nullable', 'string'],
+            'payments.*.cheque.due_date' => ['required_if:payments.*.method,cheque', 'date'],
+            'payments.*.cheque.is_certified' => ['nullable', 'boolean'],
+        ];
+    }
 
     /**
      * @param  array{
@@ -88,6 +120,15 @@ final class SaleCheckoutService
 
         $this->posDayGuard->ensureOpen($unit);
 
+        if (($data['payment_method'] ?? null) === 'split') {
+            if (! empty($data['buyer_unit_id'])) {
+                throw new SalesRuleException('Internal transfers cannot be split.', 'SPLIT_NOT_ALLOWED');
+            }
+            if (empty($data['client_id'])) {
+                throw new SalesRuleException('A registered client is required for a split payment.', 'CLIENT_REQUIRED');
+            }
+        }
+
         [$client, $buyerUnit] = $this->resolveBuyer($unit, $data);
         $method = $client !== null ? $this->resolveMethod($client, $data['payment_method'] ?? null) : null;
         $cashAccount = in_array($method, ['cash', 'bank'], true)
@@ -115,8 +156,13 @@ final class SaleCheckoutService
             $changeGiven = round($tendered - $total, 4);
         }
 
+        $splitPayments = null;
+        if ($method === 'split') {
+            $splitPayments = $this->resolveSplitPayments($data['payments'] ?? [], $total);
+        }
+
         try {
-            return DB::transaction(function () use ($unit, $data, $seller, $client, $buyerUnit, $method, $cashAccount, $lines, $total, $requestId, $tendered, $changeGiven): SalesOrder {
+            return DB::transaction(function () use ($unit, $data, $seller, $client, $buyerUnit, $method, $cashAccount, $lines, $total, $requestId, $tendered, $changeGiven, $splitPayments): SalesOrder {
                 $order = SalesOrder::create([
                     'operating_unit_id' => $unit->id,
                     'order_number' => $this->documentNumbers->next(DocumentNumberService::SALE),
@@ -144,7 +190,7 @@ final class SaleCheckoutService
                     return $this->escalate($order, $client, $total);
                 }
 
-                $this->finalize($order, $data['buyer_warehouse_id'] ?? null, $seller, $tendered, $changeGiven);
+                $this->finalize($order, $data['buyer_warehouse_id'] ?? null, $seller, $tendered, $changeGiven, $splitPayments);
 
                 return $this->reload($order);
             });
@@ -275,35 +321,7 @@ final class SaleCheckoutService
             }
 
             if ($method === 'cheque') {
-                $cheque = $this->chequeService->receive([
-                    'direction' => 'incoming',
-                    'client_id' => $locked->client_id,
-                    'operating_unit_id' => $locked->operating_unit_id,
-                    'company_id' => $locked->operatingUnit?->company_id,
-                    'amount' => $amount,
-                    'currency' => 'LYD',
-                    'cheque_no' => $chequeData['cheque_no'] ?? '',
-                    'bank_name' => $chequeData['bank_name'] ?? '',
-                    'drawer_name' => $chequeData['drawer_name'] ?? null,
-                    'due_date' => $chequeData['due_date'] ?? null,
-                    'is_certified' => (bool) ($chequeData['is_certified'] ?? false),
-                ], $receivedBy);
-
-                $journalEntryId = ChequeEvent::where('cheque_id', $cheque->id)
-                    ->where('to_status', ChequeStatus::InPortfolio)
-                    ->value('journal_entry_id');
-
-                $this->recordPayment(
-                    $locked,
-                    $amount,
-                    'cheque',
-                    null,
-                    $receivedBy,
-                    $journalEntryId,
-                    tenderedAmount: null,
-                    changeGiven: null,
-                    chequeId: $cheque->id,
-                );
+                $this->collectChequePayment($locked, $amount, $chequeData ?? [], $receivedBy);
             } else {
                 $client = Client::with('account')->whereKey($locked->client_id)->lockForUpdate()->first();
 
@@ -358,7 +376,151 @@ final class SaleCheckoutService
     }
 
     /**
+     * FR-INV-024 / TRS-05: Receive a customer cheque against a sale and record its payment.
+     *
+     * @param  array{
+     *     cheque_no?: string|null,
+     *     bank_name?: string|null,
+     *     drawer_name?: string|null,
+     *     due_date?: string|null,
+     *     is_certified?: bool|null,
+     * }  $chequeData
+     */
+    private function collectChequePayment(
+        SalesOrder $order,
+        float $amount,
+        array $chequeData,
+        User $receivedBy,
+    ): SalePayment {
+        $cheque = $this->chequeService->receive([
+            'direction' => 'incoming',
+            'client_id' => $order->client_id,
+            'operating_unit_id' => $order->operating_unit_id,
+            'company_id' => $order->operatingUnit?->company_id,
+            'amount' => $amount,
+            'currency' => 'LYD',
+            'cheque_no' => $chequeData['cheque_no'] ?? '',
+            'bank_name' => $chequeData['bank_name'] ?? '',
+            'drawer_name' => $chequeData['drawer_name'] ?? null,
+            'due_date' => $chequeData['due_date'] ?? null,
+            'is_certified' => (bool) ($chequeData['is_certified'] ?? false),
+        ], $receivedBy);
+
+        $journalEntryId = ChequeEvent::where('cheque_id', $cheque->id)
+            ->where('to_status', ChequeStatus::InPortfolio)
+            ->value('journal_entry_id');
+
+        return $this->recordPayment(
+            $order,
+            $amount,
+            'cheque',
+            null,
+            $receivedBy,
+            $journalEntryId,
+            tenderedAmount: null,
+            changeGiven: null,
+            chequeId: $cheque->id,
+        );
+    }
+
+    /**
+     * FR-INV-024: Validate and prepare payment portions for a split sale.
+     *
+     * @param  array<int, array<string, mixed>>  $payments
+     * @return array<int, array{
+     *     method: string,
+     *     amount: float,
+     *     cashAccount: CashAccount|null,
+     *     tendered_amount: float|null,
+     *     change_given: float|null,
+     *     cheque: array{cheque_no?: string|null, bank_name?: string|null, drawer_name?: string|null, due_date?: string|null, is_certified?: bool|null}|null,
+     * }>
+     */
+    private function resolveSplitPayments(array $payments, float $total): array
+    {
+        $paymentsCount = count($payments);
+        if ($paymentsCount < 2 || $paymentsCount > 4) {
+            throw new SalesRuleException('A split payment requires between 2 and 4 payment portions.', 'SPLIT_PORTIONS_INVALID');
+        }
+
+        $cashCount = 0;
+        $paidTotal = 0.0;
+        $resolved = [];
+
+        foreach ($payments as $portion) {
+            $portionMethod = $portion['method'] ?? null;
+            if (! in_array($portionMethod, ['cash', 'bank', 'cheque'], true)) {
+                throw new SalesRuleException('A split payment portion must be cash, bank, or cheque.', 'PAYMENT_METHOD_REQUIRED');
+            }
+
+            $portionAmount = round((float) ($portion['amount'] ?? 0), 4);
+            if ($portionAmount <= 0) {
+                throw new SalesRuleException('Every payment portion must be greater than zero.', 'INVALID_AMOUNT');
+            }
+            $paidTotal = round($paidTotal + $portionAmount, 4);
+
+            $portionCashAccount = null;
+            $portionTendered = null;
+            $portionChange = null;
+
+            if ($portionMethod === 'cash') {
+                $cashCount++;
+                if ($cashCount > 1) {
+                    throw new SalesRuleException('A split sale can have at most one cash portion.', 'SPLIT_MULTIPLE_CASH');
+                }
+                $portionCashAccount = $this->resolveTreasury($portion['cash_account_id'] ?? null, 'cash');
+
+                if (array_key_exists('tendered_amount', $portion) && $portion['tendered_amount'] !== null) {
+                    $portionTendered = round((float) $portion['tendered_amount'], 4);
+                    if ($portionTendered < $portionAmount - 0.0001) {
+                        throw new SalesRuleException(
+                            "Tendered amount {$portionTendered} is less than payment amount {$portionAmount}.",
+                            'TENDER_BELOW_TOTAL',
+                            ['total' => $portionAmount, 'tendered' => $portionTendered],
+                        );
+                    }
+                    $portionChange = round($portionTendered - $portionAmount, 4);
+                }
+            } elseif ($portionMethod === 'bank') {
+                $portionCashAccount = $this->resolveTreasury($portion['cash_account_id'] ?? null, 'bank');
+            } elseif ($portionMethod === 'cheque') {
+                if (empty($portion['cheque']) || ! is_array($portion['cheque'])) {
+                    throw new SalesRuleException('Cheque details are required for a cheque payment.', 'CHEQUE_DETAILS_REQUIRED');
+                }
+            }
+
+            $resolved[] = [
+                'method' => $portionMethod,
+                'amount' => $portionAmount,
+                'cashAccount' => $portionCashAccount,
+                'tendered_amount' => $portionTendered,
+                'change_given' => $portionChange,
+                'cheque' => $portion['cheque'] ?? null,
+            ];
+        }
+
+        if (abs($paidTotal - $total) > 0.005) {
+            throw new SalesRuleException(
+                "Payment portions sum to {$paidTotal}, but sale total is {$total}.",
+                'SPLIT_TOTAL_MISMATCH',
+                ['total' => $total, 'paid' => $paidTotal],
+            );
+        }
+
+        return $resolved;
+    }
+
+    /**
      * Move the stock and post the books for a sale that is allowed to happen.
+     *
+     * @param  array<int, array{
+     *     method: string,
+     *     amount: float,
+     *     cashAccount: CashAccount|null,
+     *     tendered_amount: float|null,
+     *     change_given: float|null,
+     *     cheque: array{cheque_no?: string|null, bank_name?: string|null, drawer_name?: string|null, due_date?: string|null, is_certified?: bool|null}|null,
+     * }>|null  $splitPayments
      */
     private function finalize(
         SalesOrder $order,
@@ -366,6 +528,7 @@ final class SaleCheckoutService
         User $actor,
         ?float $tenderedAmount = null,
         ?float $changeGiven = null,
+        ?array $splitPayments = null,
     ): void {
         $isInternal = $order->isInternal();
         $totalCost = 0.0;
@@ -442,22 +605,55 @@ final class SaleCheckoutService
         $total = (float) $order->total_amount;
         $cashAccount = $order->cash_account_id !== null ? CashAccount::with('account')->find($order->cash_account_id) : null;
 
-        $debitAccount = $order->isReceivable()
-            ? SalesAccounts::receivableFor($client)
-            : SalesAccounts::treasuryFor($cashAccount);
-
         // Money (or the promise of it) against revenue, cost out of stock —
-        // one balanced entry (SALE-07).
-        $journalLines = [
-            [
-                'account_code' => $debitAccount,
-                'debit' => $total,
+        // one balanced entry (SALE-07, FR-INV-024).
+        if ($order->payment_method === 'split') {
+            $journalLines = [];
+            $chequeTotal = 0.0;
+
+            foreach ($splitPayments ?? [] as $payment) {
+                if (in_array($payment['method'], ['cash', 'bank'], true)) {
+                    $journalLines[] = [
+                        'account_code' => SalesAccounts::treasuryFor($payment['cashAccount']),
+                        'debit' => $payment['amount'],
+                        'operating_unit_id' => $order->operating_unit_id,
+                    ];
+                } elseif ($payment['method'] === 'cheque') {
+                    $chequeTotal = round($chequeTotal + $payment['amount'], 4);
+                }
+            }
+
+            if ($chequeTotal > 0) {
+                $receivableCode = SalesAccounts::receivableFor($client);
+                $journalLines[] = [
+                    'account_code' => $receivableCode,
+                    'debit' => $chequeTotal,
+                    'operating_unit_id' => $order->operating_unit_id,
+                    'client_id' => $this->partyFor($client, $receivableCode),
+                ];
+            }
+
+            $journalLines[] = [
+                'account_code' => SalesAccounts::revenueFor($order->operatingUnit()->with('revenueAccount')->first()),
+                'credit' => $total,
                 'operating_unit_id' => $order->operating_unit_id,
-                // Only the receivable is a client's account; a cash sale debits the treasury.
-                'client_id' => $order->isReceivable() ? $this->partyFor($client, $debitAccount) : null,
-            ],
-            ['account_code' => SalesAccounts::revenueFor($order->operatingUnit()->with('revenueAccount')->first()), 'credit' => $total, 'operating_unit_id' => $order->operating_unit_id],
-        ];
+            ];
+        } else {
+            $debitAccount = $order->isReceivable()
+                ? SalesAccounts::receivableFor($client)
+                : SalesAccounts::treasuryFor($cashAccount);
+
+            $journalLines = [
+                [
+                    'account_code' => $debitAccount,
+                    'debit' => $total,
+                    'operating_unit_id' => $order->operating_unit_id,
+                    // Only the receivable is a client's account; a cash sale debits the treasury.
+                    'client_id' => $order->isReceivable() ? $this->partyFor($client, $debitAccount) : null,
+                ],
+                ['account_code' => SalesAccounts::revenueFor($order->operatingUnit()->with('revenueAccount')->first()), 'credit' => $total, 'operating_unit_id' => $order->operating_unit_id],
+            ];
+        }
 
         if ($totalCost > 0) {
             $journalLines[] = ['account_code' => SalesAccounts::COGS, 'debit' => round($totalCost, 4), 'operating_unit_id' => $order->operating_unit_id];
@@ -474,7 +670,31 @@ final class SaleCheckoutService
             $order->operatingUnit?->company_id,
         );
 
-        if ($order->isReceivable()) {
+        if ($order->payment_method === 'split') {
+            if ($chequeTotal > 0 && $client !== null) {
+                $client->current_balance = round((float) $client->current_balance + $chequeTotal, 4);
+                $client->save();
+            }
+
+            foreach ($splitPayments ?? [] as $payment) {
+                if ($payment['method'] === 'cheque') {
+                    $this->collectChequePayment($order, $payment['amount'], $payment['cheque'] ?? [], $actor);
+                } else {
+                    $this->recordPayment(
+                        $order,
+                        $payment['amount'],
+                        $payment['method'],
+                        $payment['cashAccount'],
+                        $actor,
+                        $entry->id,
+                        $payment['tendered_amount'] ?? null,
+                        $payment['change_given'] ?? null,
+                    );
+                }
+            }
+
+            $order->amount_paid = $total;
+        } elseif ($order->isReceivable()) {
             if ($client !== null) {
                 $client->current_balance = round((float) $client->current_balance + $total, 4);
                 $client->save();

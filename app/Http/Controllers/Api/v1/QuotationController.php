@@ -136,10 +136,11 @@ final class QuotationController extends Controller
     {
         $validated = $request->validate([
             'client_request_id' => ['nullable', 'uuid'],
-            'payment_method' => ['required', Rule::in(['cash', 'bank', 'receivable'])],
+            'payment_method' => ['required', Rule::in(['cash', 'bank', 'receivable', 'split'])],
             'cash_account_id' => ['nullable', 'uuid'],
             'tendered_amount' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
+            ...SaleCheckoutService::splitPaymentRules(),
             ...$this->lineRules(required: false),
         ]);
 
@@ -149,7 +150,16 @@ final class QuotationController extends Controller
         if ($quotation->status === Quotation::STATUS_CONVERTED
             && ($validated['client_request_id'] ?? null) !== null
             && ($sale = SalesOrder::find($quotation->converted_sales_order_id))?->client_request_id === $validated['client_request_id']) {
-            return response()->json($sale->load(['lines.inventoryItem', 'lines.bundle', 'client.entity', 'cashAccount', 'creditApprovalRequest']));
+            return response()->json($sale->load([
+                'lines.inventoryItem',
+                'lines.bundle',
+                'client.entity',
+                'cashAccount',
+                'creditApprovalRequest',
+                'payments.cashAccount',
+                'payments.cheque',
+                'payments.receivedBy:id,name',
+            ]));
         }
 
         if ($quotation->status !== Quotation::STATUS_OPEN) {
@@ -174,6 +184,7 @@ final class QuotationController extends Controller
                 'quotation_id' => $quotation->id,
                 'notes' => $validated['notes'] ?? $quotation->notes,
                 'lines' => $lines,
+                'payments' => $validated['payments'] ?? null,
             ], $request->user());
 
             $quotation->update([

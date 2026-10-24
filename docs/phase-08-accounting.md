@@ -124,6 +124,15 @@ DR  Cost of Goods Sold
 CR  Finished Goods Inventory — Store
 ```
 
+#### Split Payment (FR-INV-024)
+At POS counter checkout, sales can be settled via multiple payment portions (2–4 portions across `cash`, `bank`, and `cheque`). Split payment posts one atomic sale entry:
+- DR each cash/bank treasury account for its portion
+- DR client receivable for the sum of cheque portions
+- CR sales revenue for the sale total
+- DR COGS / CR inventory at cost
+
+In the same transaction, each cheque portion immediately calls `ChequeService::receive`, issuing an in-portfolio cheque (`DR 124 / CR client receivable`) and reducing client balance, leaving the net client balance unchanged. A `SalePayment` is recorded for each portion: cash/bank portions link to the sale entry, while cheque portions link to the cheque's portfolio entry.
+
 ### Event: PaymentRequest.Paid
 ```
 // If realized rate differs from booked:

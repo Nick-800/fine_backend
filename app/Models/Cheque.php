@@ -56,6 +56,18 @@ final class Cheque extends Model
         'record_version',
     ];
 
+    /**
+     * @var list<string>
+     */
+    protected $appends = [
+        'number',
+    ];
+
+    public function getNumberAttribute(): ?string
+    {
+        return $this->cheque_number_internal;
+    }
+
     protected function casts(): array
     {
         return [
