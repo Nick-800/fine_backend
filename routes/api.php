@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\v1\FiscalYearController;
 use App\Http\Controllers\Api\v1\FixedAssetController;
 use App\Http\Controllers\Api\v1\FxRateController;
 use App\Http\Controllers\Api\v1\GoodsReceiptController;
+use App\Http\Controllers\Api\v1\HeldCartController;
 use App\Http\Controllers\Api\v1\InternalRestockController;
 use App\Http\Controllers\Api\v1\InventoryItemController;
 use App\Http\Controllers\Api\v1\InventoryMovementController;
@@ -349,6 +350,9 @@ Route::prefix('v1')->group(function () {
                 Route::get('/pos/daily-report', [PosController::class, 'dailyReport']);
                 Route::get('/pos/daily-close', [PosController::class, 'showDailyClose']);
                 Route::post('/pos/daily-close', [PosController::class, 'dailyClose']);
+                Route::get('/held-carts', [HeldCartController::class, 'index']);
+                Route::post('/held-carts', [HeldCartController::class, 'store']);
+                Route::delete('/held-carts/{id}', [HeldCartController::class, 'destroy'])->whereUuid('id');
             });
 
             // Credit decisions — managers only; a cashier cannot approve their own over-limit sale.
