@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\v1\AttendanceController;
 use App\Http\Controllers\Api\v1\AuditLogController;
 use App\Http\Controllers\Api\v1\AuthController;
 use App\Http\Controllers\Api\v1\BankHoldController;
+use App\Http\Controllers\Api\v1\BankReconciliationController;
 use App\Http\Controllers\Api\v1\BundleController;
 use App\Http\Controllers\Api\v1\CashAccountController;
 use App\Http\Controllers\Api\v1\ClientController;
@@ -224,6 +225,12 @@ Route::prefix('v1')->group(function () {
                 Route::post('/treasury-transfers/{id}/approve', [TreasuryTransferController::class, 'approve']);
                 Route::post('/treasury-transfers/{id}/reject', [TreasuryTransferController::class, 'reject']);
                 Route::post('/treasury-transfers/{id}/cancel', [TreasuryTransferController::class, 'cancel']);
+                Route::get('/bank-reconciliations', [BankReconciliationController::class, 'index']);
+                Route::post('/bank-reconciliations', [BankReconciliationController::class, 'store']);
+                Route::get('/bank-reconciliations/{id}', [BankReconciliationController::class, 'show']);
+                Route::post('/bank-reconciliations/{id}/lines', [BankReconciliationController::class, 'toggleLines']);
+                Route::post('/bank-reconciliations/{id}/finish', [BankReconciliationController::class, 'finish']);
+                Route::delete('/bank-reconciliations/{id}', [BankReconciliationController::class, 'destroy']);
             });
 
             // Procurement

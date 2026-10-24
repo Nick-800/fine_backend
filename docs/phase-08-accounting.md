@@ -348,6 +348,7 @@ Cost centers were decided out on 2026-10-20: operating units on `journal_lines.o
 | TRS-06 | The POS daily close posts its cash difference to 625 (shortage) / 44 (surplus) | Daily POS till closing posts cash discrepancy to 625 (عجز الخزائن) for shortages, or 44 (زيادة الخزائن) for surpluses. |
 
 Transfer flow: Draft -> Approved | Rejected | Cancelled. Approval posts DR to-treasury / CR from-treasury on live balance check; draft, rejection, and cancellation post nothing.
+Reconciliation flow: Draft -> Finished. Clears candidate posted lines on a bank treasury up to statement date; finishes strictly at zero difference (|diff| < 0.005) with opening balance chaining from the prior finished statement.
 
 #### New Treasury Accounts (Wave 2)
 - **125 (شيكات برسم التحصيل - Cheques under Collection):** Asset under `12` (الأصول المتداولة) for holding received customer cheques awaiting bank deposit or clearance.

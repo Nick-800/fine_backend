@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\Account;
+use App\Models\BankReconciliation;
 use App\Models\Bundle;
 use App\Models\BundleItem;
 use App\Models\Client;
@@ -94,9 +95,10 @@ class AppServiceProvider extends ServiceProvider
         // Phase 09: payroll moves wages — same treatment.
         PayrollRun::observe(AuditObserver::class);
 
-        // Phase 08 Wave 2 / TRS-02, TRS-03: vouchers and transfers move money.
+        // Phase 08 Wave 2 / TRS-02, TRS-03, TRS-04: vouchers, transfers, and bank reconciliations.
         TreasuryVoucher::observe(AuditObserver::class);
         TreasuryTransfer::observe(AuditObserver::class);
+        BankReconciliation::observe(AuditObserver::class);
 
         // Phase 07: a quotation is the price the client was promised.
         Quotation::observe(AuditObserver::class);
