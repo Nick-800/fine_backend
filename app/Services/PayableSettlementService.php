@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Exceptions\LedgerRuleException;
 use App\Models\Account;
 use App\Models\JournalLine;
 use App\Models\PayableSettlement;
+use App\Models\User;
+use App\Support\CurrentUnitContext;
 use App\Support\TreasuryAccounts;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -30,12 +33,15 @@ final class PayableSettlementService
 
     public function __construct(
         private readonly AccountingService $accountingService,
+        private readonly ChequeService $chequeService,
+        private readonly CurrentUnitContext $unitContext,
     ) {}
 
     /**
      * @param array{company_id: string, account_code: string, amount: float,
-     *     cash_account_id?: string|null, operating_unit_id?: string|null,
-     *     reference?: string|null, settled_by_user_id?: string|null} $data
+     *     method?: string|null, cash_account_id?: string|null,
+     *     cheque?: array<string, mixed>|null, operating_unit_id?: string|null,
+     *     reference?: string|null, settled_by_user_id?: string|null, user?: User|null} $data
      */
     public function settle(array $data): PayableSettlement
     {
@@ -47,7 +53,15 @@ final class PayableSettlementService
             );
         }
 
-        $treasuryCode = TreasuryAccounts::codeForId($data['cash_account_id'] ?? null);
+        $method = $data['method'] ?? 'cash';
+        if (! in_array($method, ['cash', 'cheque'], true)) {
+            throw new InvalidArgumentException("Settlement method {$method} is not supported.");
+        }
+
+        $treasuryCode = null;
+        if ($method === 'cash') {
+            $treasuryCode = TreasuryAccounts::codeForId($data['cash_account_id'] ?? null);
+        }
 
         $amount = round((float) $data['amount'], 4);
 
@@ -55,8 +69,16 @@ final class PayableSettlementService
             throw new InvalidArgumentException('A settlement must be greater than zero.');
         }
 
-        return DB::transaction(function () use ($data, $accountCode, $amount, $treasuryCode) {
-            $unitId = $data['operating_unit_id'] ?? null;
+        return DB::transaction(function () use ($data, $accountCode, $amount, $method, $treasuryCode) {
+            // The cap and the settlement follow the requested scope (none = company-wide) for both
+            // methods; a cheque additionally needs a unit of its own, so it falls back to the current one.
+            $unitId = ! empty($data['operating_unit_id']) ? $data['operating_unit_id'] : null;
+            $chequeUnitId = $unitId ?? $this->unitContext->getUnitId();
+
+            if ($method === 'cheque' && $chequeUnitId === null) {
+                throw new LedgerRuleException('Operating unit is required.', 'OPERATING_UNIT_REQUIRED');
+            }
+
             $outstanding = $this->outstanding($accountCode, $unitId);
 
             if ($amount > $outstanding + 0.0001) {
@@ -72,31 +94,57 @@ final class PayableSettlementService
                 'company_id' => $data['company_id'],
                 'operating_unit_id' => $unitId,
                 'account_code' => $accountCode,
+                'method' => $method,
                 'amount' => $amount,
                 'reference' => $data['reference'] ?? null,
                 'settled_by_user_id' => $data['settled_by_user_id'] ?? null,
                 'settled_at' => now()->toDateString(),
             ]);
 
-            $this->accountingService->postJournal(
-                "Payable settled: {$accountName}",
-                [
+            if ($method === 'cheque') {
+                $user = $data['user']
+                    ?? ($data['settled_by_user_id'] ? User::find($data['settled_by_user_id']) : null)
+                    ?? auth()->user();
+
+                if ($user === null) {
+                    throw new InvalidArgumentException('Settling user is required.');
+                }
+
+                $chequeInput = $data['cheque'] ?? [];
+
+                $chequePayload = array_merge($chequeInput, [
+                    'company_id' => $data['company_id'],
+                    'operating_unit_id' => $chequeUnitId,
+                    'counter_account_code' => $accountCode,
+                    'payee_name' => ! empty($chequeInput['payee_name']) ? $chequeInput['payee_name'] : $accountName,
+                    'amount' => $amount,
+                    'notes' => $data['reference'] ?? null,
+                ]);
+
+                $cheque = $this->chequeService->issue($chequePayload, $user);
+
+                $settlement->update(['cheque_id' => $cheque->id]);
+            } else {
+                $this->accountingService->postJournal(
+                    "Payable settled: {$accountName}",
                     [
-                        'account_code' => $accountCode,
-                        'debit' => $amount,
-                        'operating_unit_id' => $unitId,
-                        'memo' => $data['reference'] ?? null,
+                        [
+                            'account_code' => $accountCode,
+                            'debit' => $amount,
+                            'operating_unit_id' => $unitId,
+                            'memo' => $data['reference'] ?? null,
+                        ],
+                        [
+                            'account_code' => $treasuryCode,
+                            'credit' => $amount,
+                            'operating_unit_id' => $unitId,
+                        ],
                     ],
-                    [
-                        'account_code' => $treasuryCode,
-                        'credit' => $amount,
-                        'operating_unit_id' => $unitId,
-                    ],
-                ],
-                'PayableSettlement',
-                $settlement->id,
-                $data['company_id'],
-            );
+                    'PayableSettlement',
+                    $settlement->id,
+                    $data['company_id'],
+                );
+            }
 
             return $settlement->refresh();
         });

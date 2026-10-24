@@ -17,8 +17,10 @@ final class PayableSettlement extends Model
         'company_id',
         'operating_unit_id',
         'account_code',
+        'method',
         'amount',
         'reference',
+        'cheque_id',
         'settled_by_user_id',
         'settled_at',
     ];
@@ -36,5 +38,10 @@ final class PayableSettlement extends Model
     public function settledBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'settled_by_user_id');
+    }
+
+    public function cheque(): BelongsTo
+    {
+        return $this->belongsTo(Cheque::class);
     }
 }

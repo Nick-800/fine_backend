@@ -61,11 +61,19 @@ final class Cheque extends Model
      */
     protected $appends = [
         'number',
+        'status_label',
     ];
 
     public function getNumberAttribute(): ?string
     {
         return $this->cheque_number_internal;
+    }
+
+    public function getStatusLabelAttribute(): ?string
+    {
+        $status = $this->status instanceof ChequeStatus ? $this->status : ChequeStatus::tryFrom((string) $this->status);
+
+        return $status?->label();
     }
 
     protected function casts(): array
