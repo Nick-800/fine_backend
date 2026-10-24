@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\BankReconciliation;
 use App\Models\Bundle;
 use App\Models\BundleItem;
+use App\Models\Cheque;
 use App\Models\Client;
 use App\Models\CutterWorkOrder;
 use App\Models\Employee;
@@ -95,10 +96,11 @@ class AppServiceProvider extends ServiceProvider
         // Phase 09: payroll moves wages — same treatment.
         PayrollRun::observe(AuditObserver::class);
 
-        // Phase 08 Wave 2 / TRS-02, TRS-03, TRS-04: vouchers, transfers, and bank reconciliations.
+        // Phase 08 Wave 2 / TRS-02, TRS-03, TRS-04, TRS-05: vouchers, transfers, bank reconciliations, and cheques.
         TreasuryVoucher::observe(AuditObserver::class);
         TreasuryTransfer::observe(AuditObserver::class);
         BankReconciliation::observe(AuditObserver::class);
+        Cheque::observe(AuditObserver::class);
 
         // Phase 07: a quotation is the price the client was promised.
         Quotation::observe(AuditObserver::class);

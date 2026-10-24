@@ -350,6 +350,33 @@ Cost centers were decided out on 2026-10-20: operating units on `journal_lines.o
 Transfer flow: Draft -> Approved | Rejected | Cancelled. Approval posts DR to-treasury / CR from-treasury on live balance check; draft, rejection, and cancellation post nothing.
 Reconciliation flow: Draft -> Finished. Clears candidate posted lines on a bank treasury up to statement date; finishes strictly at zero difference (|diff| < 0.005) with opening balance chaining from the prior finished statement.
 
+Cheque flow (TRS-05): InPortfolio -> Deposited | Cleared (certified only) | Bounced | ReturnedToDrawer; Deposited -> Cleared | Bounced; Bounced -> Deposited (redeposit); Cleared and ReturnedToDrawer terminal.
+
+```mermaid
+stateDiagram-v2
+    [*] --> in_portfolio: Receive
+    in_portfolio --> deposited: Deposit
+    in_portfolio --> cleared: Clear (certified only)
+    in_portfolio --> bounced: Bounce
+    in_portfolio --> returned: Return to Drawer
+    deposited --> cleared: Clear
+    deposited --> bounced: Bounce
+    bounced --> deposited: Redeposit
+    cleared --> [*]
+    returned --> [*]
+```
+
+| Lifecycle Move | Permitted From | Target Status | Journal Entry (DR / CR) | Client Balance Movement |
+|---|---|---|---|---|
+| Receive | New | `in_portfolio` | DR 124 (Notes Receivable) / CR Client Receivable | Balance decreases (credit) |
+| Deposit | `in_portfolio` | `deposited` | DR 125 (Cheques Under Collection) / CR 124 (Notes Receivable) | Unchanged |
+| Redeposit | `bounced` | `deposited` | DR 125 (Cheques Under Collection) / CR Client Receivable | Balance decreases (credit) |
+| Clear | `deposited` | `cleared` | DR Bank Treasury / CR 125 (Cheques Under Collection) | Unchanged |
+| Clear Certified | `in_portfolio` (certified only) | `cleared` | DR Bank Treasury / CR 124 (Notes Receivable) | Unchanged |
+| Bounce | `deposited` | `bounced` | DR Client Receivable / CR 125 (Cheques Under Collection) | Balance increases (debit) |
+| Bounce | `in_portfolio` | `bounced` | DR Client Receivable / CR 124 (Notes Receivable) | Balance increases (debit) |
+| Return to Drawer | `in_portfolio` | `returned` | DR Client Receivable / CR 124 (Notes Receivable) | Balance increases (debit) |
+
 #### New Treasury Accounts (Wave 2)
 - **125 (شيكات برسم التحصيل - Cheques under Collection):** Asset under `12` (الأصول المتداولة) for holding received customer cheques awaiting bank deposit or clearance.
 - **227 (أوراق الدفع - Notes Payable):** Liability under `22` (المطاليب والالتزامات المتداولة) for promissory notes and commercial paper payable to creditors or suppliers.

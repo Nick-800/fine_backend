@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\v1\BankHoldController;
 use App\Http\Controllers\Api\v1\BankReconciliationController;
 use App\Http\Controllers\Api\v1\BundleController;
 use App\Http\Controllers\Api\v1\CashAccountController;
+use App\Http\Controllers\Api\v1\ChequeController;
 use App\Http\Controllers\Api\v1\ClientController;
 use App\Http\Controllers\Api\v1\CreditApprovalController;
 use App\Http\Controllers\Api\v1\CutterWorkOrderController;
@@ -231,6 +232,14 @@ Route::prefix('v1')->group(function () {
                 Route::post('/bank-reconciliations/{id}/lines', [BankReconciliationController::class, 'toggleLines']);
                 Route::post('/bank-reconciliations/{id}/finish', [BankReconciliationController::class, 'finish']);
                 Route::delete('/bank-reconciliations/{id}', [BankReconciliationController::class, 'destroy']);
+                Route::get('/cheques/summary', [ChequeController::class, 'summary']);
+                Route::get('/cheques', [ChequeController::class, 'index']);
+                Route::get('/cheques/{id}', [ChequeController::class, 'show'])->whereUuid('id');
+                Route::post('/cheques', [ChequeController::class, 'store']);
+                Route::post('/cheques/{id}/deposit', [ChequeController::class, 'deposit'])->whereUuid('id');
+                Route::post('/cheques/{id}/clear', [ChequeController::class, 'clear'])->whereUuid('id');
+                Route::post('/cheques/{id}/bounce', [ChequeController::class, 'bounce'])->whereUuid('id');
+                Route::post('/cheques/{id}/return', [ChequeController::class, 'returnToDrawer'])->whereUuid('id');
             });
 
             // Procurement
