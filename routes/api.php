@@ -236,10 +236,12 @@ Route::prefix('v1')->group(function () {
                 Route::get('/cheques', [ChequeController::class, 'index']);
                 Route::get('/cheques/{id}', [ChequeController::class, 'show'])->whereUuid('id');
                 Route::post('/cheques', [ChequeController::class, 'store']);
+                Route::post('/cheques/issue', [ChequeController::class, 'issue']);
                 Route::post('/cheques/{id}/deposit', [ChequeController::class, 'deposit'])->whereUuid('id');
                 Route::post('/cheques/{id}/clear', [ChequeController::class, 'clear'])->whereUuid('id');
                 Route::post('/cheques/{id}/bounce', [ChequeController::class, 'bounce'])->whereUuid('id');
                 Route::post('/cheques/{id}/return', [ChequeController::class, 'returnToDrawer'])->whereUuid('id');
+                Route::post('/cheques/{id}/cancel', [ChequeController::class, 'cancel'])->whereUuid('id');
             });
 
             // Procurement

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\v1;
 
 use App\Enums\ChequeStatus;
+use App\Models\Account;
 use App\Models\ChequeEvent;
 use App\Support\CompanyClock;
 use Carbon\Carbon;
@@ -27,6 +28,11 @@ final class ChequeResource extends JsonResource
         $dueDate = Carbon::parse($this->due_date)->startOfDay();
         $daysToDue = (int) $today->diffInDays($dueDate, false);
 
+        $counterAccount = $this->counterAccount ?? ($this->supplier?->account ?? null);
+        if ($counterAccount === null && $this->counter_account_code) {
+            $counterAccount = Account::where('account_code', $this->counter_account_code)->first();
+        }
+
         return [
             'id' => $this->id,
             'number' => $this->cheque_number_internal,
@@ -39,6 +45,18 @@ final class ChequeResource extends JsonResource
                 'id' => $this->client->id,
                 'name' => $this->client->entity?->name ?? $this->client->name ?? null,
             ] : null,
+            'supplier' => $this->supplier ? [
+                'id' => $this->supplier->id,
+                'name' => $this->supplier->name,
+            ] : null,
+            'payee_name' => $this->payee_name,
+            'counter_account' => $counterAccount ? [
+                'code' => $counterAccount->account_code,
+                'name' => $counterAccount->name,
+            ] : ($this->counter_account_code ? [
+                'code' => $this->counter_account_code,
+                'name' => $this->counter_account_code,
+            ] : null),
             'amount' => (float) $this->amount,
             'currency' => $this->currency,
             'issue_date' => $this->issue_date?->toDateString() ?? $this->issue_date,

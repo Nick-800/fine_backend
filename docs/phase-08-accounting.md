@@ -350,7 +350,7 @@ Cost centers were decided out on 2026-10-20: operating units on `journal_lines.o
 Transfer flow: Draft -> Approved | Rejected | Cancelled. Approval posts DR to-treasury / CR from-treasury on live balance check; draft, rejection, and cancellation post nothing.
 Reconciliation flow: Draft -> Finished. Clears candidate posted lines on a bank treasury up to statement date; finishes strictly at zero difference (|diff| < 0.005) with opening balance chaining from the prior finished statement.
 
-Cheque flow (TRS-05): InPortfolio -> Deposited | Cleared (certified only) | Bounced | ReturnedToDrawer; Deposited -> Cleared | Bounced; Bounced -> Deposited (redeposit); Cleared and ReturnedToDrawer terminal.
+Incoming Cheque flow (TRS-05): InPortfolio -> Deposited | Cleared (certified only) | Bounced | ReturnedToDrawer; Deposited -> Cleared | Bounced; Bounced -> Deposited (redeposit); Cleared and ReturnedToDrawer terminal.
 
 ```mermaid
 stateDiagram-v2
@@ -376,6 +376,24 @@ stateDiagram-v2
 | Bounce | `deposited` | `bounced` | DR Client Receivable / CR 125 (Cheques Under Collection) | Balance increases (debit) |
 | Bounce | `in_portfolio` | `bounced` | DR Client Receivable / CR 124 (Notes Receivable) | Balance increases (debit) |
 | Return to Drawer | `in_portfolio` | `returned` | DR Client Receivable / CR 124 (Notes Receivable) | Balance increases (debit) |
+
+Outgoing Cheque flow (TRS-05): Issued -> Cleared | Cancelled; Cleared and Cancelled terminal.
+
+```mermaid
+stateDiagram-v2
+    [*] --> issued: Issue
+    issued --> cleared: Clear
+    issued --> cancelled: Cancel
+    cleared --> [*]
+    cancelled --> [*]
+```
+
+| Lifecycle Move | Permitted From | Target Status | Journal Entry (DR / CR) | Balance / Offset Movement |
+|---|---|---|---|---|
+| Issue (Supplier) | New | `issued` | DR Supplier Account (221) / CR 227 (Notes Payable) | Supplier liability reduced |
+| Issue (Counter Account) | New | `issued` | DR Counter Account / CR 227 (Notes Payable) | Expense or liability debited |
+| Clear | `issued` | `cleared` | DR 227 (Notes Payable) / CR Bank Treasury | Bank ledger balance drops |
+| Cancel | `issued` | `cancelled` | Mirror Reversal of Issue Entry (DR 227 / CR Counter Account) | Issue entry reversed |
 
 #### New Treasury Accounts (Wave 2)
 - **125 (شيكات برسم التحصيل - Cheques under Collection):** Asset under `12` (الأصول المتداولة) for holding received customer cheques awaiting bank deposit or clearance.

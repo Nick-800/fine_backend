@@ -14,7 +14,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Phase 08 Wave 2 / TRS-05: Customer cheques (الشيكات الواردة).
+ * Phase 08 Wave 2 / TRS-05: Customer and supplier cheques (الشيكات الواردة والصادرة).
+ *
+ * For outgoing cheques:
+ * - deposit_cash_account_id holds the bank treasury the cheque is drawn on.
+ * - supplier_id holds the payee supplier when issued to a vendor.
+ * - payee_name holds the payee name when issued to a non-supplier counter account.
+ * - counter_account_code holds the offset account code.
+ * - issue_journal_entry_id links the issuance journal entry (reversed upon cancellation).
  */
 final class Cheque extends Model
 {
@@ -30,6 +37,9 @@ final class Cheque extends Model
         'bank_name',
         'drawer_name',
         'client_id',
+        'supplier_id',
+        'payee_name',
+        'counter_account_code',
         'amount',
         'currency',
         'issue_date',
@@ -41,6 +51,7 @@ final class Cheque extends Model
         'status_changed_at',
         'notes',
         'bounce_reason',
+        'issue_journal_entry_id',
         'created_by_user_id',
         'record_version',
     ];
@@ -72,6 +83,21 @@ final class Cheque extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
+    }
+
+    public function counterAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'counter_account_code', 'account_code');
+    }
+
+    public function issueJournalEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class, 'issue_journal_entry_id');
     }
 
     public function depositCashAccount(): BelongsTo

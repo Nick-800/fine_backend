@@ -31,6 +31,8 @@ final class ChequeController extends Controller
     {
         $query = Cheque::with([
             'client.entity',
+            'supplier.account',
+            'counterAccount',
             'depositCashAccount',
             'createdBy',
         ]);
@@ -52,6 +54,10 @@ final class ChequeController extends Controller
             $query->where('client_id', $request->query('client_id'));
         }
 
+        if ($request->filled('supplier_id')) {
+            $query->where('supplier_id', $request->query('supplier_id'));
+        }
+
         if ($request->filled('due_from')) {
             $query->where('due_date', '>=', $request->query('due_from'));
         }
@@ -66,7 +72,8 @@ final class ChequeController extends Controller
                 $q->where('cheque_no', 'like', "%{$search}%")
                     ->orWhere('cheque_number_internal', 'like', "%{$search}%")
                     ->orWhere('bank_name', 'like', "%{$search}%")
-                    ->orWhere('drawer_name', 'like', "%{$search}%");
+                    ->orWhere('drawer_name', 'like', "%{$search}%")
+                    ->orWhere('payee_name', 'like', "%{$search}%");
             });
         }
 
@@ -79,7 +86,8 @@ final class ChequeController extends Controller
 
     public function summary(Request $request): JsonResponse
     {
-        $query = Cheque::query();
+        $direction = (string) $request->query('direction', 'incoming');
+        $query = Cheque::query()->where('direction', $direction);
 
         if ($request->filled('operating_unit_id') && $request->user()?->hasCompanyWideRole()) {
             $query->withoutGlobalScope(OperatingUnitScope::class)
@@ -100,8 +108,12 @@ final class ChequeController extends Controller
             ];
         }
 
+        $activeStatus = $direction === 'outgoing'
+            ? ChequeStatus::Issued
+            : ChequeStatus::InPortfolio;
+
         $due7Query = (clone $query)
-            ->where('status', ChequeStatus::InPortfolio->value)
+            ->where('status', $activeStatus->value)
             ->where('due_date', '>=', $today)
             ->where('due_date', '<=', $next7Days);
         $dueWithin7Days = [
@@ -110,7 +122,7 @@ final class ChequeController extends Controller
         ];
 
         $overdueQuery = (clone $query)
-            ->where('status', ChequeStatus::InPortfolio->value)
+            ->where('status', $activeStatus->value)
             ->where('due_date', '<', $today);
         $overdue = [
             'count' => (int) $overdueQuery->count(),
@@ -130,6 +142,8 @@ final class ChequeController extends Controller
     {
         $query = Cheque::with([
             'client.entity',
+            'supplier.account',
+            'counterAccount',
             'depositCashAccount',
             'createdBy',
             'events.journalEntry',
@@ -187,6 +201,58 @@ final class ChequeController extends Controller
         return (new ChequeResource(
             $cheque->load([
                 'client.entity',
+                'supplier.account',
+                'counterAccount',
+                'depositCashAccount',
+                'createdBy',
+                'events.journalEntry',
+                'events.user',
+            ])
+        ))->response()->setStatusCode(201);
+    }
+
+    public function issue(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->hasRole('owner') && ! $user->hasRole('accounting-manager') && ! $user->hasRole('treasury-officer')) {
+            return response()->json([
+                'message' => 'Only an accounting manager, treasury officer, or the owner can manage cheques.',
+                'code' => 'CHEQUE_FORBIDDEN',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'cash_account_id' => ['required', 'uuid', 'exists:cash_accounts,id'],
+            'cheque_no' => ['required', 'string', 'max:50'],
+            'amount' => ['required', 'numeric', 'min:0.0001'],
+            'due_date' => ['required', 'date'],
+            'issue_date' => ['sometimes', 'nullable', 'date', 'before_or_equal:'.CompanyClock::today()],
+            'supplier_id' => ['sometimes', 'nullable', 'uuid', 'exists:suppliers,id'],
+            'counter_account_code' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'payee_name' => ['sometimes', 'nullable', 'string', 'max:150'],
+            'notes' => ['nullable', 'string', 'max:500'],
+            'operating_unit_id' => ['sometimes', 'nullable', 'uuid', 'exists:operating_units,id'],
+        ]);
+
+        $isCompanyWide = $user->hasCompanyWideRole();
+        $operatingUnitId = $isCompanyWide && ! empty($validated['operating_unit_id'])
+            ? $validated['operating_unit_id']
+            : (app(CurrentUnitContext::class)->getUnitId()
+                ?? $user->roles()->whereNotNull('user_roles.operating_unit_id')->value('user_roles.operating_unit_id')
+                ?? $validated['operating_unit_id'] ?? null);
+
+        $data = array_merge($validated, [
+            'operating_unit_id' => $operatingUnitId,
+        ]);
+
+        $cheque = $this->chequeService->issue($data, $user);
+
+        return (new ChequeResource(
+            $cheque->load([
+                'client.entity',
+                'supplier.account',
+                'counterAccount',
                 'depositCashAccount',
                 'createdBy',
                 'events.journalEntry',
@@ -229,6 +295,8 @@ final class ChequeController extends Controller
         return (new ChequeResource(
             $updated->load([
                 'client.entity',
+                'supplier.account',
+                'counterAccount',
                 'depositCashAccount',
                 'createdBy',
                 'events.journalEntry',
@@ -260,17 +328,28 @@ final class ChequeController extends Controller
         }
         $cheque = $query->findOrFail($id);
 
-        $updated = $this->chequeService->clear(
-            $cheque,
-            $validated['date'] ?? null,
-            $user,
-            $validated['cash_account_id'] ?? null,
-            $validated['note'] ?? null,
-        );
+        if ($cheque->direction === 'outgoing') {
+            $updated = $this->chequeService->clearIssued(
+                $cheque,
+                $validated['date'] ?? null,
+                $user,
+                $validated['note'] ?? null,
+            );
+        } else {
+            $updated = $this->chequeService->clear(
+                $cheque,
+                $validated['date'] ?? null,
+                $user,
+                $validated['cash_account_id'] ?? null,
+                $validated['note'] ?? null,
+            );
+        }
 
         return (new ChequeResource(
             $updated->load([
                 'client.entity',
+                'supplier.account',
+                'counterAccount',
                 'depositCashAccount',
                 'createdBy',
                 'events.journalEntry',
@@ -311,6 +390,8 @@ final class ChequeController extends Controller
         return (new ChequeResource(
             $updated->load([
                 'client.entity',
+                'supplier.account',
+                'counterAccount',
                 'depositCashAccount',
                 'createdBy',
                 'events.journalEntry',
@@ -351,6 +432,48 @@ final class ChequeController extends Controller
         return (new ChequeResource(
             $updated->load([
                 'client.entity',
+                'supplier.account',
+                'counterAccount',
+                'depositCashAccount',
+                'createdBy',
+                'events.journalEntry',
+                'events.user',
+            ])
+        ))->response();
+    }
+
+    public function cancel(Request $request, string $id): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->hasRole('owner') && ! $user->hasRole('accounting-manager') && ! $user->hasRole('treasury-officer')) {
+            return response()->json([
+                'message' => 'Only an accounting manager, treasury officer, or the owner can manage cheques.',
+                'code' => 'CHEQUE_FORBIDDEN',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $query = Cheque::query();
+        if ($user->hasCompanyWideRole()) {
+            $query->withoutGlobalScope(OperatingUnitScope::class);
+        }
+        $cheque = $query->findOrFail($id);
+
+        $updated = $this->chequeService->cancelIssued(
+            $cheque,
+            $validated['reason'],
+            $user,
+        );
+
+        return (new ChequeResource(
+            $updated->load([
+                'client.entity',
+                'supplier.account',
+                'counterAccount',
                 'depositCashAccount',
                 'createdBy',
                 'events.journalEntry',
